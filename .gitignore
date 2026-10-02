@@ -1,0 +1,23 @@
+# Ambiente e dependências locais
+.venv/
+.deps/
+.python_packages/
+.python_packages2/
+__pycache__/
+*.pyc
+
+# Dados da instância (cada servidor mantém os seus)
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+
+# Arquivos temporários e pessoais
+tmp/
+.agents/
+*.csv
+organizar-pdfs.ps1
+*.pdf
+
+# Configuração local
+.env

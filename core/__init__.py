@@ -1,0 +1,1 @@
+"""Domínio central do GEPEI."""

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Riscos consolidados | GEPEI{% endblock %}
+{% block content %}
+  <section class="page-heading dashboard-heading">
+    <div>
+      <p class="eyebrow">Gestão preventiva</p>
+      <h1>Riscos consolidados</h1>
+      <p>Acompanhe riscos de todas as ações e abra o ciclo completo para avaliar, tratar ou registrar uma materialização.</p>
+    </div>
+    <span class="chip chip-neutral">Matriz 5×5</span>
+  </section>
+
+  <form class="dashboard-filters" method="get" aria-label="Filtros dos riscos">
+    <label>Plano
+      <select name="plan"><option value="">Todos os planos</option>{% for plan in plans %}<option value="{{ plan.id }}" {% if selected_plan == plan.id|stringformat:"s" %}selected{% endif %}>{{ plan.acronym }} · {{ plan.name }}</option>{% endfor %}</select>
+    </label>
+    <label>Unidade coordenadora
+      <select name="unit"><option value="">Todas as unidades</option>{% for unit in units %}<option value="{{ unit.id }}" {% if selected_unit == unit.id|stringformat:"s" %}selected{% endif %}>{{ unit.acronym|default:unit.name }}</option>{% endfor %}</select>
+    </label>
+    <label>Situação
+      <select name="status"><option value="">Todas as situações</option>{% for code,label in risk_status_choices %}<option value="{{ code }}" {% if selected_status == code %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    </label>
+    <button class="button button-primary" type="submit">Aplicar filtros</button>
+    <a class="clear-filter" href="{% url 'risk_overview' %}">Limpar</a>
+  </form>
+
+  <section class="metrics action-detail-metrics">
+    <article class="metric-card"><span>Riscos</span><strong>{{ risks|length }}</strong><small>no recorte selecionado</small></article>
+    <article class="metric-card metric-warning"><span>Muito altos ou críticos</span><strong>{{ critical_count }}</strong><small>nível igual ou superior a 15</small></article>
+    <article class="metric-card metric-danger"><span>Materializados</span><strong>{{ materialized_count }}</strong><small>com ocorrência registrada</small></article>
+    <article class="metric-card"><span>Em monitoramento</span><strong>{{ monitoring_count }}</strong><small>aceitos e ainda acompanhados</small></article>
+  </section>
+
+  <section class="panel action-panel">
+    <div class="panel-heading"><div><p class="eyebrow">Visão institucional</p><h2>Mapa consolidado</h2></div><span class="chip chip-neutral">{{ risks|length }} registros</span></div>
+    {% if risks %}
+      <div class="responsive-table"><table class="risk-map-table"><thead><tr><th>Risco</th><th>Ação / item afetado</th><th>Unidade</th><th>P</th><th>I</th><th>Nível</th><th>Tratamento</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+        {% for risk in risks %}<tr>
+          <td><a href="{% url 'risk_detail' risk.action.id risk.id %}"><strong>{{ risk.title }}</strong></a><span>{{ risk.cause|truncatechars:85 }}</span></td>
+          <td class="risk-context-cell"><strong>{{ risk.action.code }}</strong><span>{% if risk.activity %}Atividade: {{ risk.activity.title }}{% else %}Ação estratégica{% endif %}</span></td>
+          <td>{{ risk.action.coordinating_unit.acronym|default:risk.action.coordinating_unit.name }}</td>
+          <td>{{ risk.probability }}</td><td>{{ risk.impact }}</td>
+          <td><span class="risk-level {% if risk.level >= 20 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }} · {{ risk.level_label }}</span></td>
+          <td>{% with treatment=risk.treatments.first %}{% if treatment %}{{ treatment.get_decision_display }}{% elif risk.treatment %}{{ risk.treatment|title }}{% else %}A definir{% endif %}{% endwith %}</td>
+          <td><span class="chip chip-{{ risk.status|lower }}">{{ risk.get_status_display }}</span></td>
+          <td><div class="row-actions"><a class="text-button" href="{% url 'risk_detail' risk.action.id risk.id %}">Abrir ciclo</a><a class="text-button" href="{% url 'risk_detail' risk.action.id risk.id %}#alcada">Decidir aceite</a></div></td>
+        </tr>{% endfor %}
+      </tbody></table></div>
+    {% else %}<div class="empty-state large-empty"><strong>Nenhum risco encontrado.</strong><span>Altere os filtros ou registre riscos nos planos de ação.</span></div>{% endif %}
+  </section>
+{% endblock %}

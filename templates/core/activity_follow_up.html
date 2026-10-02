@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Acompanhamento da atividade | GEPEI{% endblock %}
+{% block content %}
+  <a class="back-link" href="{% url 'action_plan_detail' action.id %}">← Voltar ao plano de ação</a>
+  <section class="action-detail-heading">
+    <div>
+      <p class="eyebrow">{{ action.code }} · Acompanhamento da atividade</p>
+      <h1>{{ activity.title }}</h1>
+      <p>{{ activity.get_status_display }} · {{ activity.progress|floatformat:"-1" }}% executado · conclusão em {{ activity.end_date|date:"d/m/Y" }}</p>
+    </div>
+      <div class="heading-actions"><a class="button button-secondary" href="{% url 'risk_map' action.id %}">Riscos e aceites</a><a class="button button-secondary" href="{% url 'activity_edit' action.id activity.id %}">Editar atividade</a></div>
+  </section>
+
+  <section class="metrics follow-up-metrics">
+    <article class="metric-card"><span>Evidências</span><strong>{{ evidences|length }}</strong><small>registros de comprovação</small></article>
+    <article class="metric-card metric-warning"><span>Impedimentos</span><strong>{{ blockers|length }}</strong><small>ocorrências registradas</small></article>
+    <article class="metric-card metric-danger"><span>Riscos</span><strong>{{ risks|length }}</strong><small>vinculados à atividade</small></article>
+  </section>
+
+  <section class="follow-up-grid">
+    <article class="panel follow-up-panel">
+      <div class="panel-heading"><div><p class="eyebrow">Comprovação</p><h2>Evidências</h2></div></div>
+      {% if evidences %}
+        <div class="record-list">
+          {% for evidence in evidences %}
+            <div class="record-card">
+              <div class="record-card-heading"><strong>{{ evidence.title }}</strong><span class="chip chip-neutral">{{ evidence.get_evidence_type_display }}</span></div>
+              {% if evidence.description %}<p>{{ evidence.description }}</p>{% endif %}
+              {% if evidence.reference %}<small>Referência: {{ evidence.reference }}</small>{% endif %}
+              {% if evidence.url %}<a href="{{ evidence.url }}" target="_blank" rel="noopener">Abrir link da evidência</a>{% endif %}
+              {% if evidence.attachment %}<a href="{{ evidence.attachment.url }}" target="_blank">Abrir arquivo</a>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}<div class="empty-state"><span>Nenhuma evidência registrada.</span></div>{% endif %}
+      <details class="entry-form" open>
+        <summary>Adicionar evidência</summary>
+        <form method="post" enctype="multipart/form-data" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_evidence">{% for field in evidence_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}{% if evidence_form.non_field_errors %}<small class="field-error">{{ evidence_form.non_field_errors|striptags }}</small>{% endif %}<button class="button button-primary" type="submit">Registrar evidência</button></form>
+      </details>
+    </article>
+
+    <article class="panel follow-up-panel">
+      <div class="panel-heading"><div><p class="eyebrow">Desbloqueio</p><h2>Impedimentos</h2></div></div>
+      {% if blockers %}
+        <div class="record-list">
+          {% for blocker in blockers %}
+            <div class="record-card">
+              <div class="record-card-heading"><strong>{{ blocker.description }}</strong><span class="chip {% if blocker.status == 'RESOLVIDO' %}chip-concluida{% else %}chip-atrasada{% endif %}">{{ blocker.get_status_display }}</span></div>
+              <small>Responsável: {{ blocker.resolution_owner.get_full_name|default:blocker.resolution_owner.username }}</small>
+              {% if blocker.expected_resolution_date %}<small>Previsão: {{ blocker.expected_resolution_date|date:"d/m/Y" }}</small>{% endif %}
+              {% if blocker.resolution_note %}<p>{{ blocker.resolution_note }}</p>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}<div class="empty-state"><span>Nenhum impedimento registrado.</span></div>{% endif %}
+      <details class="entry-form">
+        <summary>Registrar impedimento</summary>
+        <form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_blocker">{% for field in blocker_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Registrar impedimento</button></form>
+      </details>
+    </article>
+
+    <article class="panel follow-up-panel">
+      <div class="panel-heading"><div><p class="eyebrow">Prevenção</p><h2>Riscos da atividade</h2></div></div>
+      {% if risks %}
+        <div class="record-list">
+          {% for risk in risks %}
+            <div class="record-card">
+              <div class="record-card-heading"><strong>{{ risk.title }}</strong><span class="risk-score {% if risk.level >= 15 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }}</span></div>
+              <small>{{ risk.get_status_display }} · Responsável: {{ risk.owner.get_full_name|default:risk.owner.username }}</small>
+              <p><strong>Causa:</strong> {{ risk.cause }}</p>
+              {% if risk.preventive_measure %}<p><strong>Controle:</strong> {{ risk.preventive_measure }}</p>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}<div class="empty-state"><span>Nenhum risco específico registrado.</span></div>{% endif %}
+      <details class="entry-form">
+        <summary>Registrar risco</summary>
+        <form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_risk">{% for field in risk_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Registrar risco</button></form>
+      </details>
+    </article>
+  </section>
+{% endblock %}

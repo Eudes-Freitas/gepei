@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Metas e indicadores | GEPEI{% endblock %}
+{% block content %}
+  <section class="page-heading dashboard-heading">
+    <div>
+      <p class="eyebrow">Monitoramento de resultados</p>
+      <h1>Metas e indicadores</h1>
+      <p>Acompanhe a meta prevista para cada período, o resultado aferido, a fonte da informação e a situação calculada.</p>
+    </div>
+    {% if plan %}<span class="chip chip-neutral">{{ plan.acronym }} · {{ plan.start_date|date:"Y" }}–{{ plan.end_date|date:"Y" }}</span>{% endif %}
+  </section>
+
+  <form class="dashboard-filters" method="get" aria-label="Filtros dos indicadores">
+    <label>Plano
+      <select name="plan">{% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}</select>
+    </label>
+    <label>Unidade responsável
+      <select name="unit"><option value="">Todas as unidades</option>{% for unit in units %}<option value="{{ unit.id }}" {% if selected_unit == unit.id|stringformat:"s" %}selected{% endif %}>{{ unit.acronym|default:unit.name }}</option>{% endfor %}</select>
+    </label>
+    <label class="filter-wide">Objetivo estratégico
+      <select name="objective"><option value="">Todos os objetivos</option>{% for objective in objectives %}<option value="{{ objective.id }}" {% if selected_objective == objective.id|stringformat:"s" %}selected{% endif %}>{{ objective.code }} · {{ objective.title }}</option>{% endfor %}</select>
+    </label>
+    <label>Situação
+      <select name="status">
+        <option value="">Todas as situações</option>
+        <option value="green" {% if selected_status == "green" %}selected{% endif %}>Conforme</option>
+        <option value="yellow" {% if selected_status == "yellow" %}selected{% endif %}>Atenção</option>
+        <option value="orange" {% if selected_status == "orange" %}selected{% endif %}>Alerta</option>
+        <option value="red" {% if selected_status == "red" %}selected{% endif %}>Crítico</option>
+        <option value="gray" {% if selected_status == "gray" %}selected{% endif %}>Sem aferição ou dado insuficiente</option>
+      </select>
+    </label>
+    <button class="button button-primary" type="submit">Aplicar filtros</button>
+    <a class="clear-filter" href="{% url 'indicator_overview' %}">Limpar</a>
+  </form>
+
+  <section class="metrics indicator-metrics" aria-label="Resumo dos indicadores">
+    <article class="metric-card"><span>Indicadores</span><strong>{{ indicator_count }}</strong><small>no recorte selecionado</small></article>
+    <article class="metric-card metric-blue"><span>Com situação calculada</span><strong>{{ updated_count }}</strong><small>resultado e meta do período informados</small></article>
+    <article class="metric-card metric-warning"><span>Exigem atenção</span><strong>{{ attention_count }}</strong><small>atenção, alerta ou crítico</small></article>
+    <article class="metric-card"><span>Sem aferição completa</span><strong>{{ signal_counts.gray }}</strong><small>aguardam resultado ou meta do período</small></article>
+  </section>
+
+  <section class="panel indicator-list-panel">
+    <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Indicadores do plano</h2></div><span class="chip chip-neutral">{{ indicator_rows|length }} exibido{{ indicator_rows|length|pluralize:"s" }}</span></div>
+    {% if indicator_rows %}
+      <div class="responsive-table"><table class="indicator-table">
+        <thead><tr><th>Indicador</th><th>Meta</th><th>Responsável</th><th>Última aferição</th><th>Situação</th><th></th></tr></thead>
+        <tbody>
+          {% for row in indicator_rows %}
+            <tr>
+              <td class="indicator-name-cell"><strong>{{ row.indicator.code|default:"Indicador" }}</strong><span>{{ row.indicator.name }}</span><small>{{ row.indicator.get_frequency_display }} · {{ row.indicator.get_direction_display }}</small></td>
+              <td class="indicator-links-cell">
+                {% for target in row.indicator.targets.all %}<span><strong>{{ target.code }}</strong> {{ target.description }}</span>{% empty %}<span class="muted-text">Meta não vinculada</span>{% endfor %}
+              </td>
+              <td>{{ row.indicator.responsible_unit.acronym|default:row.indicator.responsible_unit.name|default:"A definir" }}</td>
+              <td>{% if row.signal.measurement %}<strong>{{ row.signal.measurement.measured_value }}</strong><span>{{ row.signal.measurement.reference_period }}</span>{% if row.signal.measurement.expected_value != None %}<small>Meta do período: {{ row.signal.measurement.expected_value|floatformat:"-1" }}</small>{% endif %}{% else %}<span class="muted-text">Ainda não informada</span>{% endif %}</td>
+              <td><span class="signal signal-{{ row.signal.code }}"><i></i>{{ row.signal.label }}</span>{% if row.signal.achievement != None %}<small>{{ row.signal.achievement|floatformat:"-1" }}% da meta</small>{% endif %}</td>
+              <td><a class="button button-secondary" href="{% url 'indicator_detail' row.indicator.id %}">{% if row.signal.measurement %}Ver histórico{% else %}Registrar aferição{% endif %}</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    {% else %}
+      <div class="empty-state large-empty"><strong>Nenhum indicador encontrado.</strong><span>Altere os filtros ou vincule indicadores ao plano selecionado.</span></div>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ report.unit }} | {{ report.cycle.name }} | GEPEI{% endblock %}
+{% block content %}
+  <a class="back-link" href="{% url 'report_cycle_detail' report.cycle.id %}">← Voltar ao ciclo</a>
+  <section class="action-detail-heading"><div><p class="eyebrow">Relatório setorial · {{ report.cycle.period_start|date:"d/m/Y" }} a {{ report.cycle.period_end|date:"d/m/Y" }}</p><h1>{{ report.unit.acronym|default:report.unit.name }}</h1><p>{{ report.cycle.name }}</p></div><span class="chip chip-report-{{ report.status|lower }}">{{ report.get_status_display }}</span></section>
+  {% if report.validator_comment %}<div class="report-return-note"><strong>Manifestação do validador</strong><span>{{ report.validator_comment }}</span>{% if report.resubmission_due_date %}<small>Reapresentar até {{ report.resubmission_due_date|date:"d/m/Y" }}</small>{% endif %}</div>{% endif %}
+  <section class="metrics report-content-metrics">
+    <article class="metric-card"><span>Ações estratégicas</span><strong>{{ content.actions|length }}</strong><small>{{ content.activities|length }} atividades</small></article>
+    <article class="metric-card metric-warning"><span>Impedimentos abertos</span><strong>{{ content.blockers|length }}</strong><small>exigem providência</small></article>
+    <article class="metric-card metric-danger"><span>Riscos registrados</span><strong>{{ content.risks|length }}</strong><small>incluídos automaticamente</small></article>
+    <article class="metric-card"><span>Evidências</span><strong>{{ content.evidences|length }}</strong><small>comprovações reunidas</small></article>
+  </section>
+  <section class="report-detail-grid">
+    <div class="report-data-column">
+      <article class="panel"><div class="panel-heading"><div><p class="eyebrow">Conteúdo automático</p><h2>Execução da unidade</h2></div></div>
+        <div class="responsive-table"><table><thead><tr><th>Ação</th><th>Situação</th><th>Execução</th></tr></thead><tbody>{% for action in content.actions %}<tr><td><strong>{{ action.code }}</strong><span>{{ action.title }}</span></td><td><span class="chip chip-{{ action.status|lower }}">{{ action.get_status_display }}</span></td><td>{{ action.progress|floatformat:"-1" }}%</td></tr>{% empty %}<tr><td colspan="3">Nenhuma ação coordenada por esta unidade.</td></tr>{% endfor %}</tbody></table></div>
+      </article>
+      <article class="panel"><div class="panel-heading"><div><p class="eyebrow">Pontos de atenção</p><h2>Riscos e impedimentos</h2></div></div>
+        <div class="report-attention-list">{% for risk in content.risks %}<div><span class="risk-score {% if risk.level >= 15 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }}</span><p><strong>{{ risk.title }}</strong><small>{{ risk.get_status_display }}</small></p></div>{% empty %}<p class="strategy-empty">Nenhum risco registrado.</p>{% endfor %}{% for blocker in content.blockers %}<div><span class="report-alert-icon">!</span><p><strong>{{ blocker.description }}</strong><small>{{ blocker.get_status_display }} · {{ blocker.activity.title }}</small></p></div>{% endfor %}</div>
+      </article>
+      <article class="panel"><div class="panel-heading"><div><p class="eyebrow">Resultados e recursos</p><h2>Indicadores e execução financeira</h2></div></div>
+        <div class="report-financial"><span>Previsto <strong>R$ {{ content.planned_cost|floatformat:"2g" }}</strong></span><span>Desembolsado <strong>R$ {{ content.disbursed_cost|floatformat:"2g" }}</strong></span></div>
+        <div class="report-attention-list">{% for row in content.indicator_rows %}<div><span class="signal signal-{{ row.signal.code }}"><i></i>{{ row.signal.label }}</span><p><strong>{{ row.indicator.code }} · {{ row.indicator.name }}</strong>{% if row.signal.measurement %}<small>{{ row.signal.measurement.measured_value }} · {{ row.signal.measurement.reference_period }}</small>{% endif %}</p></div>{% empty %}<p class="strategy-empty">Nenhum indicador sob responsabilidade desta unidade.</p>{% endfor %}</div>
+      </article>
+    </div>
+    <aside class="report-form-column">
+      <article class="panel"><div class="panel-heading"><div><p class="eyebrow">Manifestação setorial</p><h2>Revisar e enviar</h2></div></div>
+        {% if report.cycle.status == "ENCERRADO" %}<p class="form-hint">O ciclo está encerrado e sua fotografia foi preservada.</p>{% else %}<form method="post" class="activity-form">{% csrf_token %}{% for field in report_form %}<div class="form-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}{% for error in field.errors %}<span class="field-error">{{ error }}</span>{% endfor %}</div>{% endfor %}<div class="form-buttons"><button class="button button-secondary" name="operation" value="save" type="submit">Salvar rascunho</button><button class="button button-primary" name="operation" value="submit" type="submit">Enviar para validação</button></div></form>{% endif %}
+      </article>
+      {% if report.status == "ENVIADO" %}<article class="panel"><div class="panel-heading"><div><p class="eyebrow">Validação</p><h2>Aprovar ou devolver</h2></div></div><p class="form-hint">Somente {{ report.validator.username }} pode registrar esta decisão.</p><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="validate">{% for field in validation_form %}<div class="form-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<span class="field-error">{{ error }}</span>{% endfor %}</div>{% endfor %}{% for error in validation_form.non_field_errors %}<span class="field-error">{{ error }}</span>{% endfor %}<button class="button button-primary" type="submit">Registrar decisão</button></form></article>{% endif %}
+    </aside>
+  </section>
+{% endblock %}

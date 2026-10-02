@@ -1,0 +1,32 @@
+<details class="strategy-objective" id="objetivo-{{ objective.artifact.id }}">
+  <summary>
+    <span class="objective-code">{{ objective.artifact.code|default:"Objetivo" }}</span>
+    <strong>{{ objective.artifact.title }}</strong>
+    <span class="objective-counts">{{ objective.target_count }} meta{{ objective.target_count|pluralize:"s" }} · {{ objective.indicator_count }} indicador{{ objective.indicator_count|pluralize:"es" }} · {{ objective.action_count }} {% if objective.action_count == 1 %}ação{% else %}ações{% endif %}</span>
+  </summary>
+  <div class="objective-content">
+    <div class="objective-toolbar"><a href="{% url 'indicator_overview' %}?plan={{ objective.artifact.plan_id }}&amp;objective={{ objective.artifact.id }}">Ver metas e indicadores deste objetivo →</a></div>
+    {% for project in objective.projects %}
+      <section class="strategy-project">
+        <div class="strategy-project-heading">
+          <div><span>Projeto Estratégico</span><h4>{{ project.artifact.title }}</h4></div>
+          {% if project.factor_count %}<small>{{ project.factor_count }} fator{{ project.factor_count|pluralize:"es" }} crítico{{ project.factor_count|pluralize:"s" }}</small>{% endif %}
+        </div>
+        <div class="strategy-actions">
+          {% for action in project.actions %}
+            {% include "core/includes/strategic_action_row.html" with action=action %}
+          {% empty %}<p class="strategy-empty">Nenhuma Ação Estratégica vinculada a este projeto.</p>{% endfor %}
+        </div>
+      </section>
+    {% endfor %}
+    {% if objective.direct_actions %}
+      <section class="strategy-project">
+        <div class="strategy-project-heading"><div><span>Ações diretamente vinculadas</span><h4>Execução do objetivo</h4></div></div>
+        <div class="strategy-actions">
+          {% for action in objective.direct_actions %}{% include "core/includes/strategic_action_row.html" with action=action %}{% endfor %}
+        </div>
+      </section>
+    {% endif %}
+    {% if not objective.projects and not objective.direct_actions %}<p class="strategy-empty">Este objetivo ainda não possui projetos ou ações.</p>{% endif %}
+  </div>
+</details>

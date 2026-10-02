@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Planos | GEPEI{% endblock %}
+{% block content %}
+  <section class="page-heading dashboard-heading">
+    <div>
+      <p class="eyebrow">Estratégia institucional</p>
+      <h1>Exploração dos planos</h1>
+      <p>Consulte a cadeia estratégica e avance do objetivo até a execução de cada Ação Estratégica.</p>
+    </div>
+    {% if plan %}<span class="chip chip-neutral">{{ plan.start_date|date:"Y" }}–{{ plan.end_date|date:"Y" }}</span>{% endif %}
+  </section>
+
+  <form class="dashboard-filters" method="get" aria-label="Seleção do plano estratégico">
+    <label>Plano
+      <select name="plan">
+        {% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <button class="button button-primary" type="submit">Abrir plano</button>
+  </form>
+
+  {% if plan %}
+    <section class="strategy-flow" aria-label="Cadeia de desdobramento do plano">
+      <strong>Como ler o plano</strong>
+      <span>Dimensão</span><i>→</i><span>Eixo</span><i>→</i><span>Objetivo</span><i>→</i><span>Projeto</span><i>→</i><span>Ação Estratégica</span><i>→</i><span>Plano de ação</span>
+    </section>
+
+    <section class="metrics strategy-metrics" aria-label="Resumo do plano estratégico">
+      <article class="metric-card metric-blue"><span>Objetivos estratégicos</span><strong>{{ objective_count }}</strong><small>resultados pretendidos</small></article>
+      <article class="metric-card"><span>Projetos estratégicos</span><strong>{{ project_count }}</strong><small>iniciativas estruturantes</small></article>
+      <article class="metric-card"><span>Ações estratégicas</span><strong>{{ action_count }}</strong><small>desdobramentos executáveis</small></article>
+      <article class="metric-card"><span>Execução média</span><strong>{{ progress_average|floatformat:"-1" }}%</strong><small>calculada pelas ações</small></article>
+    </section>
+
+    <section class="strategy-map" aria-label="Estrutura do plano {{ plan.acronym }}">
+      {% for dimension_group in dimension_groups %}
+        <article class="strategy-dimension">
+          <header>
+            <span class="strategy-level">Dimensão BSC</span>
+            <h2>{{ dimension_group.artifact.title }}</h2>
+          </header>
+          {% for axis_group in dimension_group.axes %}
+            <section class="strategy-axis">
+              <div class="strategy-axis-heading">
+                <span>{{ axis_group.artifact.code }}</span>
+                <h3>{{ axis_group.artifact.title }}</h3>
+                <small>{{ axis_group.objectives|length }} objetivo{{ axis_group.objectives|length|pluralize:"s" }}</small>
+              </div>
+              <div class="strategy-objectives">
+                {% for objective in axis_group.objectives %}
+                  {% include "core/includes/strategic_objective.html" with objective=objective %}
+                {% empty %}
+                  <p class="strategy-empty">Nenhum objetivo vinculado a este eixo.</p>
+                {% endfor %}
+              </div>
+            </section>
+          {% empty %}
+            <p class="strategy-empty">Nenhum eixo vinculado a esta dimensão.</p>
+          {% endfor %}
+        </article>
+      {% endfor %}
+
+      {% if orphan_objectives %}
+        <article class="strategy-dimension">
+          <header><span class="strategy-level">Estrutura em revisão</span><h2>Objetivos ainda sem dimensão e eixo</h2></header>
+          <div class="strategy-objectives strategy-orphans">
+            {% for objective in orphan_objectives %}{% include "core/includes/strategic_objective.html" with objective=objective %}{% endfor %}
+          </div>
+        </article>
+      {% endif %}
+    </section>
+  {% else %}
+    <div class="empty-state large-empty"><strong>Nenhum plano ativo cadastrado.</strong><span>Cadastre ou ative um plano para visualizar a cadeia estratégica.</span></div>
+  {% endif %}
+{% endblock %}

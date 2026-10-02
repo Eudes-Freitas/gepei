@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ indicator.code }} | Indicadores | GEPEI{% endblock %}
+{% block content %}
+  <a class="back-link" href="{% url 'indicator_overview' %}">← Voltar aos indicadores</a>
+  <section class="action-detail-heading">
+    <div><p class="eyebrow">{{ indicator.code|default:"Indicador estratégico" }}</p><h1>{{ indicator.name }}</h1><p>{{ indicator.description|default:"Descrição ainda não informada." }}</p></div>
+    <span class="signal signal-{{ signal.code }}"><i></i>{{ signal.label }}</span>
+  </section>
+
+  <section class="metrics indicator-detail-metrics" aria-label="Situação atual do indicador">
+    <article class="metric-card"><span>Resultado atual</span><strong>{% if signal.measurement %}{{ signal.measurement.measured_value }}{% else %}—{% endif %}</strong><small>{% if signal.measurement %}{{ signal.measurement.reference_period }}{% else %}sem aferição{% endif %}</small></article>
+    <article class="metric-card"><span>Meta do período</span><strong>{% if signal.measurement.expected_value != None %}{{ signal.measurement.expected_value|floatformat:"-1" }}{% else %}—{% endif %}</strong><small>base do semáforo</small></article>
+    <article class="metric-card"><span>Atingimento</span><strong>{% if signal.achievement != None %}{{ signal.achievement|floatformat:"-1" }}%{% else %}—{% endif %}</strong><small>{{ signal.label }}</small></article>
+    <article class="metric-card"><span>Periodicidade</span><strong class="metric-text-value">{{ indicator.get_frequency_display }}</strong><small>{{ indicator.get_direction_display }}</small></article>
+  </section>
+
+  <section class="indicator-detail-grid">
+    <div class="indicator-main-column">
+      <article class="panel indicator-definition">
+        <div class="panel-heading"><div><p class="eyebrow">Definição</p><h2>Ficha do indicador</h2></div></div>
+        <dl class="definition-grid">
+          <div><dt>Fórmula</dt><dd>{{ indicator.formula|default:"A definir" }}</dd></div>
+          <div><dt>Unidade de medida</dt><dd>{{ indicator.unit_of_measure|default:"A definir" }}</dd></div>
+          <div><dt>Fonte de dados</dt><dd>{{ indicator.data_source|default:"A definir" }}</dd></div>
+          <div><dt>Linha de base</dt><dd>{{ indicator.baseline|default:"A definir" }}</dd></div>
+          <div><dt>Responsável pela aferição</dt><dd>{{ indicator.responsible_unit.acronym|default:indicator.responsible_unit.name|default:"A definir" }}</dd></div>
+          <div><dt>Sentido esperado</dt><dd>{{ indicator.get_direction_display }}</dd></div>
+        </dl>
+      </article>
+
+      <article class="panel indicator-relations">
+        <div class="panel-heading"><div><p class="eyebrow">Vínculos estratégicos</p><h2>Objetivos e metas relacionados</h2></div></div>
+        <div class="relation-list">
+          {% for artifact in indicator.artifacts.all %}<div><span>Objetivo</span><strong>{{ artifact.code }} · {{ artifact.title }}</strong></div>{% empty %}<p class="strategy-empty">Nenhum objetivo vinculado.</p>{% endfor %}
+          {% for target in indicator.targets.all %}<div><span>Meta</span><strong>{{ target.code }} · {{ target.description }}</strong><small>{{ target.target_value }}{% if target.reference_period %} · {{ target.reference_period }}{% endif %}</small></div>{% empty %}<p class="strategy-empty">Nenhuma meta vinculada.</p>{% endfor %}
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading"><div><p class="eyebrow">Série histórica</p><h2>Aferições registradas</h2></div><span class="chip chip-neutral">{{ indicator.measurements.all|length }} registro{{ indicator.measurements.all|length|pluralize:"s" }}</span></div>
+        {% if indicator.measurements.all %}
+          <div class="responsive-table"><table>
+            <thead><tr><th>Período</th><th>Resultado</th><th>Meta do período</th><th>Fonte/evidência</th><th>Registrado por</th></tr></thead>
+            <tbody>{% for measurement in indicator.measurements.all %}<tr><td><strong>{{ measurement.reference_period }}</strong>{% if measurement.note %}<span>{{ measurement.note }}</span>{% endif %}</td><td>{{ measurement.measured_value }}</td><td>{{ measurement.expected_value|floatformat:"-1"|default:"Não informada" }}</td><td>{% if measurement.source_reference %}<span>{{ measurement.source_reference }}</span>{% endif %}{% if measurement.evidence_attachment %}<a href="{{ measurement.evidence_attachment.url }}" target="_blank" rel="noopener">Abrir arquivo anexado</a>{% elif not measurement.source_reference %}Não informada{% endif %}</td><td>{{ measurement.recorded_by.get_full_name|default:measurement.recorded_by.username }}<small>{{ measurement.recorded_at|date:"d/m/Y H:i" }}</small></td></tr>{% endfor %}</tbody>
+          </table></div>
+        {% else %}<div class="empty-state"><strong>Nenhuma aferição registrada.</strong><span>Use o formulário ao lado para iniciar a série histórica.</span></div>{% endif %}
+      </article>
+    </div>
+
+    <aside class="panel indicator-measurement-panel">
+      <div class="panel-heading"><div><p class="eyebrow">Nova aferição</p><h2>Registrar resultado do período</h2></div></div>
+      <p class="form-hint">O semáforo compara o resultado com a meta prevista para este período. Identifique a fonte para manter a rastreabilidade.</p>
+      <form method="post" enctype="multipart/form-data" class="activity-form">
+        {% csrf_token %}
+        {% for field in measurement_form %}<div class="form-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}{% for error in field.errors %}<span class="field-error">{{ error }}</span>{% endfor %}</div>{% endfor %}
+        <button class="button button-primary" type="submit">Salvar aferição</button>
+      </form>
+    </aside>
+  </section>
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Mapa de riscos | {{ action.code }} | GEPEI{% endblock %}
+{% block content %}
+  <a class="back-link" href="{% url 'action_plan_detail' action.id %}">← Voltar ao plano de ação</a>
+  <section class="action-detail-heading">
+    <div><p class="eyebrow">{{ action.code }} · Gestão preventiva</p><h1>Mapa de riscos</h1><p>{{ action.title }}</p></div>
+    <span class="chip chip-neutral">Matriz 5×5</span>
+  </section>
+
+  <section class="risk-map-layout">
+    <article class="panel risk-map-panel">
+      <div class="panel-heading"><div><p class="eyebrow">Visão consolidada</p><h2>Riscos identificados</h2></div><div class="panel-heading-actions"><span class="chip chip-neutral">{{ risks|length }} registros</span><button class="button button-primary" type="button" data-open-risk-form>Incluir risco</button></div></div>
+      {% if risks %}
+        <div class="responsive-table"><table class="risk-map-table"><thead><tr><th>Risco</th><th>Item afetado</th><th>Possível momento</th><th>Responsável</th><th>P</th><th>I</th><th>Nível</th><th>Tratamento</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+          {% for risk in risks %}<tr>
+            <td><a href="{% url 'risk_detail' action.id risk.id %}"><strong>{{ risk.title }}</strong></a><span>{{ risk.cause|truncatechars:80 }}</span></td>
+            <td>{% if risk.activity %}Atividade: {{ risk.activity.title }}{% else %}Ação estratégica{% endif %}</td>
+            <td>{{ risk.occurrence_timing_summary }}</td>
+            <td>{{ risk.owner.get_full_name|default:risk.owner.username }}</td>
+            <td>{{ risk.probability }}</td><td>{{ risk.impact }}</td>
+            <td><span class="risk-level {% if risk.level >= 20 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }} · {{ risk.level_label }}</span></td>
+            <td>{% with treatment=risk.treatments.first %}{% if treatment %}{{ treatment.get_decision_display }}{% elif risk.treatment %}{{ risk.treatment|title }}{% else %}A definir{% endif %}{% endwith %}</td>
+            <td><span class="chip chip-{{ risk.status|lower }}">{{ risk.get_status_display }}</span></td>
+            <td><div class="row-actions"><a class="text-button" href="{% url 'risk_detail' action.id risk.id %}">Abrir ciclo</a><a class="text-button" href="{% url 'risk_detail' action.id risk.id %}#alcada">Decidir aceite</a></div></td>
+          </tr>{% endfor %}
+        </tbody></table></div>
+      {% else %}<div class="empty-state"><strong>Nenhum risco identificado.</strong><span>Clique em “Incluir risco” para registrá-lo; depois o sistema disponibilizará a avaliação, o tratamento e a decisão de aceite.</span></div>{% endif %}
+    </article>
+
+    <dialog class="panel activity-form-panel" aria-labelledby="risk-form-title" {% if form.errors %}data-open-on-load{% endif %}>
+      <div class="dialog-heading"><div><p class="eyebrow">Planejamento</p><h2 id="risk-form-title">Identificar novo risco</h2></div><button class="icon-button dialog-close" type="button" data-close-risk-form aria-label="Fechar">×</button></div><p class="form-hint">O risco pode afetar toda a ação ou uma atividade específica. A avaliação inicial usa probabilidade × impacto.</p>
+      <form method="post" class="activity-form">{% csrf_token %}{% for field in form %}<div class="form-field {% if field.name == 'exposure_start_date' or field.name == 'exposure_end_date' %}timing-window-field{% elif field.name == 'expected_occurrence_date' %}timing-date-field{% endif %}" {% if field.name == 'exposure_start_date' or field.name == 'exposure_end_date' or field.name == 'expected_occurrence_date' %}hidden{% endif %}>{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Incluir no mapa de riscos</button></form>
+      <script>(function(){var form=document.currentScript.previousElementSibling;var dialog=form.closest('dialog');document.querySelector('[data-open-risk-form]').addEventListener('click',function(){dialog.showModal();});dialog.querySelector('[data-close-risk-form]').addEventListener('click',function(){dialog.close();});dialog.addEventListener('click',function(event){if(event.target===dialog){dialog.close();}});if(dialog.hasAttribute('data-open-on-load')){dialog.showModal();}var timing=form.querySelector('[data-occurrence-timing]');var windowFields=form.querySelectorAll('.timing-window-field');var dateFields=form.querySelectorAll('.timing-date-field');function update(){var value=timing.value;windowFields.forEach(function(field){field.hidden=value!=='PERIODO';});dateFields.forEach(function(field){field.hidden=value!=='DATA_MARCO';});}timing.addEventListener('change',update);update();}());</script>
+    </dialog>
+  </section>
+{% endblock %}

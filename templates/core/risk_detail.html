@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}{{ risk.title }} | GEPEI{% endblock %}
+{% block content %}
+  <a class="back-link" href="{% url 'risk_map' action.id %}">← Voltar ao mapa de riscos</a>
+  <section class="action-detail-heading">
+    <div><p class="eyebrow">{{ action.code }} · Ciclo do risco</p><h1>{{ risk.title }}</h1><p>{% if risk.activity %}Atividade: {{ risk.activity.title }}{% else %}Ação estratégica{% endif %} · Responsável: {{ risk.owner.get_full_name|default:risk.owner.username }}</p></div>
+    <div class="risk-heading-status"><span class="risk-score {% if risk.level >= 20 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }}</span><span class="chip chip-neutral">{{ risk.get_status_display }}</span></div>
+  </section>
+
+  <section class="risk-summary panel">
+    <div><span>Causa</span><strong>{{ risk.cause }}</strong></div><div><span>Possível momento</span><strong>{{ risk.occurrence_timing_summary }}{% if risk.trigger_description %} · {{ risk.trigger_description }}{% endif %}</strong></div><div><span>Classificação atual</span><strong>{{ risk.level_label }} · P{{ risk.probability }} × I{{ risk.impact }}</strong></div><div><span>Resposta atual</span><strong>{% with treatment=risk.treatments.first %}{% if treatment %}{{ treatment.get_decision_display }}{% elif risk.treatment %}{{ risk.treatment|title }}{% else %}A definir{% endif %}{% endwith %}</strong></div>
+  </section>
+
+  <nav class="risk-action-nav" aria-label="Atalhos para alterar o risco">
+    <strong>O que você deseja alterar?</strong>
+    <a href="#identificacao">Identificação</a>
+    <a href="#exposicao">Possível momento</a>
+    <a href="#analise">Classificação</a>
+    <a href="#tratamento">Resposta e tratamento</a>
+    <a href="#ocorrencia">Materialização</a>
+    <a href="#alcada">Aceite</a>
+  </nav>
+
+  <section class="risk-cycle-grid">
+    <article class="panel cycle-panel" id="identificacao">
+      <p class="eyebrow">Identificação</p><h2>Dados básicos e responsabilidade</h2>
+      <div class="record-card"><strong>{{ risk.title }}</strong><p>{{ risk.cause }}</p><small>{% if risk.activity %}Atividade afetada: {{ risk.activity.title }}{% else %}Afeta toda a ação estratégica{% endif %}</small><small>Responsável: {{ risk.owner.get_full_name|default:risk.owner.username }}</small></div>
+      <details class="entry-form"><summary>Editar identificação e responsabilidade</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="update_identity">{% for field in identity_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Salvar alterações</button></form></details>
+    </article>
+
+    <article class="panel cycle-panel" id="exposicao"><p class="eyebrow">Exposição</p><h2>Possível momento de ocorrência</h2><div class="record-card"><strong>{{ risk.occurrence_timing_summary }}</strong>{% if risk.trigger_description %}<p>{{ risk.trigger_description }}</p>{% endif %}<small>A data futura é opcional; use-a somente quando houver uma estimativa razoável.</small></div><details class="entry-form"><summary>Revisar momento ou condição</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="update_timing">{% for field in timing_form %}<div class="form-field {% if field.name == 'exposure_start_date' or field.name == 'exposure_end_date' %}timing-window-field{% elif field.name == 'expected_occurrence_date' %}timing-date-field{% endif %}" {% if field.name == 'exposure_start_date' or field.name == 'exposure_end_date' or field.name == 'expected_occurrence_date' %}hidden{% endif %}>{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Atualizar condição</button></form><script>(function(){var form=document.currentScript.previousElementSibling;var timing=form.querySelector('[data-occurrence-timing]');var windowFields=form.querySelectorAll('.timing-window-field');var dateFields=form.querySelectorAll('.timing-date-field');function update(){var value=timing.value;windowFields.forEach(function(field){field.hidden=value!=='PERIODO';});dateFields.forEach(function(field){field.hidden=value!=='DATA_MARCO';});}timing.addEventListener('change',update);update();}());</script></details></article>
+
+    <article class="panel cycle-panel" id="analise"><p class="eyebrow">Análise</p><h2>Avaliações</h2>{% for item in assessments %}<div class="record-card"><div class="record-card-heading"><strong>{{ item.get_assessment_type_display }}</strong><span class="risk-score {% if item.level >= 20 %}risk-critical{% elif item.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ item.level }}</span></div><small>P{{ item.probability }} × I{{ item.impact }} · {{ item.assessed_at|date:"d/m/Y H:i" }}</small>{% if item.notes %}<p>{{ item.notes }}</p>{% endif %}</div>{% empty %}<div class="empty-state"><span>Sem histórico de avaliação.</span></div>{% endfor %}<details class="entry-form"><summary>Reavaliar classificação</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_assessment">{% for field in assessment_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Salvar avaliação</button></form></details></article>
+
+    <article class="panel cycle-panel" id="tratamento"><p class="eyebrow">Resposta</p><h2>Tratamentos</h2>{% for item in treatments %}<div class="record-card"><div class="record-card-heading"><strong>{{ item.get_decision_display }}</strong>{% if item.due_date %}<span class="chip chip-neutral">até {{ item.due_date|date:"d/m/Y" }}</span>{% endif %}</div><small>Responsável: {{ item.responsible.get_full_name|default:item.responsible.username }}</small>{% if item.preventive_measure %}<p><strong>Controle:</strong> {{ item.preventive_measure }}</p>{% endif %}{% if item.contingency_measure %}<p><strong>Contingência:</strong> {{ item.contingency_measure }}</p>{% endif %}</div>{% empty %}<div class="empty-state"><span>Tratamento ainda não definido.</span></div>{% endfor %}<details class="entry-form"><summary>Revisar resposta e tratamento</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_treatment">{% for field in treatment_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Salvar tratamento</button></form></details></article>
+
+    <article class="panel cycle-panel" id="ocorrencia"><p class="eyebrow">Ocorrência</p><h2>Materializações</h2>{% for item in materializations %}<div class="record-card"><div class="record-card-heading"><strong>{{ item.occurred_on|date:"d/m/Y" }}</strong><span class="chip chip-atrasada">Materializado</span></div><p>{{ item.description }}</p><p><strong>Impacto:</strong> {{ item.actual_impact }}</p><p><strong>Providências:</strong> {{ item.actions_taken }}</p>{% if item.evidence_reference %}<small>Evidência: {{ item.evidence_reference }}</small>{% endif %}</div>{% empty %}<div class="empty-state"><span>Este risco ainda não se materializou.</span></div>{% endfor %}<details class="entry-form"><summary>Registrar materialização</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="materialize">{% for field in materialization_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Registrar ocorrência</button></form></details></article>
+
+    <article class="panel cycle-panel" id="alcada">
+      <p class="eyebrow">Alçada</p><h2>Aceites formais</h2>
+      {% for item in acceptances %}
+        <div class="record-card">
+          <div class="record-card-heading"><strong>{{ item.get_decision_display }}</strong><span class="chip chip-neutral">{{ item.recorded_at|date:"d/m/Y" }}</span></div>
+          <small><strong>Autoridade decisora:</strong> {{ item.authority.get_full_name|default:item.authority.username }}</small>
+          <small><strong>Registrado no GEPEI por:</strong> {{ item.recorded_by.get_full_name|default:item.recorded_by.username }}</small>
+          <p><strong>Fundamentação:</strong> {{ item.justification }}</p>
+          {% if item.decision == "ACEITO_RESSALVAS" %}
+            <p><strong>Diligências saneadoras:</strong> {{ item.remedial_actions }}</p>
+            <small><strong>Responsável:</strong> {{ item.remediation_responsible.get_full_name|default:item.remediation_responsible.username }}</small>
+            <small><strong>Reapresentação:</strong> {% if item.reevaluation_due_date %}até {{ item.reevaluation_due_date|date:"d/m/Y" }}{% else %}sem prazo definido{% endif %}</small>
+            {% for submission in item.remediation_submissions.all %}
+              <div class="remediation-update">
+                <strong>Diligências reapresentadas em {{ submission.submitted_at|date:"d/m/Y H:i" }}</strong>
+                <p>{{ submission.completion_summary }}</p>
+                {% if submission.evidence_reference %}<small><strong>Evidência:</strong> {{ submission.evidence_reference }}</small>{% endif %}
+                <small><strong>Enviado por:</strong> {{ submission.submitted_by.get_full_name|default:submission.submitted_by.username }}</small>
+              </div>
+            {% empty %}<span class="chip chip-warning">Aguardando cumprimento</span>{% endfor %}
+          {% endif %}
+        </div>
+      {% empty %}<div class="empty-state"><span>Nenhuma decisão formal registrada.</span></div>{% endfor %}
+      {% if pending_acceptance %}
+        <details class="entry-form" open>
+          <summary>Registrar cumprimento das diligências</summary>
+          <p class="form-hint">Use este registro para devolver o caso à autoridade. Depois, registre uma nova avaliação e uma nova decisão de aceite.</p>
+          <form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="submit_remediation"><input type="hidden" name="acceptance_id" value="{{ pending_acceptance.id }}">
+            {% for field in remediation_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}
+            {% if remediation_form.non_field_errors %}<small class="field-error">{{ remediation_form.non_field_errors|striptags }}</small>{% endif %}
+            <button class="button button-primary" type="submit">Enviar para nova avaliação</button>
+          </form>
+        </details>
+      {% endif %}
+      <details class="entry-form">
+        <summary>Registrar decisão de aceite</summary>
+        <div class="role-explanation">
+          <p><strong>Quem decide:</strong> a autoridade com alçada selecionada abaixo.</p>
+          <p><strong>Quem registra:</strong> {{ request.user.get_full_name|default:request.user.username }}, usuário conectado que lança a decisão no GEPEI.</p>
+        </div>
+        <form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="accept">
+          {% for field in acceptance_form %}<div class="form-field {% if field.name == 'remedial_actions' or field.name == 'remediation_responsible' or field.name == 'reevaluation_due_date' %}acceptance-reservation-field{% endif %}" {% if field.name == 'remedial_actions' or field.name == 'remediation_responsible' or field.name == 'reevaluation_due_date' %}hidden{% endif %}>{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}
+          <button class="button button-primary" type="submit">Registrar decisão</button>
+        </form>
+        <script>(function(){var form=document.currentScript.previousElementSibling;var decision=form.querySelector('#id_acceptance-decision');var fields=form.querySelectorAll('.acceptance-reservation-field');function update(){var show=decision.value==='ACEITO_RESSALVAS';fields.forEach(function(field){field.hidden=!show;});}decision.addEventListener('change',update);update();}());</script>
+      </details>
+    </article>
+  </section>
+{% endblock %}

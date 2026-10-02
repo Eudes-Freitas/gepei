@@ -1,0 +1,1 @@
+"""Configuração do projeto GEPEI."""

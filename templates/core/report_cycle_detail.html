@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ cycle.name }} | Relatórios | GEPEI{% endblock %}
+{% block content %}
+  <a class="back-link" href="{% url 'report_cycle_overview' %}">← Voltar aos ciclos</a>
+  <section class="action-detail-heading"><div><p class="eyebrow">{{ cycle.plan.acronym }} · {{ cycle.period_start|date:"d/m/Y" }} a {{ cycle.period_end|date:"d/m/Y" }}</p><h1>{{ cycle.name }}</h1><p>Prazo de envio: {{ cycle.due_date|date:"d/m/Y" }}</p></div><span class="chip chip-report-{{ cycle.status|lower }}">{{ cycle.get_status_display }}</span></section>
+  <section class="metrics report-cycle-metrics">
+    <article class="metric-card"><span>Unidades participantes</span><strong>{{ reports|length }}</strong><small>relatórios previstos</small></article>
+    <article class="metric-card"><span>Enviados</span><strong>{{ submitted_count }}</strong><small>inclui aprovados e consolidados</small></article>
+    <article class="metric-card"><span>Aprovados</span><strong>{{ approved_count }}</strong><small>aptos à consolidação</small></article>
+    <article class="metric-card metric-warning"><span>Devolvidos</span><strong>{{ returned_count }}</strong><small>aguardam correção</small></article>
+  </section>
+  <section class="panel">
+    <div class="panel-heading"><div><p class="eyebrow">Acompanhamento setorial</p><h2>Relatórios das unidades</h2></div>
+      {% if cycle.status == "ABERTO" %}<form method="post">{% csrf_token %}<input type="hidden" name="operation" value="consolidate"><button class="button button-primary" type="submit">Consolidar aprovados</button></form>{% elif cycle.status == "EM_CONSOLIDACAO" %}<form method="post">{% csrf_token %}<input type="hidden" name="operation" value="close"><button class="button button-primary" type="submit">Encerrar ciclo</button></form>{% endif %}
+    </div>
+    <div class="responsive-table"><table><thead><tr><th>Unidade</th><th>Situação</th><th>Preparado por</th><th>Validador</th><th>Última atualização</th><th></th></tr></thead><tbody>
+      {% for report in reports %}<tr><td><strong>{{ report.unit.acronym|default:report.unit.name }}</strong><span>{{ report.unit.name }}</span></td><td><span class="chip chip-report-{{ report.status|lower }}">{{ report.get_status_display }}</span>{% if report.resubmission_due_date %}<small>Novo prazo: {{ report.resubmission_due_date|date:"d/m/Y" }}</small>{% endif %}</td><td>{{ report.prepared_by.username|default:"A definir" }}</td><td>{{ report.validator.username|default:"A definir" }}</td><td>{{ report.updated_at|date:"d/m/Y H:i" }}</td><td><a class="button button-secondary" href="{% url 'sector_report_detail' cycle.id report.id %}">Abrir relatório</a></td></tr>{% empty %}<tr><td colspan="6">Nenhuma unidade participante.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+{% endblock %}

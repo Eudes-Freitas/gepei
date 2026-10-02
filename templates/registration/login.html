@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Acesso | GEPEI{% endblock %}
+{% block content %}
+  <section class="login-card">
+    <p class="eyebrow">Gestor de Plano Estratégico Institucional</p>
+    <h1>Acessar GEPEI</h1>
+    <p>Use o e-mail cadastrado para acompanhar planos, ações e riscos.</p>
+    <form method="post">{% csrf_token %}{{ form.as_p }}<button class="primary" type="submit">Entrar</button></form>
+  </section>
+{% endblock %}

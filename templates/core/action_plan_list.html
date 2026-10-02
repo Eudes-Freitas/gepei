@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Planos de ação | GEPEI{% endblock %}
+{% block content %}
+  <section class="page-heading dashboard-heading">
+    <div>
+      <p class="eyebrow">Execução estratégica</p>
+      <h1>Planos de ação setoriais</h1>
+    </div>
+  </section>
+
+  <form class="dashboard-filters" method="get" aria-label="Filtros dos planos de ação">
+    <label>Plano
+      <select name="plan"><option value="">Todos os planos</option>{% for plan in plans %}<option value="{{ plan.id }}" {% if selected_plan == plan.id|stringformat:"s" %}selected{% endif %}>{{ plan.acronym }} · {{ plan.name }}</option>{% endfor %}</select>
+    </label>
+    <label>Unidade coordenadora
+      <select name="unit"><option value="">Todas as unidades</option>{% for unit in units %}<option value="{{ unit.id }}" {% if selected_unit == unit.id|stringformat:"s" %}selected{% endif %}>{{ unit.acronym|default:unit.name }}</option>{% endfor %}</select>
+    </label>
+    <label>Status
+      <select name="status"><option value="">Todos os status</option>{% for code, label in actions_status_choices %}<option value="{{ code }}" {% if selected_status == code %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    </label>
+    <button class="button button-primary" type="submit">Aplicar filtros</button>
+    <a class="clear-filter" href="{% url 'action_plan_list' %}">Limpar</a>
+  </form>
+
+  <section class="action-cards">
+    {% for action in actions %}
+      <article class="action-card">
+        <div class="action-card-top"><span class="eyebrow">{{ action.artifact.plan.acronym }} · {{ action.code }}</span><span class="chip chip-{{ action.status|lower }}">{{ action.get_status_display }}</span></div>
+        <h2>{{ action.title }}</h2>
+        <p class="action-card-unit">{{ action.coordinating_unit.acronym|default:action.coordinating_unit.name }}</p>
+        <div class="card-meta"><span><strong>{{ action.activity_count }}</strong> atividade{{ action.activity_count|pluralize:"s" }}</span><span><strong>{{ action.allocated_weight|default:0|floatformat:"-1" }}%</strong> distribuído</span></div>
+        <div class="progress-track"><i style="width: {{ action.progress }}%"></i></div>
+        <div class="card-footer"><span>{{ action.progress|floatformat:"-1" }}% executado</span><a class="button button-secondary" href="{% url 'action_plan_detail' action.id %}">{% if action.activity_count %}Gerenciar plano{% else %}Iniciar plano{% endif %}</a></div>
+      </article>
+    {% empty %}
+      <div class="empty-state large-empty"><strong>Nenhuma ação encontrada.</strong><span>Altere os filtros ou carregue ações estratégicas no PEI.</span></div>
+    {% endfor %}
+  </section>
+{% endblock %}
