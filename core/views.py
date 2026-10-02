@@ -5,6 +5,7 @@ from django.contrib import messages
 from django.db import transaction
 from django.db.models import Avg, Count, F, Max, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 
 from .forms import (
@@ -123,7 +124,9 @@ def dashboard(request):
     deadline_alert = actions.filter(due_date__lt=today).exclude(
         status__in=[StrategicAction.Status.COMPLETED, StrategicAction.Status.SUSPENDED]
     )
-    risks = list(Risk.objects.filter(action__in=actions).select_related("action", "activity"))
+    risks = list(
+        Risk.objects.filter(action__in=actions).select_related("action", "action__coordinating_unit", "activity")
+    )
     status_summary = [
         {
             "code": code,
@@ -143,8 +146,9 @@ def dashboard(request):
             | Q(planartifact__planartifact__actions__in=actions)
         ).distinct()
 
+    # Riscos prioritários: apenas altos e críticos do recorte (setor selecionado ou todos os setores).
     risk_alerts = sorted(
-        [risk for risk in risks if risk.level >= 10 or risk.status == Risk.Status.MATERIALIZED],
+        [risk for risk in risks if risk.level >= 10],
         key=lambda risk: (-risk.level, risk.title),
     )[:5]
     context = {
@@ -167,6 +171,7 @@ def dashboard(request):
         "can_manage_actions": request.user.is_staff and request.user.has_perm("core.view_strategicaction"),
         "can_add_actions": request.user.is_staff and request.user.has_perm("core.add_strategicaction"),
         "risk_alerts": risk_alerts,
+        "unit_filter": unit_filter,
         "today": today,
     }
     return render(request, "core/dashboard.html", context)
@@ -663,6 +668,13 @@ def action_plan_detail(request, action_id):
         if request.method == "POST" and request.POST.get("operation") == "add_activity":
             form = ActivityForm(request.POST, action_plan=action_plan)
             if form.is_valid():
+                current_total = action_plan.activities.aggregate(total=Sum("weight"))["total"] or Decimal("0")
+                if current_total + form.cleaned_data["weight"] > Decimal("100") and request.POST.get("confirm_rebalance") != "1":
+                    form.add_error(
+                        "weight",
+                        "O total ultrapassaria 100%. Confirme a redistribuição dos pesos ou informe um peso menor.",
+                    )
+            if form.is_valid():
                 with transaction.atomic():
                     activity = form.save(commit=False)
                     activity.action_plan = action_plan
@@ -688,8 +700,23 @@ def action_plan_detail(request, action_id):
         "allocated_weight": allocated_weight,
         "remaining_weight": 100 - allocated_weight,
         "today": timezone.localdate(),
+        **_action_indicators_summary(action),
     }
     return render(request, "core/action_plan_detail.html", context)
+
+
+def _action_indicators_summary(action):
+    objective = action.artifact
+    while objective and objective.artifact_type != PlanArtifact.ArtifactType.OBJECTIVE:
+        objective = objective.parent
+    url = f"{reverse('indicator_overview')}?plan={action.artifact.plan_id}"
+    if objective:
+        url += f"&objective={objective.id}"
+    return {
+        "indicators_url": url,
+        "objective_target_count": objective.targets.count() if objective else 0,
+        "objective_indicator_count": objective.indicators.count() if objective else 0,
+    }
 
 
 def _get_activity_for_action(action_id, activity_id):

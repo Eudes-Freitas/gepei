@@ -222,7 +222,7 @@ class DashboardAndRiskTests(TestCase):
         response = self.client.get(detail_url)
         self.assertContains(response, "Esta atividade demandará recurso financeiro?")
         self.assertContains(response, "Peso distribuído")
-        self.assertContains(response, "faltam 100% para completar o plano")
+        self.assertContains(response, "Peso distribuído</span><strong>0%</strong>", html=False)
         self.assertContains(response, "A Ação Estratégica deve ser desdobrada em atividades ou tarefas")
         self.assertContains(response, "Peso na Ação Estratégica")
         self.assertContains(response, 'value="NAO"')
@@ -260,7 +260,7 @@ class DashboardAndRiskTests(TestCase):
 
         response = self.client.get(detail_url)
         self.assertContains(response, "R$ 1.200,00")
-        self.assertContains(response, "40% distribuído")
+        self.assertContains(response, "Peso distribuído</span><strong>40%</strong>", html=False)
         self.assertContains(response, "25%</td>", html=False)
         self.assertNotContains(response, "40,00%")
         self.assertNotContains(response, "25,00%")
@@ -286,6 +286,11 @@ class DashboardAndRiskTests(TestCase):
             "requires_financial_resource": "NAO",
         }
         response = self.client.post(detail_url, payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Confirme a redistribuição dos pesos")
+        self.assertEqual(action_plan.activities.count(), 2)
+
+        response = self.client.post(detail_url, {**payload, "confirm_rebalance": "1"})
         self.assertEqual(response.status_code, 302)
         first.refresh_from_db()
         second.refresh_from_db()
@@ -293,7 +298,7 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(first.weight, Decimal("45"))
         self.assertEqual(second.weight, Decimal("30"))
         self.assertEqual(self.action.progress, Decimal("35"))
-        self.assertContains(self.client.get(detail_url), "100% distribuído")
+        self.assertContains(self.client.get(detail_url), "Peso distribuído</span><strong>100%</strong>", html=False)
 
         response = self.client.post(detail_url, {**payload, "weight": "101"})
         self.assertEqual(response.status_code, 200)

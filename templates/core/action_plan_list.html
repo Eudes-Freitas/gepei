@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load progress %}
 {% block title %}Planos de ação | GEPEI{% endblock %}
 {% block content %}
   <section class="page-heading dashboard-heading">
@@ -29,7 +30,7 @@
         <h2>{{ action.title }}</h2>
         <p class="action-card-unit">{{ action.coordinating_unit.acronym|default:action.coordinating_unit.name }}</p>
         <div class="card-meta"><span><strong>{{ action.activity_count }}</strong> atividade{{ action.activity_count|pluralize:"s" }}</span><span><strong>{{ action.allocated_weight|default:0|floatformat:"-1" }}%</strong> distribuído</span></div>
-        <div class="progress-track"><i style="width: {{ action.progress }}%"></i></div>
+        {% progress_bar action.progress %}
         <div class="card-footer"><span>{{ action.progress|floatformat:"-1" }}% executado</span><a class="button button-secondary" href="{% url 'action_plan_detail' action.id %}">{% if action.activity_count %}Gerenciar plano{% else %}Iniciar plano{% endif %}</a></div>
       </article>
     {% empty %}

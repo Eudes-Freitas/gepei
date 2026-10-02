@@ -25,9 +25,9 @@
         </details>
         <a href="{% url 'action_plan_list' %}" {% if '/planos-de-acao/' in request.path and '/riscos/' not in request.path %}class="nav-active" aria-current="page"{% endif %}>Execução</a>
         <a href="{% url 'risk_overview' %}" {% if '/riscos/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Riscos</a>
-        <a href="{% url 'indicator_overview' %}" {% if '/indicadores/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Indicadores</a>
+        <a href="{% url 'indicator_overview' %}" {% if '/indicadores/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Metas e indicadores</a>
         <a href="{% url 'report_cycle_overview' %}" {% if '/relatorios/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Relatórios</a>
-        <a href="/admin/" {% if '/admin/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Administração</a>
+        <a href="/admin/" {% if '/admin/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Usuários</a>
         <form method="post" action="{% url 'logout' %}">
           {% csrf_token %}
           <button type="submit">Sair</button>

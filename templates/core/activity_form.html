@@ -3,7 +3,7 @@
 {% block content %}
   <a class="back-link" href="{% url 'action_plan_detail' action.id %}">← Voltar ao plano de ação</a>
   <section class="panel form-page-panel">
-    <p class="eyebrow">{{ action.code }} · Plano operacional</p>
+    <p class="eyebrow">{{ action.code }} · Plano de ação</p>
     <h1>Editar atividade</h1>
     <p class="form-hint">Atualize a atividade, seu período, sua execução e, quando aplicável, os dados financeiros.</p>
     <form method="post" class="activity-form">{% csrf_token %}

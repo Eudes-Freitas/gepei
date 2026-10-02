@@ -36,3 +36,41 @@ a { color:var(--blue-700); text-decoration:none; } a:hover { text-decoration:und
 .acceptance-reservation-field[hidden] { display:none; }
 .role-explanation { background:#eef5ff; border-left:3px solid var(--blue-700); border-radius:.35rem; display:grid; gap:.25rem; margin-bottom:.8rem; padding:.7rem .8rem; }.role-explanation p { color:var(--ink); font-size:.8rem; line-height:1.4; margin:0; }
 .chip-warning { background:#fff4e5; color:#9a4d00; }.remediation-update { background:#edf8f2; border-left:3px solid #238457; border-radius:.35rem; display:grid; gap:.35rem; margin-top:.35rem; padding:.7rem; }.remediation-update strong { font-size:.8rem; }
+
+/* Cor por Dimensão BSC: cabeçalho e eixo na cor da dimensão, objetivos com um toque dela */
+.strategy-dimension { --dim:#0a3872; --dim-soft:#eaf1fb; }
+.strategy-dimension:nth-of-type(4n+2) { --dim:#087f8c; --dim-soft:#e4f4f5; }
+.strategy-dimension:nth-of-type(4n+3) { --dim:#5b3fa0; --dim-soft:#efebf9; }
+.strategy-dimension:nth-of-type(4n+4) { --dim:#b35c00; --dim-soft:#fcf0e2; }
+.strategy-dimension > header { background:var(--dim); }
+.strategy-axis { border-left:4px solid var(--dim); }
+.strategy-axis-heading > span,.strategy-axis-heading h3 { color:var(--dim); }
+.strategy-objective { border-left:3px solid var(--dim); }
+.strategy-objective > summary::before { color:var(--dim); }
+.objective-code { background:var(--dim-soft); color:var(--dim); }
+
+/* Cards do plano de ação: cinco colunas, textos centralizados e card de metas clicável */
+.action-plan-metrics .metric-card,.metrics-centered .metric-card { text-align:center; }
+.metric-link { color:inherit; text-decoration:none; transition:box-shadow .15s, transform .15s; }
+.metric-link:hover,.metric-link:focus-visible { box-shadow:0 6px 18px rgba(7,38,79,.14); transform:translateY(-2px); }
+@media (min-width:1051px) { .action-plan-metrics { grid-template-columns:repeat(5,1fr); } }
+
+/* Barras de execução: preenchem ao carregar e mudam de cor pela conclusão */
+.progress-track i,.table-progress i { animation:progress-fill .9s cubic-bezier(.22,.61,.36,1) both; border-radius:999px; transform-origin:left center; }
+.progress-low i { background:var(--red); }
+.progress-mid i { background:var(--orange); }
+.progress-high i { background:var(--green); }
+@keyframes progress-fill { from { transform:scaleX(0); } to { transform:scaleX(1); } }
+@media (prefers-reduced-motion:reduce) { .progress-track i,.table-progress i { animation:none; } }
+
+/* Riscos prioritários do painel: cada item abre o ciclo do risco */
+.risk-list li { padding:0; }
+.risk-link { align-items:center; border-radius:.45rem; color:inherit; display:flex; flex:1; gap:.7rem; padding:.75rem .4rem; text-decoration:none; }
+.risk-link:hover,.risk-link:focus-visible { background:#f4f8fd; }
+.risk-link:hover strong { color:var(--blue-700); }
+
+/* Confirmação de redistribuição quando o peso da nova atividade ultrapassa 100% */
+.weight-confirm-dialog { border:1px solid var(--border); border-top:4px solid var(--orange); box-shadow:0 24px 60px rgba(7,38,79,.32); color:var(--ink); width:min(440px,calc(100vw - 2rem)); }
+.weight-confirm-dialog::backdrop { background:rgba(7,38,79,.35); }
+.weight-confirm-dialog h2 { font-size:1.15rem; margin:.2rem 0 .6rem; }
+.weight-confirm-actions { display:flex; flex-wrap:wrap; gap:.6rem; justify-content:flex-end; margin-top:1rem; }

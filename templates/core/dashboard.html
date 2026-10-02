@@ -1,13 +1,11 @@
 {% extends "base.html" %}
+{% load progress %}
 {% block title %}Painel | GEPEI{% endblock %}
 {% block content %}
   <section class="page-heading dashboard-heading">
     <div>
       <p class="eyebrow">Piloto PEI · 2025–2034</p>
       <h1>Painel</h1>
-    </div>
-    <div class="heading-actions">
-      <span class="updated-at">Referência: {{ today|date:"d/m/Y" }}</span>
     </div>
   </section>
 
@@ -34,11 +32,11 @@
     <a class="clear-filter" href="{% url 'dashboard' %}">Limpar</a>
   </form>
 
-  <section class="metrics" aria-label="Resumo estratégico">
-    <article class="metric-card metric-blue"><span>Objetivos monitorados</span><strong>{{ objective_count }}</strong><small>do escopo selecionado</small></article>
-    <article class="metric-card"><span>Ações estratégicas</span><strong>{{ action_count }}</strong><small>execução média: {{ progress_average|floatformat:"-1" }}%</small></article>
-    <article class="metric-card metric-warning"><span>Ações em atraso</span><strong>{{ delayed_count }}</strong><small>prazo já ultrapassado</small></article>
-    <article class="metric-card metric-danger"><span>Riscos altos ou críticos</span><strong>{{ critical_risk_count }}</strong><small>prioridade para a COPIN</small></article>
+  <section class="metrics metrics-centered" aria-label="Resumo estratégico">
+    <article class="metric-card metric-blue"><span>Objetivos monitorados</span><strong>{{ objective_count }}</strong></article>
+    <article class="metric-card"><span>Ações estratégicas</span><strong>{{ action_count }}</strong></article>
+    <article class="metric-card metric-warning"><span>Ações em atraso</span><strong>{{ delayed_count }}</strong></article>
+    <article class="metric-card metric-danger"><span>Riscos altos ou críticos</span><strong>{{ critical_risk_count }}</strong></article>
   </section>
 
   <section class="panel-grid dashboard-main-grid">
@@ -53,7 +51,7 @@
           </li>
         {% endfor %}
       </ul>
-      <div class="progress-summary"><span>Execução média do recorte</span><strong>{{ progress_average|floatformat:"-1" }}%</strong><div class="progress-track"><i style="width: {{ progress_average }}%"></i></div></div>
+      <div class="progress-summary"><span>Execução média do recorte</span><strong>{{ progress_average|floatformat:"-1" }}%</strong>{% progress_bar progress_average %}</div>
     </article>
 
     <article class="panel alert-panel">
@@ -61,14 +59,14 @@
       {% if risk_alerts %}
         <ul class="risk-list">
           {% for risk in risk_alerts %}
-            <li>
+            <li><a class="risk-link" href="{% url 'risk_detail' risk.action.id risk.id %}">
               <span class="risk-score {% if risk.level >= 20 %}risk-critical{% elif risk.level >= 15 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }}</span>
-              <div><strong>{{ risk.title }}</strong><small>{{ risk.action.code }} · {{ risk.action.title }}</small></div>
-            </li>
+              <div><strong>{{ risk.title }}</strong><small>{% if not unit_filter %}{{ risk.action.coordinating_unit.acronym|default:risk.action.coordinating_unit.name }} · {% endif %}{{ risk.action.code }} · {{ risk.action.title }}</small></div>
+            </a></li>
           {% endfor %}
         </ul>
       {% else %}
-        <div class="empty-state"><strong>Nenhum risco prioritário no recorte.</strong><span>Os riscos altos, críticos ou materializados aparecerão aqui.</span></div>
+        <div class="empty-state"><strong>Nenhum risco prioritário no recorte.</strong><span>{% if unit_filter %}Os riscos altos e críticos do setor selecionado aparecerão aqui.{% else %}Os riscos altos e críticos de todas as unidades aparecerão aqui.{% endif %}</span></div>
       {% endif %}
     </article>
   </section>
@@ -84,7 +82,7 @@
             <td>{{ action.coordinating_unit.acronym|default:action.coordinating_unit.name }}</td>
             <td>{% if action.activity_count %}<a href="{% url 'action_plan_detail' action.id %}">{{ action.activity_count }} atividade{{ action.activity_count|pluralize:"s" }}</a>{% else %}<span class="financial-empty">Nenhuma</span>{% endif %}</td>
             <td class="{% if action.due_date and action.due_date < today and action.status != 'CONCLUIDA' and action.status != 'SUSPENSA' %}deadline-overdue{% endif %}">{{ action.due_date|date:"d/m/Y"|default:"A definir" }}</td>
-            <td><div class="table-progress"><i style="width: {{ action.progress }}%"></i></div><small>{{ action.progress|floatformat:"-1" }}%</small></td>
+            <td>{% progress_bar action.progress "table-progress" %}<small>{{ action.progress|floatformat:"-1" }}%</small></td>
             <td><span class="chip chip-{{ action.status|lower }}">{{ action.get_status_display }}</span></td>
           </tr>
         {% endfor %}</tbody>
