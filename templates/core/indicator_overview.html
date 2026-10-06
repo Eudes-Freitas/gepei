@@ -1,11 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Metas e indicadores | GEPEI{% endblock %}
+{% block title %}Indicadores | GEPEI{% endblock %}
 {% block content %}
+  <a class="back-link" href="{% url 'dashboard' %}">← Voltar</a>
   <section class="page-heading dashboard-heading">
     <div>
       <p class="eyebrow">Monitoramento de resultados</p>
-      <h1>Metas e indicadores</h1>
-      <p>Acompanhe a meta prevista para cada período, o resultado aferido, a fonte da informação e a situação calculada.</p>
+      <h1>Indicadores</h1>
+      <p>Acompanhe o resultado aferido de cada indicador, a meta do período, a fonte da informação e a situação calculada.</p>
     </div>
     {% if plan %}<span class="chip chip-neutral">{{ plan.acronym }} · {{ plan.start_date|date:"Y" }}–{{ plan.end_date|date:"Y" }}</span>{% endif %}
   </section>
@@ -34,11 +35,11 @@
     <a class="clear-filter" href="{% url 'indicator_overview' %}">Limpar</a>
   </form>
 
-  <section class="metrics indicator-metrics" aria-label="Resumo dos indicadores">
-    <article class="metric-card"><span>Indicadores</span><strong>{{ indicator_count }}</strong><small>no recorte selecionado</small></article>
-    <article class="metric-card metric-blue"><span>Com situação calculada</span><strong>{{ updated_count }}</strong><small>resultado e meta do período informados</small></article>
-    <article class="metric-card metric-warning"><span>Exigem atenção</span><strong>{{ attention_count }}</strong><small>atenção, alerta ou crítico</small></article>
-    <article class="metric-card"><span>Sem aferição completa</span><strong>{{ signal_counts.gray }}</strong><small>aguardam resultado ou meta do período</small></article>
+  <section class="metrics metrics-centered indicator-metrics" aria-label="Resumo dos indicadores">
+    <article class="metric-card"><span>Indicadores</span><strong>{{ indicator_count }}</strong></article>
+    <article class="metric-card metric-blue"><span>Com situação calculada</span><strong>{{ updated_count }}</strong></article>
+    <article class="metric-card metric-warning"><span>Exigem atenção</span><strong>{{ attention_count }}</strong></article>
+    <article class="metric-card"><span>Sem aferição completa</span><strong>{{ signal_counts.gray }}</strong></article>
   </section>
 
   <section class="panel indicator-list-panel">
@@ -49,7 +50,7 @@
         <tbody>
           {% for row in indicator_rows %}
             <tr>
-              <td class="indicator-name-cell"><strong>{{ row.indicator.code|default:"Indicador" }}</strong><span>{{ row.indicator.name }}</span><small>{{ row.indicator.get_frequency_display }} · {{ row.indicator.get_direction_display }}</small></td>
+              <td class="indicator-name-cell"><strong>{{ row.indicator.code|default:"Indicador" }}</strong><span>{{ row.indicator.name }}</span><small>{% if row.indicator.indicator_type %}{{ row.indicator.get_indicator_type_display }} · {% endif %}{{ row.indicator.get_frequency_display }} · {{ row.indicator.get_direction_display }}</small></td>
               <td class="indicator-links-cell">
                 {% for target in row.indicator.targets.all %}<span><strong>{{ target.code }}</strong> {{ target.description }}</span>{% empty %}<span class="muted-text">Meta não vinculada</span>{% endfor %}
               </td>

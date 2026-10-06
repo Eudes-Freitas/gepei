@@ -2,12 +2,15 @@ from decimal import Decimal
 
 from django import forms
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+from django.db import transaction
 
 from .models import (
     Activity,
     ActivityBlocker,
     ActivityEvidence,
     IndicatorMeasurement,
+    Organization,
     OrganizationalUnit,
     ReportCycle,
     Risk,
@@ -17,6 +20,8 @@ from .models import (
     RiskRemediationSubmission,
     RiskTreatment,
     SectorReport,
+    StrategicAction,
+    UserProfile,
 )
 
 
@@ -229,6 +234,14 @@ class ActivityForm(forms.ModelForm):
         if start_date and end_date and start_date > end_date:
             self.add_error("end_date", "A data de conclusão não pode ser anterior à data de início.")
 
+        if cleaned_data.get("status") == StrategicAction.Status.COMPLETED:
+            has_evidence = self.instance.pk and self.instance.evidences.exclude(attachment="").exists()
+            if not has_evidence:
+                self.add_error(
+                    "status",
+                    "Para concluir a atividade, registre ao menos uma evidência com anexo (ícone de documento na lista de atividades).",
+                )
+
         requires_financial_resource = cleaned_data.get("requires_financial_resource")
         planned_cost = cleaned_data.get("planned_cost")
         disbursed_cost = cleaned_data.get("disbursed_cost")
@@ -258,18 +271,14 @@ class ActivityEvidenceForm(forms.ModelForm):
             "description": "Descrição",
             "reference": "Referência ou número do processo SEI",
             "url": "Link",
-            "attachment": "Arquivo ou foto",
+            "attachment": "Anexo (arquivo ou foto)",
         }
         widgets = {"description": forms.Textarea(attrs={"rows": 2})}
 
-    def clean(self):
-        cleaned_data = super().clean()
-        if not any(
-            cleaned_data.get(field)
-            for field in ["description", "reference", "url", "attachment"]
-        ):
-            raise forms.ValidationError("Informe uma descrição, referência, link ou arquivo para a evidência.")
-        return cleaned_data
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["attachment"].required = True
+        self.fields["attachment"].help_text = "Obrigatório. Anexe o documento, relatório ou foto que comprova a entrega."
 
 
 class ActivityBlockerForm(forms.ModelForm):
@@ -652,3 +661,117 @@ class RiskRemediationSubmissionForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["completion_summary"].help_text = "Descreva o resultado e o que foi corrigido ou complementado."
         self.fields["evidence_reference"].help_text = "Informe processo, documento, link ou outra comprovação, quando houver."
+
+
+class UserCreateForm(forms.Form):
+    name = forms.CharField(label="Nome", max_length=150)
+    email = forms.EmailField(label="E-mail", max_length=150)
+    password = forms.CharField(label="Senha inicial", widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}))
+    group = forms.ModelChoiceField(label="Grupo", queryset=Group.objects.order_by("name"), empty_label="Selecione o grupo")
+    unit_name = forms.CharField(label="Setor", max_length=180)
+
+    is_active = forms.BooleanField(label="Usuário ativo", required=False)
+
+    def __init__(self, *args, user=None, **kwargs):
+        """Sem `user` cadastra um usuário novo; com `user` edita o existente."""
+        self.edited_user = user
+        if user is not None:
+            profile = getattr(user, "profile", None)
+            kwargs.setdefault(
+                "initial",
+                {
+                    "name": user.get_full_name(),
+                    "email": user.email or user.username,
+                    "group": user.groups.first(),
+                    "unit_name": profile.unit.name if profile and profile.unit else "",
+                    "is_active": user.is_active,
+                },
+            )
+        super().__init__(*args, **kwargs)
+        self.fields["email"].help_text = "O e-mail também será o login do usuário."
+        self.fields["unit_name"].help_text = "Digite para buscar. Se o setor não existir, ele será cadastrado com o que você digitar."
+        self.fields["unit_name"].widget.attrs.update({"autocomplete": "off", "data-unit-input": ""})
+        self.unit = None
+        if user is None:
+            del self.fields["is_active"]
+        else:
+            self.fields["password"].required = False
+            self.fields["password"].label = "Nova senha"
+            self.fields["password"].help_text = "Deixe em branco para manter a senha atual."
+
+    def clean_name(self):
+        return " ".join(self.cleaned_data["name"].split())
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip().lower()
+        others = get_user_model().objects.all()
+        if self.edited_user is not None:
+            others = others.exclude(pk=self.edited_user.pk)
+        if others.filter(username__iexact=email).exists() or others.filter(email__iexact=email).exists():
+            raise forms.ValidationError("Já existe um usuário com este e-mail.")
+        return email
+
+    def clean_unit_name(self):
+        name = " ".join(self.cleaned_data["unit_name"].split())
+        self.unit = (
+            OrganizationalUnit.objects.filter(name__iexact=name).first()
+            or OrganizationalUnit.objects.filter(acronym__iexact=name).first()
+        )
+        if not self.unit and not Organization.objects.filter(active=True).exists():
+            raise forms.ValidationError("Cadastre um órgão ativo antes de criar setores.")
+        return name
+
+    @transaction.atomic
+    def save(self):
+        data = self.cleaned_data
+        unit = self.unit
+        if not unit:
+            organization = Organization.objects.filter(active=True).order_by("id").first()
+            organ = OrganizationalUnit.objects.filter(
+                organization=organization, unit_type=OrganizationalUnit.UnitType.ORGAN
+            ).order_by("id").first()
+            unit = OrganizationalUnit.objects.create(
+                organization=organization,
+                parent=organ,
+                name=data["unit_name"],
+                unit_type=OrganizationalUnit.UnitType.SECTOR,
+            )
+        first_name, _, last_name = data["name"].partition(" ")
+        if self.edited_user is None:
+            user = get_user_model().objects.create_user(
+                username=data["email"],
+                email=data["email"],
+                password=data["password"],
+                first_name=first_name,
+                last_name=last_name,
+            )
+        else:
+            user = self.edited_user
+            user.username = user.email = data["email"]
+            user.first_name, user.last_name = first_name, last_name
+            user.is_active = data["is_active"]
+            if data["password"]:
+                user.set_password(data["password"])
+            user.save()
+        user.groups.set([data["group"]])
+        UserProfile.objects.update_or_create(user=user, defaults={"unit": unit})
+        return user
+
+
+class GroupForm(forms.Form):
+    name = forms.CharField(label="Nome do grupo", max_length=150)
+
+    def __init__(self, *args, group=None, **kwargs):
+        self.group = group
+        if group is not None:
+            kwargs.setdefault("initial", {"name": group.name})
+        super().__init__(*args, **kwargs)
+
+    def clean_name(self):
+        name = " ".join(self.cleaned_data["name"].split())
+        others = Group.objects.all()
+        if self.group is not None:
+            others = others.exclude(pk=self.group.pk)
+        if others.filter(name__iexact=name).exists():
+            raise forms.ValidationError("Já existe um grupo com este nome.")
+        return name

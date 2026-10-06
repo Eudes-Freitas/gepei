@@ -27,6 +27,22 @@ class OrganizationalUnit(models.Model):
         return self.acronym or self.name
 
 
+class UserProfile(models.Model):
+    """Dados do usuário no GEPEI além do cadastro padrão: o setor a que pertence."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile")
+    unit = models.ForeignKey(
+        OrganizationalUnit,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="members",
+    )
+
+    def __str__(self):
+        return f"{self.user} · {self.unit or 'sem setor'}"
+
+
 class Plan(models.Model):
     class PlanType(models.TextChoices):
         PEI = "PEI", "PEI"
@@ -232,8 +248,13 @@ class Indicator(models.Model):
         BIENNIAL = "BIENAL", "Bienal"
         OTHER = "OUTRA", "Outra"
 
+    class IndicatorType(models.TextChoices):
+        EFFORT = "ESFORCO", "Esforço"
+        RESULT = "RESULTADO", "Resultado"
+
     code = models.CharField(max_length=30, blank=True)
     name = models.CharField(max_length=255)
+    indicator_type = models.CharField(max_length=10, choices=IndicatorType.choices, blank=True)
     description = models.TextField(blank=True)
     formula = models.TextField(blank=True)
     unit_of_measure = models.CharField(max_length=80, blank=True)

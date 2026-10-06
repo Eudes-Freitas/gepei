@@ -71,8 +71,8 @@
     </article>
   </section>
 
-  <section class="panel action-panel">
-    <div class="panel-heading"><div><h2>Acompanhamento das ações estratégicas</h2><small class="panel-subtitle">Exibindo {{ recent_actions|length }} de {{ action_count }} ações, pelo prazo mais próximo</small></div>{% if can_manage_actions %}<a href="/admin/core/strategicaction/">Ver todas</a>{% endif %}</div>
+  <section class="panel action-panel" id="acoes">
+    <div class="panel-heading"><div><h2>Acompanhamento das ações estratégicas por setor</h2><small class="panel-subtitle">{% if recent_actions %}Exibindo {{ action_page.start_index }}–{{ action_page.end_index }} de {{ sector_action_count }} ações, pelo prazo mais próximo{% else %}Nenhuma ação no recorte{% endif %}</small></div></div>
     {% if recent_actions %}
       <div class="responsive-table"><table>
         <thead><tr><th>Ação</th><th>Unidade</th><th>Atividades</th><th>Prazo</th><th>Execução</th><th>Situação</th></tr></thead>
@@ -87,6 +87,17 @@
           </tr>
         {% endfor %}</tbody>
       </table></div>
+      {% if action_page.has_other_pages %}
+        <div class="pagination" role="navigation" aria-label="Paginação das ações">
+          {% if action_page.has_previous %}<a href="?{% if page_query %}{{ page_query }}&amp;{% endif %}page={{ action_page.previous_page_number }}#acoes" rel="prev">‹ Anterior</a>{% else %}<span class="pagination-disabled">‹ Anterior</span>{% endif %}
+          {% for number in action_page_range %}
+            {% if number == action_page.paginator.ELLIPSIS %}<span class="pagination-ellipsis">…</span>
+            {% elif number == action_page.number %}<span class="pagination-current" aria-current="page">{{ number }}</span>
+            {% else %}<a href="?{% if page_query %}{{ page_query }}&amp;{% endif %}page={{ number }}#acoes">{{ number }}</a>{% endif %}
+          {% endfor %}
+          {% if action_page.has_next %}<a href="?{% if page_query %}{{ page_query }}&amp;{% endif %}page={{ action_page.next_page_number }}#acoes" rel="next">Próxima ›</a>{% else %}<span class="pagination-disabled">Próxima ›</span>{% endif %}
+        </div>
+      {% endif %}
     {% else %}
       <div class="empty-state large-empty"><strong>O painel está pronto para receber o PEI.</strong><span>Após a carga validada, as ações, os prazos, os avanços e os alertas serão exibidos automaticamente aqui.</span>{% if can_add_actions %}<a class="button button-primary" href="/admin/core/strategicaction/add/">Cadastrar primeira ação</a>{% endif %}</div>
     {% endif %}

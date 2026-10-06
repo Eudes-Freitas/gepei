@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Excluir usuário | GEPEI{% endblock %}
+{% block content %}
+  <a class="back-link" href="{% url 'user_list' %}">← Voltar</a>
+  <section class="panel confirm-panel">
+    <p class="eyebrow">Exclusão de usuário</p>
+    <h1>Excluir “{{ edited_user.get_full_name|default:edited_user.username }}”?</h1>
+    <p>O acesso deste usuário ao sistema será removido. Se ele já tiver atividades, riscos ou outros registros, a exclusão não será possível e o caminho é desativá-lo na edição.</p>
+    <form method="post" class="form-buttons">{% csrf_token %}<button class="button button-danger" type="submit">Excluir usuário</button><a class="button button-secondary" href="{% url 'user_list' %}">Cancelar</a></form>
+  </section>
+{% endblock %}

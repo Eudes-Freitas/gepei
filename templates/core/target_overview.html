@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Metas | GEPEI{% endblock %}
+{% block content %}
+  <a class="back-link" href="{% url 'dashboard' %}">← Voltar</a>
+  <section class="page-heading dashboard-heading">
+    <div>
+      <p class="eyebrow">Monitoramento de resultados</p>
+      <h1>Metas</h1>
+      <p>Consulte as metas de cada objetivo estratégico, o valor esperado, o período de referência e os indicadores que as medem.</p>
+    </div>
+    {% if plan %}<span class="chip chip-neutral">{{ plan.acronym }} · {{ plan.start_date|date:"Y" }}–{{ plan.end_date|date:"Y" }}</span>{% endif %}
+  </section>
+
+  <form class="dashboard-filters" method="get" aria-label="Filtros das metas">
+    <label>Plano
+      <select name="plan">{% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}</select>
+    </label>
+    <label class="filter-wide">Objetivo estratégico
+      <select name="objective"><option value="">Todos os objetivos</option>{% for objective in objectives %}<option value="{{ objective.id }}" {% if selected_objective == objective.id|stringformat:"s" %}selected{% endif %}>{{ objective.code }} · {{ objective.title }}</option>{% endfor %}</select>
+    </label>
+    <button class="button button-primary" type="submit">Aplicar filtros</button>
+    <a class="clear-filter" href="{% url 'target_overview' %}">Limpar</a>
+  </form>
+
+  <section class="panel indicator-list-panel">
+    <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Metas do plano</h2></div><span class="chip chip-neutral">{{ targets|length }} exibida{{ targets|length|pluralize:"s" }}</span></div>
+    {% if targets %}
+      <div class="responsive-table"><table class="indicator-table">
+        <thead><tr><th>Meta</th><th>Valor esperado</th><th>Período</th><th>Vinculada a</th><th>Indicadores</th></tr></thead>
+        <tbody>
+          {% for target in targets %}
+            <tr>
+              <td class="indicator-name-cell"><strong>{{ target.code|default:"Meta" }}</strong><span>{{ target.description }}</span></td>
+              <td>{{ target.target_value|default:"A definir" }}{% if target.unit_of_measure %} <small>{{ target.unit_of_measure }}</small>{% endif %}</td>
+              <td>{{ target.reference_period|default:"A definir" }}</td>
+              <td>{% if target.action %}<a href="{% url 'action_plan_detail' target.action.id %}">{{ target.action.code }}</a>{% else %}{{ target.artifact.code|default:target.artifact.title }}{% endif %}</td>
+              <td class="indicator-links-cell">
+                {% for indicator in target.indicators.all %}<span><a href="{% url 'indicator_detail' indicator.id %}"><strong>{{ indicator.code|default:"Indicador" }}</strong></a> {{ indicator.name }}</span>{% empty %}<span class="muted-text">Nenhum indicador vinculado</span>{% endfor %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    {% else %}
+      <div class="empty-state large-empty"><strong>Nenhuma meta encontrada.</strong><span>Altere os filtros ou vincule metas ao plano selecionado.</span></div>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}GEPEI{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'css/gepei.css' %}?v=20261001-10">
+  <link rel="stylesheet" href="{% static 'css/gepei.css' %}?v=20261006-3">
 </head>
 <body>
   <header class="topbar">
@@ -25,9 +25,18 @@
         </details>
         <a href="{% url 'action_plan_list' %}" {% if '/planos-de-acao/' in request.path and '/riscos/' not in request.path %}class="nav-active" aria-current="page"{% endif %}>Execução</a>
         <a href="{% url 'risk_overview' %}" {% if '/riscos/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Riscos</a>
-        <a href="{% url 'indicator_overview' %}" {% if '/indicadores/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Metas e indicadores</a>
+        <a href="{% url 'target_overview' %}" {% if '/metas/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Metas</a>
+        <a href="{% url 'indicator_overview' %}" {% if '/indicadores/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Indicadores</a>
         <a href="{% url 'report_cycle_overview' %}" {% if '/relatorios/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Relatórios</a>
-        <a href="/admin/" {% if '/admin/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Usuários</a>
+        {% if perms.auth.view_user or perms.auth.view_group %}
+        <details class="nav-plans{% if '/usuarios/' in request.path %} nav-active{% endif %}">
+          <summary {% if '/usuarios/' in request.path %}aria-current="page"{% endif %}>Usuários</summary>
+          <div class="plans-dropdown">
+            {% if perms.auth.view_user %}<a href="{% url 'user_list' %}" {% if '/usuarios/' in request.path and '/usuarios/grupos/' not in request.path %}aria-current="page"{% endif %}>Usuários</a>{% endif %}
+            {% if perms.auth.view_group %}<a href="{% url 'group_list' %}" {% if '/usuarios/grupos/' in request.path %}aria-current="page"{% endif %}>Grupos</a>{% endif %}
+          </div>
+        </details>
+        {% endif %}
         <form method="post" action="{% url 'logout' %}">
           {% csrf_token %}
           <button type="submit">Sair</button>
@@ -43,6 +52,20 @@
     {% endif %}
     {% block content %}{% endblock %}
   </main>
+  <script>
+    // "Voltar" retorna à página anterior do sistema; sem histórico interno, segue o link padrão.
+    document.addEventListener("click", function (event) {
+      var link = event.target.closest(".back-link");
+      if (!link || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      try {
+        var previous = new URL(document.referrer);
+        if (previous.origin === location.origin && previous.pathname !== location.pathname && previous.pathname !== "{% url 'login' %}") {
+          event.preventDefault();
+          history.back();
+        }
+      } catch (error) {}
+    });
+  </script>
   {% block extra_script %}{% endblock %}
 </body>
 </html>

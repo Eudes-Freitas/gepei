@@ -2,6 +2,7 @@
 
 from datetime import date
 
+from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 from core.models import (
@@ -88,6 +89,8 @@ class Command(BaseCommand):
         self.load_objective_11(plan, axis_7, gabinete, srh, ctinf, ciosp, copin)
         self.load_objective_12(plan, axis_8, sesed_unit)
         self.load_objective_13(plan, axis_9, cpcid, codimm, coine)
+        # Metas e indicadores definitivos vêm do Quadro de Indicadores (Apêndice A) e sobrescrevem os textos acima.
+        call_command("load_pei_indicators", stdout=self.stdout)
         self.stdout.write(self.style.SUCCESS("Carga do portfólio concluída: OE 01 a OE 13."))
 
     @staticmethod
@@ -140,6 +143,7 @@ class Command(BaseCommand):
 
     @staticmethod
     def indicator(objective, target, unit, code, name, frequency, direction):
+        code = "IE" + code[2:]  # o Quadro de Indicadores do PEI usa o prefixo IE para todos os indicadores
         indicator, _ = Indicator.objects.update_or_create(
             code=code,
             defaults={

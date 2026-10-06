@@ -23,6 +23,7 @@ from .models import (
     SectorReport,
     StrategicAction,
     StrategicTarget,
+    UserProfile,
 )
 
 
@@ -63,6 +64,7 @@ admin.site.index_title = "Cadastros e configurações"
 
 admin.site.register(Organization)
 admin.site.register(OrganizationalUnit)
+admin.site.register(UserProfile)
 admin.site.register(Plan)
 admin.site.register(PlanArtifact)
 admin.site.register(ActionPlan)

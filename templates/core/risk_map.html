@@ -3,22 +3,20 @@
 {% block content %}
   <a class="back-link" href="{% url 'action_plan_detail' action.id %}">← Voltar ao plano de ação</a>
   <section class="action-detail-heading">
-    <div><p class="eyebrow">{{ action.code }} · Gestão preventiva</p><h1>Mapa de riscos</h1><p>{{ action.title }}</p></div>
-    <span class="chip chip-neutral">Matriz 5×5</span>
-  </section>
+    <div><p class="eyebrow">{{ action.code }} · Gestão preventiva</p><h1>Mapa de riscos</h1><p>{{ action.title }}</p></div>  </section>
 
   <section class="risk-map-layout">
     <article class="panel risk-map-panel">
       <div class="panel-heading"><div><p class="eyebrow">Visão consolidada</p><h2>Riscos identificados</h2></div><div class="panel-heading-actions"><span class="chip chip-neutral">{{ risks|length }} registros</span><button class="button button-primary" type="button" data-open-risk-form>Incluir risco</button></div></div>
       {% if risks %}
-        <div class="responsive-table"><table class="risk-map-table"><thead><tr><th>Risco</th><th>Item afetado</th><th>Possível momento</th><th>Responsável</th><th>P</th><th>I</th><th>Nível</th><th>Tratamento</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
+        <div class="responsive-table"><table class="risk-map-table"><thead><tr><th>Risco</th><th>Item afetado</th><th>Possível momento</th><th>Responsável</th><th class="col-center">P</th><th class="col-center">I</th><th class="col-center">Nível</th><th>Tratamento</th><th>Situação</th><th>Ações</th></tr></thead><tbody>
           {% for risk in risks %}<tr>
             <td><a href="{% url 'risk_detail' action.id risk.id %}"><strong>{{ risk.title }}</strong></a><span>{{ risk.cause|truncatechars:80 }}</span></td>
             <td>{% if risk.activity %}Atividade: {{ risk.activity.title }}{% else %}Ação estratégica{% endif %}</td>
             <td>{{ risk.occurrence_timing_summary }}</td>
             <td>{{ risk.owner.get_full_name|default:risk.owner.username }}</td>
-            <td>{{ risk.probability }}</td><td>{{ risk.impact }}</td>
-            <td><span class="risk-level {% if risk.level >= 20 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }} · {{ risk.level_label }}</span></td>
+            <td class="col-center">{{ risk.probability }}</td><td class="col-center">{{ risk.impact }}</td>
+            <td class="col-center"><span class="risk-level {% if risk.level >= 20 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }} · {{ risk.level_label }}</span></td>
             <td>{% with treatment=risk.treatments.first %}{% if treatment %}{{ treatment.get_decision_display }}{% elif risk.treatment %}{{ risk.treatment|title }}{% else %}A definir{% endif %}{% endwith %}</td>
             <td><span class="chip chip-{{ risk.status|lower }}">{{ risk.get_status_display }}</span></td>
             <td><div class="row-actions"><a class="text-button" href="{% url 'risk_detail' action.id risk.id %}">Abrir ciclo</a><a class="text-button" href="{% url 'risk_detail' action.id risk.id %}#alcada">Decidir aceite</a></div></td>

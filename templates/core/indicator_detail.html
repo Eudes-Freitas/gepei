@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ indicator.code }} | Indicadores | GEPEI{% endblock %}
 {% block content %}
-  <a class="back-link" href="{% url 'indicator_overview' %}">← Voltar aos indicadores</a>
+  <a class="back-link" href="{% url 'indicator_overview' %}">← Voltar</a>
   <section class="action-detail-heading">
     <div><p class="eyebrow">{{ indicator.code|default:"Indicador estratégico" }}</p><h1>{{ indicator.name }}</h1><p>{{ indicator.description|default:"Descrição ainda não informada." }}</p></div>
     <span class="signal signal-{{ signal.code }}"><i></i>{{ signal.label }}</span>
@@ -19,6 +19,7 @@
       <article class="panel indicator-definition">
         <div class="panel-heading"><div><p class="eyebrow">Definição</p><h2>Ficha do indicador</h2></div></div>
         <dl class="definition-grid">
+          <div><dt>Tipo</dt><dd>{{ indicator.get_indicator_type_display|default:"A definir" }}</dd></div>
           <div><dt>Fórmula</dt><dd>{{ indicator.formula|default:"A definir" }}</dd></div>
           <div><dt>Unidade de medida</dt><dd>{{ indicator.unit_of_measure|default:"A definir" }}</dd></div>
           <div><dt>Fonte de dados</dt><dd>{{ indicator.data_source|default:"A definir" }}</dd></div>

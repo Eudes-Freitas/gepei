@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}{% if edited_user %}Editar usuário{% else %}Cadastrar usuário{% endif %} | GEPEI{% endblock %}
+{% block content %}
+  <a class="back-link" href="{% url 'user_list' %}">← Voltar</a>
+  <section class="panel form-page-panel">
+    <p class="eyebrow">Usuários</p>
+    <h1>{% if edited_user %}Editar usuário{% else %}Cadastrar usuário{% endif %}</h1>
+    <p class="form-hint">Informe os dados de acesso, o grupo que define as permissões e o setor onde a pessoa atua.</p>
+    {% if not has_groups %}<div class="planning-note"><strong>Nenhum grupo cadastrado</strong><span>Antes de cadastrar usuários, <a href="{% url 'group_create' %}">cadastre um grupo</a> com as permissões desejadas.</span></div>{% endif %}
+    <form method="post" class="activity-form" autocomplete="off">{% csrf_token %}
+      {% for field in form %}
+        <div class="form-field {% if field.name == 'unit_name' %}unit-field{% endif %}">
+          {{ field.label_tag }}{{ field }}
+          {% if field.name == 'unit_name' %}<ul class="unit-suggestions" data-unit-suggestions hidden></ul><small class="unit-status" data-unit-status hidden></small>{% endif %}
+          {% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}
+          {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
+        </div>
+      {% endfor %}
+      <div class="form-buttons"><button class="button button-primary" type="submit">{% if edited_user %}Salvar alterações{% else %}Cadastrar usuário{% endif %}</button><a class="button button-secondary" href="{% url 'user_list' %}">Cancelar</a></div>
+    </form>
+  </section>
+{% endblock %}
+{% block extra_script %}
+  <script>
+    (function () {
+      var input = document.querySelector('[data-unit-input]');
+      var list = document.querySelector('[data-unit-suggestions]');
+      var status = document.querySelector('[data-unit-status]');
+      var endpoint = "{% url 'unit_suggestions' %}";
+      var timer = null;
+      var request = 0;
+
+      function normalize(text) {
+        return text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+      }
+
+      function render(results, typed) {
+        list.innerHTML = '';
+        results.forEach(function (unit) {
+          var item = document.createElement('li');
+          var button = document.createElement('button');
+          button.type = 'button';
+          button.textContent = unit.name + (unit.acronym ? ' · ' + unit.acronym : '');
+          button.addEventListener('mousedown', function (event) {
+            event.preventDefault();
+            input.value = unit.name;
+            list.hidden = true;
+            showStatus(true, unit.name);
+          });
+          item.appendChild(button);
+          list.appendChild(item);
+        });
+        list.hidden = results.length === 0;
+        var exact = results.some(function (unit) {
+          return normalize(unit.name) === normalize(typed) || (unit.acronym && normalize(unit.acronym) === normalize(typed));
+        });
+        showStatus(exact, typed);
+      }
+
+      function showStatus(exists, typed) {
+        if (!typed.trim()) { status.hidden = true; return; }
+        status.hidden = false;
+        status.textContent = exists ? 'Setor já cadastrado.' : 'Setor não encontrado: ele será cadastrado como “' + typed.trim() + '”.';
+      }
+
+      function search() {
+        var typed = input.value;
+        if (!typed.trim()) { list.hidden = true; status.hidden = true; return; }
+        var current = ++request;
+        fetch(endpoint + '?q=' + encodeURIComponent(typed), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+          .then(function (response) { return response.json(); })
+          .then(function (data) { if (current === request) { render(data.results, typed); } })
+          .catch(function () {});
+      }
+
+      input.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(search, 200); });
+      input.addEventListener('focus', function () { if (input.value.trim()) { search(); } });
+      input.addEventListener('blur', function () { list.hidden = true; });
+      if (input.value.trim()) { search(); }
+    }());
+  </script>
+{% endblock %}

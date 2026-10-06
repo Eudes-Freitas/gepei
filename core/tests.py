@@ -1,8 +1,12 @@
+import tempfile
 from datetime import date
 from decimal import Decimal
+from io import StringIO
 
-from django.contrib.auth.models import User
-from django.test import TestCase
+from django.contrib.auth.models import Group, Permission, User
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
+from django.test import TestCase, override_settings
 
 from .models import (
     ActionPlan,
@@ -25,7 +29,209 @@ from .models import (
     SectorReport,
     StrategicAction,
     StrategicTarget,
+    UserProfile,
 )
+
+
+class LoadPeiIndicatorsTests(TestCase):
+    def setUp(self):
+        organization = Organization.objects.create(name="SESED", acronym="SESED")
+        self.unit = OrganizationalUnit.objects.create(
+            organization=organization, name="Coordenadoria de Programas para a Cidadania", acronym="CPCID",
+            unit_type=OrganizationalUnit.UnitType.UNIT,
+        )
+        plan = Plan.objects.create(
+            name="Plano Estratégico Institucional", acronym="PEI", plan_type=Plan.PlanType.PEI,
+            start_date=date(2025, 1, 1), end_date=date(2034, 12, 31),
+        )
+        self.objectives = {}
+        for number in ("12", "13"):
+            objective = PlanArtifact.objects.create(
+                plan=plan, artifact_type=PlanArtifact.ArtifactType.OBJECTIVE, code=f"OE {number}", title=f"Objetivo {number}"
+            )
+            project = PlanArtifact.objects.create(
+                plan=plan, parent=objective, artifact_type=PlanArtifact.ArtifactType.PROJECT, title=f"Projeto {number}"
+            )
+            StrategicAction.objects.create(
+                artifact=project, code=f"AE {number}.1", title="Ação", coordinating_unit=self.unit
+            )
+            self.objectives[number] = objective
+
+    def test_indicators_and_targets_are_linked_by_number_to_objective(self):
+        call_command("load_pei_indicators", stdout=StringIO())
+
+        objective = self.objectives["13"]
+        indicators = Indicator.objects.filter(artifacts=objective).order_by("code")
+        self.assertEqual([i.code for i in indicators], [f"IE 13.{n}" for n in range(1, 6)])
+        self.assertEqual(StrategicTarget.objects.filter(artifact=objective).count(), 5)
+        indicator = Indicator.objects.get(code="IE 13.3")
+        self.assertEqual(indicator.indicator_type, Indicator.IndicatorType.RESULT)
+        self.assertEqual([t.code for t in indicator.targets.all()], ["Mt 13.3"])
+        self.assertEqual(indicator.targets.get().artifact, objective)
+        self.assertEqual(indicator.responsible_unit, self.unit)
+        self.assertIn("participantes engajados", indicator.formula)
+        self.assertEqual(Indicator.objects.get(code="IE 12.2").direction, Indicator.Direction.LOWER_IS_BETTER)
+        self.assertEqual(Indicator.objects.count(), 10)
+
+    def test_load_is_idempotent_and_renames_legacy_result_code(self):
+        legacy = Indicator.objects.create(code="IR 13.3", name="Antigo")
+        legacy.artifacts.add(self.objectives["13"])
+
+        call_command("load_pei_indicators", stdout=StringIO())
+        call_command("load_pei_indicators", stdout=StringIO())
+
+        self.assertEqual(Indicator.objects.count(), 10)
+        legacy.refresh_from_db()
+        self.assertEqual(legacy.code, "IE 13.3")
+        self.assertEqual(StrategicTarget.objects.count(), 10)
+
+
+class UserAndGroupManagementTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser(username="admin", password="senha-segura")
+        self.organization = Organization.objects.create(name="SESED", acronym="SESED")
+        self.unit = OrganizationalUnit.objects.create(
+            organization=self.organization,
+            name="Coordenadoria de Planejamento Institucional",
+            acronym="COPIN",
+            unit_type=OrganizationalUnit.UnitType.SECTOR,
+        )
+        self.group = Group.objects.create(name="Gestores")
+
+    def test_pages_require_permission(self):
+        User.objects.create_user(username="comum", password="senha-segura")
+        self.client.login(username="comum", password="senha-segura")
+        self.assertEqual(self.client.get("/usuarios/novo/").status_code, 403)
+        self.assertEqual(self.client.get("/usuarios/grupos/novo/").status_code, 403)
+
+    def test_user_menu_links_to_users_and_groups_lists(self):
+        self.client.login(username="admin", password="senha-segura")
+        response = self.client.get("/")
+        self.assertContains(response, 'href="/usuarios/"', html=False)
+        self.assertContains(response, 'href="/usuarios/grupos/"', html=False)
+        self.assertNotContains(response, "Cadastrar grupo")
+
+    def test_user_list_shows_registered_users_with_group_and_unit(self):
+        member = User.objects.create_user(username="ana@exemplo.gov.br", email="ana@exemplo.gov.br", first_name="Ana", last_name="Lima")
+        member.groups.add(self.group)
+        UserProfile.objects.create(user=member, unit=self.unit)
+        self.client.login(username="admin", password="senha-segura")
+        response = self.client.get("/usuarios/")
+        self.assertContains(response, "Ana Lima")
+        self.assertContains(response, "Gestores")
+        self.assertContains(response, "COPIN")
+        self.assertContains(response, "Cadastrar usuário")
+        self.assertContains(response, f'href="/usuarios/{member.id}/editar/"', html=False)
+
+    def test_edit_user_changes_group_unit_and_keeps_password_when_blank(self):
+        member = User.objects.create_user(username="ana@exemplo.gov.br", email="ana@exemplo.gov.br", password="antiga-123", first_name="Ana")
+        other_group = Group.objects.create(name="Consulta")
+        self.client.login(username="admin", password="senha-segura")
+        response = self.client.post(
+            f"/usuarios/{member.id}/editar/",
+            {"name": "Ana Lima", "email": "ana.lima@exemplo.gov.br", "password": "", "group": other_group.id, "unit_name": "Setor Novo", "is_active": ""},
+        )
+        self.assertEqual(response.status_code, 302)
+        member.refresh_from_db()
+        self.assertEqual(member.get_full_name(), "Ana Lima")
+        self.assertEqual(member.username, "ana.lima@exemplo.gov.br")
+        self.assertTrue(member.check_password("antiga-123"))
+        self.assertFalse(member.is_active)
+        self.assertEqual(list(member.groups.all()), [other_group])
+        self.assertEqual(member.profile.unit.name, "Setor Novo")
+
+    def test_delete_user_and_protect_users_with_records(self):
+        removable = User.objects.create_user(username="sem-registro")
+        busy = User.objects.create_user(username="com-registro")
+        self.client.login(username="admin", password="senha-segura")
+        self.assertContains(self.client.get(f"/usuarios/{removable.id}/excluir/"), "Excluir usuário")
+        self.assertEqual(self.client.post(f"/usuarios/{removable.id}/excluir/").status_code, 302)
+        self.assertFalse(User.objects.filter(pk=removable.pk).exists())
+
+        plan = Plan.objects.create(name="Plano", acronym="PEI", plan_type=Plan.PlanType.PEI, start_date=date(2025, 1, 1), end_date=date(2034, 12, 31))
+        artifact = PlanArtifact.objects.create(plan=plan, artifact_type=PlanArtifact.ArtifactType.PROJECT, title="Projeto")
+        action = StrategicAction.objects.create(artifact=artifact, code="AE 1.1", title="Ação", coordinating_unit=self.unit)
+        ActionPlan.objects.create(action=action, manager=busy)
+        self.client.post(f"/usuarios/{busy.id}/excluir/")
+        self.assertTrue(User.objects.filter(pk=busy.pk).exists())
+
+        self.client.post(f"/usuarios/{self.admin.id}/excluir/")
+        self.assertTrue(User.objects.filter(pk=self.admin.pk).exists())
+
+    def test_group_list_edit_and_delete(self):
+        view_perm = Permission.objects.get(codename="view_risk")
+        self.group.permissions.add(view_perm)
+        self.client.login(username="admin", password="senha-segura")
+        response = self.client.get("/usuarios/grupos/")
+        self.assertContains(response, "Gestores")
+        self.assertContains(response, "Cadastrar grupo")
+
+        response = self.client.get(f"/usuarios/grupos/{self.group.id}/editar/")
+        self.assertContains(response, "Editar grupo")
+        self.assertContains(response, f'value="{view_perm.id}" checked', html=False)
+
+        new_perm = Permission.objects.get(codename="add_risk")
+        response = self.client.post(f"/usuarios/grupos/{self.group.id}/editar/", {"name": "Gestores RH", "permissions": [new_perm.id]})
+        self.assertEqual(response.status_code, 302)
+        self.group.refresh_from_db()
+        self.assertEqual(self.group.name, "Gestores RH")
+        self.assertEqual(list(self.group.permissions.all()), [new_perm])
+
+        self.assertEqual(self.client.post(f"/usuarios/grupos/{self.group.id}/excluir/").status_code, 302)
+        self.assertFalse(Group.objects.filter(pk=self.group.pk).exists())
+
+    def test_unit_suggestions_return_close_matches(self):
+        self.client.login(username="admin", password="senha-segura")
+        names = [item["name"] for item in self.client.get("/usuarios/setores/?q=copin").json()["results"]]
+        self.assertEqual(names, [self.unit.name])
+        names = [item["name"] for item in self.client.get("/usuarios/setores/?q=Coordenadora de Planejamento").json()["results"]]
+        self.assertIn(self.unit.name, names)
+
+    def test_create_user_with_existing_unit(self):
+        self.client.login(username="admin", password="senha-segura")
+        response = self.client.post(
+            "/usuarios/novo/",
+            {"name": "Maria da Silva", "email": "Maria@exemplo.gov.br", "password": "senha-forte-1", "group": self.group.id, "unit_name": "copin"},
+        )
+        self.assertEqual(response.status_code, 302)
+        user = User.objects.get(username="maria@exemplo.gov.br")
+        self.assertEqual(user.get_full_name(), "Maria da Silva")
+        self.assertEqual(user.profile.unit, self.unit)
+        self.assertEqual(list(user.groups.all()), [self.group])
+        self.assertEqual(OrganizationalUnit.objects.count(), 1)
+
+    def test_create_user_registers_new_unit_when_not_found(self):
+        self.client.login(username="admin", password="senha-segura")
+        self.client.post(
+            "/usuarios/novo/",
+            {"name": "João", "email": "joao@exemplo.gov.br", "password": "senha-forte-1", "group": self.group.id, "unit_name": "Gerência de Dados"},
+        )
+        user = User.objects.get(username="joao@exemplo.gov.br")
+        self.assertEqual(user.profile.unit.name, "Gerência de Dados")
+        self.assertEqual(user.profile.unit.unit_type, OrganizationalUnit.UnitType.SECTOR)
+        self.assertEqual(user.profile.unit.organization, self.organization)
+
+    def test_create_user_rejects_duplicate_email(self):
+        self.client.login(username="admin", password="senha-segura")
+        response = self.client.post(
+            "/usuarios/novo/",
+            {"name": "Admin 2", "email": "ADMIN", "password": "x", "group": self.group.id, "unit_name": "COPIN"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(User.objects.count(), 1)
+
+    def test_group_page_lists_permissions_by_module_and_saves_selection(self):
+        self.client.login(username="admin", password="senha-segura")
+        response = self.client.get("/usuarios/grupos/novo/")
+        self.assertContains(response, "Planejamento estratégico")
+        self.assertContains(response, "Visualizar")
+        self.assertContains(response, "Filtrar permissões...")
+
+        chosen = Permission.objects.get(codename="view_risk")
+        response = self.client.post("/usuarios/grupos/novo/", {"name": "Analistas", "permissions": [chosen.id, "999999"]})
+        self.assertEqual(response.status_code, 302)
+        group = Group.objects.get(name="Analistas")
+        self.assertEqual(list(group.permissions.all()), [chosen])
 
 
 class DashboardAndRiskTests(TestCase):
@@ -119,8 +325,13 @@ class DashboardAndRiskTests(TestCase):
         indicator.targets.add(target)
         self.client.login(username="copin", password="senha-segura")
 
+        response = self.client.get("/metas/")
+        self.assertContains(response, "<h1>Metas</h1>", html=False)
+        self.assertContains(response, "Mt 01.1")
+        self.assertContains(response, f'href="/indicadores/{indicator.id}/"', html=False)
+
         response = self.client.get("/indicadores/")
-        self.assertContains(response, "Metas e indicadores")
+        self.assertContains(response, "<h1>Indicadores</h1>", html=False)
         self.assertContains(response, "IE 01.1")
         self.assertContains(response, "Registrar aferição")
 
@@ -366,6 +577,49 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertFalse(Activity.objects.filter(pk=first.id).exists())
 
+    def test_activity_can_only_be_completed_with_an_evidence_attachment(self):
+        self.client.login(username="copin", password="senha-segura")
+        action_plan = ActionPlan.objects.create(action=self.action, manager=self.user)
+        activity = Activity.objects.create(
+            action_plan=action_plan,
+            executor=self.user,
+            title="Entregar relatório",
+            weight=100,
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 6, 30),
+        )
+        edit_url = f"/planos-de-acao/{self.action.id}/atividades/{activity.id}/editar/"
+        data = {
+            "title": "Entregar relatório",
+            "description": "",
+            "executor": self.user.id,
+            "weight": "100",
+            "start_date": "2026-05-01",
+            "end_date": "2026-06-30",
+            "progress": "100",
+            "status": StrategicAction.Status.COMPLETED,
+            "expected_delivery": "",
+            "requires_financial_resource": "NAO",
+        }
+
+        response = self.client.post(edit_url, data)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "registre ao menos uma evidência com anexo")
+        activity.refresh_from_db()
+        self.assertNotEqual(activity.status, StrategicAction.Status.COMPLETED)
+
+        ActivityEvidence.objects.create(
+            activity=activity,
+            created_by=self.user,
+            title="Relatório final",
+            evidence_type=ActivityEvidence.EvidenceType.ATTACHMENT,
+            attachment="activity_evidences/relatorio.pdf",
+        )
+        response = self.client.post(edit_url, data)
+        self.assertEqual(response.status_code, 302)
+        activity.refresh_from_db()
+        self.assertEqual(activity.status, StrategicAction.Status.COMPLETED)
+
     def test_user_can_follow_up_activity_with_evidence_blocker_and_risk(self):
         self.client.login(username="copin", password="senha-segura")
         action_plan = ActionPlan.objects.create(action=self.action, manager=self.user)
@@ -379,17 +633,23 @@ class DashboardAndRiskTests(TestCase):
         )
         follow_up_url = f"/planos-de-acao/{self.action.id}/atividades/{activity.id}/acompanhar/"
 
-        response = self.client.post(
-            follow_up_url,
-            {
-                "operation": "add_evidence",
-                "evidence-title": "Ata da reunião",
-                "evidence-evidence_type": ActivityEvidence.EvidenceType.SEI,
-                "evidence-description": "Validação realizada com as unidades.",
-                "evidence-reference": "SEI 0001/2026",
-                "evidence-url": "",
-            },
-        )
+        evidence_data = {
+            "operation": "add_evidence",
+            "evidence-title": "Ata da reunião",
+            "evidence-evidence_type": ActivityEvidence.EvidenceType.SEI,
+            "evidence-description": "Validação realizada com as unidades.",
+            "evidence-reference": "SEI 0001/2026",
+            "evidence-url": "",
+        }
+        response = self.client.post(follow_up_url, evidence_data)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ActivityEvidence.objects.filter(activity=activity).count(), 0)
+
+        with tempfile.TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            response = self.client.post(
+                follow_up_url,
+                {**evidence_data, "evidence-attachment": SimpleUploadedFile("ata.pdf", b"%PDF-1.4 ata")},
+            )
         self.assertEqual(response.status_code, 302)
         self.assertEqual(ActivityEvidence.objects.filter(activity=activity).count(), 1)
 

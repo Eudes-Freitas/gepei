@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Usuários | GEPEI{% endblock %}
+{% block content %}
+  <a class="back-link" href="{% url 'dashboard' %}">← Voltar</a>
+  <section class="page-heading dashboard-heading">
+    <div>
+      <p class="eyebrow">Acesso ao sistema</p>
+      <h1>Usuários</h1>
+      <p>Consulte os usuários cadastrados, o grupo que define suas permissões e o setor em que atuam.</p>
+    </div>
+    {% if perms.auth.add_user %}<a class="button button-primary" href="{% url 'user_create' %}">Cadastrar usuário</a>{% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="panel-heading"><div><p class="eyebrow">Cadastro</p><h2>Usuários cadastrados</h2></div><span class="chip chip-neutral">{{ users|length }} usuário{{ users|length|pluralize:"s" }}</span></div>
+    {% if users %}
+      <div class="responsive-table"><table>
+        <thead><tr><th>Nome</th><th>E-mail</th><th>Grupo</th><th>Setor</th><th>Situação</th><th>Ações</th></tr></thead>
+        <tbody>
+          {% for person in users %}
+            <tr>
+              <td>{{ person.get_full_name|default:person.username }}</td>
+              <td>{{ person.email|default:person.username }}</td>
+              <td>{% for group in person.groups.all %}{{ group.name }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="muted-text">Sem grupo</span>{% endfor %}</td>
+              <td>{% if person.profile.unit %}{{ person.profile.unit.acronym|default:person.profile.unit.name }}{% else %}<span class="muted-text">Sem setor</span>{% endif %}</td>
+              <td><span class="chip {% if person.is_active %}chip-concluida{% else %}chip-nao_iniciada{% endif %}">{% if person.is_active %}Ativo{% else %}Inativo{% endif %}</span></td>
+              <td><div class="row-actions">
+                {% if perms.auth.change_user %}<a class="row-icon" href="{% url 'user_edit' person.id %}" title="Editar" aria-label="Editar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13 7l4 4"/></svg></a>{% endif %}
+                {% if perms.auth.delete_user and person.id != request.user.id %}<a class="row-icon row-icon-danger" href="{% url 'user_delete' person.id %}" title="Excluir" aria-label="Excluir"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg></a>{% endif %}
+              </div></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    {% else %}
+      <div class="empty-state large-empty"><strong>Nenhum usuário cadastrado.</strong><span>Use “Cadastrar usuário” para incluir o primeiro.</span></div>
+    {% endif %}
+  </section>
+{% endblock %}

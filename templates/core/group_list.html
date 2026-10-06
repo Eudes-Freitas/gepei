@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Grupos | GEPEI{% endblock %}
+{% block content %}
+  <a class="back-link" href="{% url 'dashboard' %}">← Voltar</a>
+  <section class="page-heading dashboard-heading">
+    <div>
+      <p class="eyebrow">Acesso ao sistema</p>
+      <h1>Grupos</h1>
+      <p>Cada grupo reúne as permissões que seus usuários têm em cada módulo do sistema.</p>
+    </div>
+    {% if perms.auth.add_group %}<a class="button button-primary" href="{% url 'group_create' %}">Cadastrar grupo</a>{% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="panel-heading"><div><p class="eyebrow">Cadastro</p><h2>Grupos cadastrados</h2></div><span class="chip chip-neutral">{{ groups|length }} grupo{{ groups|length|pluralize:"s" }}</span></div>
+    {% if groups %}
+      <div class="responsive-table"><table>
+        <thead><tr><th>Grupo</th><th>Usuários</th><th>Permissões</th><th>Ações</th></tr></thead>
+        <tbody>
+          {% for group in groups %}
+            <tr>
+              <td>{{ group.name }}</td>
+              <td>{{ group.user_total }}</td>
+              <td>{{ group.permission_total }}</td>
+              <td><div class="row-actions">
+                {% if perms.auth.change_group %}<a class="row-icon" href="{% url 'group_edit' group.id %}" title="Editar" aria-label="Editar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13 7l4 4"/></svg></a>{% endif %}
+                {% if perms.auth.delete_group %}<a class="row-icon row-icon-danger" href="{% url 'group_delete' group.id %}" title="Excluir" aria-label="Excluir"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg></a>{% endif %}
+              </div></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    {% else %}
+      <div class="empty-state large-empty"><strong>Nenhum grupo cadastrado.</strong><span>Use “Cadastrar grupo” para definir as permissões do primeiro grupo.</span></div>
+    {% endif %}
+  </section>
+{% endblock %}

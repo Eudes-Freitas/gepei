@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{% if group %}Editar grupo{% else %}Cadastrar grupo{% endif %} | GEPEI{% endblock %}
+{% block content %}
+  <a class="back-link" href="{% url 'group_list' %}">← Voltar</a>
+  <section class="page-heading">
+    <p class="eyebrow">Grupos</p>
+    <h1>{% if group %}Editar grupo{% else %}Cadastrar grupo{% endif %}</h1>
+    <p class="form-hint">Defina o nome do grupo e marque o que seus integrantes podem fazer em cada módulo.</p>
+  </section>
+
+  <form method="post" class="group-form">{% csrf_token %}
+    <div class="form-field group-name-field">
+      {{ form.name.label_tag }}{{ form.name }}
+      {% if form.name.errors %}<small class="field-error">{{ form.name.errors|striptags }}</small>{% endif %}
+    </div>
+
+    <div class="form-field group-filter-field">
+      <label for="permission-filter">Permissões:</label>
+      <input id="permission-filter" type="search" placeholder="Filtrar permissões..." data-permission-filter autocomplete="off">
+    </div>
+
+    {% for module in modules %}
+      <fieldset class="permission-module" data-module>
+        <legend class="permission-module-heading">
+          <span>{{ module.title }}</span>
+          <label class="check-all"><input type="checkbox" data-check-all> marcar todas</label>
+        </legend>
+        <div class="permission-grid">
+          {% for entity in module.entities %}
+            <div class="permission-entity" data-entity data-search="{{ module.title|lower }} {{ entity.label|lower }}">
+              <h3>{{ entity.label }}</h3>
+              {% for permission in entity.permissions %}
+                <label class="permission-option"><input type="checkbox" name="permissions" value="{{ permission.id }}" {% if permission.id in selected %}checked{% endif %}> {{ permission.label }}</label>
+              {% endfor %}
+            </div>
+          {% endfor %}
+        </div>
+      </fieldset>
+    {% endfor %}
+    <p class="strategy-empty" data-no-results hidden>Nenhuma permissão encontrada para o filtro informado.</p>
+
+    <div class="form-buttons"><button class="button button-primary" type="submit">{% if group %}Salvar alterações{% else %}Cadastrar grupo{% endif %}</button><a class="button button-secondary" href="{% url 'group_list' %}">Cancelar</a></div>
+  </form>
+{% endblock %}
+{% block extra_script %}
+  <script>
+    (function () {
+      var modules = Array.from(document.querySelectorAll('[data-module]'));
+      var filter = document.querySelector('[data-permission-filter]');
+      var empty = document.querySelector('[data-no-results]');
+
+      function normalize(text) {
+        return text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+      }
+
+      function boxes(module) {
+        return Array.from(module.querySelectorAll('input[name="permissions"]'));
+      }
+
+      function syncCheckAll(module) {
+        var all = boxes(module);
+        var toggle = module.querySelector('[data-check-all]');
+        toggle.checked = all.length > 0 && all.every(function (box) { return box.checked; });
+      }
+
+      modules.forEach(function (module) {
+        var toggle = module.querySelector('[data-check-all]');
+        toggle.addEventListener('change', function () {
+          boxes(module).forEach(function (box) { box.checked = toggle.checked; });
+        });
+        module.addEventListener('change', function (event) {
+          if (event.target.name === 'permissions') { syncCheckAll(module); }
+        });
+        syncCheckAll(module);
+      });
+
+      filter.addEventListener('input', function () {
+        var term = normalize(filter.value);
+        var visibleModules = 0;
+        modules.forEach(function (module) {
+          var visible = 0;
+          module.querySelectorAll('[data-entity]').forEach(function (entity) {
+            var match = !term || normalize(entity.dataset.search).indexOf(term) !== -1;
+            entity.hidden = !match;
+            if (match) { visible += 1; }
+          });
+          module.hidden = visible === 0;
+          if (visible) { visibleModules += 1; }
+        });
+        empty.hidden = visibleModules !== 0;
+      });
+    }());
+  </script>
+{% endblock %}

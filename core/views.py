@@ -1,18 +1,26 @@
+import unicodedata
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
+from difflib import SequenceMatcher
 
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth import get_user_model
+from django.contrib.auth.decorators import login_required, permission_required
+from django.contrib.auth.models import Group
 from django.contrib import messages
+from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Avg, Count, F, Max, Q, Sum
+from django.db.models import Avg, Count, F, Max, ProtectedError, Q, Sum
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import urlencode
 
 from .forms import (
     ActivityBlockerForm,
     ActivityEvidenceForm,
     ActivityForm,
     ActivityRiskForm,
+    GroupForm,
     IndicatorMeasurementForm,
     ReportCycleForm,
     ReportValidationForm,
@@ -25,7 +33,9 @@ from .forms import (
     RiskTimingForm,
     RiskTreatmentForm,
     SectorReportForm,
+    UserCreateForm,
 )
+from .permissions import permission_modules
 from .models import (
     ActionPlan,
     Activity,
@@ -43,6 +53,7 @@ from .models import (
     RiskTreatment,
     SectorReport,
     StrategicAction,
+    StrategicTarget,
 )
 
 
@@ -121,6 +132,17 @@ def dashboard(request):
     today = timezone.localdate()
     actions = actions.order_by("due_date")
     action_count = actions.count()
+    sector_actions = actions.exclude(coordinating_unit__unit_type=OrganizationalUnit.UnitType.ORGAN)
+    sector_action_count = sector_actions.count()
+    action_page = Paginator(
+        sector_actions.annotate(activity_count=Count("action_plan__activities")).order_by(
+            F("due_date").asc(nulls_last=True), "code"
+        ),
+        10,
+    ).get_page(request.GET.get("page"))
+    page_query = urlencode(
+        {key: value for key, value in (("plan", selected_plan), ("unit", selected_unit), ("status", selected_status)) if value}
+    )
     deadline_alert = actions.filter(due_date__lt=today).exclude(
         status__in=[StrategicAction.Status.COMPLETED, StrategicAction.Status.SUSPENDED]
     )
@@ -165,10 +187,11 @@ def dashboard(request):
         "critical_risk_count": sum(1 for risk in risks if risk.level >= 15),
         "progress_average": round(float(progress_average), 1),
         "status_summary": status_summary,
-        "recent_actions": actions.annotate(activity_count=Count("action_plan__activities")).order_by(
-            F("due_date").asc(nulls_last=True), "code"
-        )[:6],
-        "can_manage_actions": request.user.is_staff and request.user.has_perm("core.view_strategicaction"),
+        "recent_actions": action_page.object_list,
+        "action_page": action_page,
+        "action_page_range": action_page.paginator.get_elided_page_range(action_page.number, on_each_side=2, on_ends=1),
+        "page_query": page_query,
+        "sector_action_count": sector_action_count,
         "can_add_actions": request.user.is_staff and request.user.has_perm("core.add_strategicaction"),
         "risk_alerts": risk_alerts,
         "unit_filter": unit_filter,
@@ -322,6 +345,43 @@ def indicator_overview(request):
             "updated_count": sum(value for key, value in signal_counts.items() if key != "gray"),
             "attention_count": signal_counts["yellow"] + signal_counts["orange"] + signal_counts["red"],
             "signal_counts": signal_counts,
+        },
+    )
+
+
+@login_required
+def target_overview(request):
+    plans = Plan.objects.filter(active=True).order_by("start_date", "acronym")
+    selected_plan = request.GET.get("plan", "")
+    selected_objective = request.GET.get("objective", "")
+    plan = plans.filter(pk=selected_plan).first() if selected_plan.isdigit() else plans.first()
+
+    targets = StrategicTarget.objects.none()
+    objectives = PlanArtifact.objects.none()
+    if plan:
+        objectives = PlanArtifact.objects.filter(
+            plan=plan,
+            artifact_type=PlanArtifact.ArtifactType.OBJECTIVE,
+        ).order_by("code", "title")
+        targets = (
+            StrategicTarget.objects.filter(artifact__plan=plan)
+            .select_related("artifact", "action")
+            .prefetch_related("indicators")
+            .order_by("code", "description")
+        )
+        if selected_objective.isdigit():
+            targets = targets.filter(artifact_id=selected_objective)
+
+    return render(
+        request,
+        "core/target_overview.html",
+        {
+            "plans": plans,
+            "objectives": objectives,
+            "plan": plan,
+            "selected_plan": str(plan.id) if plan else "",
+            "selected_objective": selected_objective,
+            "targets": targets,
         },
     )
 
@@ -709,14 +769,157 @@ def _action_indicators_summary(action):
     objective = action.artifact
     while objective and objective.artifact_type != PlanArtifact.ArtifactType.OBJECTIVE:
         objective = objective.parent
-    url = f"{reverse('indicator_overview')}?plan={action.artifact.plan_id}"
+    query = f"?plan={action.artifact.plan_id}"
     if objective:
-        url += f"&objective={objective.id}"
+        query += f"&objective={objective.id}"
     return {
-        "indicators_url": url,
+        "targets_url": f"{reverse('target_overview')}{query}",
+        "indicators_url": f"{reverse('indicator_overview')}{query}",
         "objective_target_count": objective.targets.count() if objective else 0,
         "objective_indicator_count": objective.indicators.count() if objective else 0,
     }
+
+
+def _normalize(text):
+    return "".join(
+        char for char in unicodedata.normalize("NFD", text.casefold()) if unicodedata.category(char) != "Mn"
+    )
+
+
+def _suggest_units(query, limit=8):
+    """Setores cadastrados mais próximos do texto digitado (contém o texto ou grafia parecida)."""
+    query = _normalize(query.strip())
+    if not query:
+        return []
+    scored = []
+    for unit in OrganizationalUnit.objects.order_by("name"):
+        candidates = [_normalize(unit.name)] + ([_normalize(unit.acronym)] if unit.acronym else [])
+        if any(candidate.startswith(query) for candidate in candidates):
+            score = 2
+        elif any(query in candidate for candidate in candidates):
+            score = 1.5
+        else:
+            score = max(SequenceMatcher(None, query, candidate).ratio() for candidate in candidates)
+            if score < 0.6:
+                continue
+        scored.append((score, unit))
+    scored.sort(key=lambda item: -item[0])
+    return [{"name": unit.name, "acronym": unit.acronym} for _, unit in scored[:limit]]
+
+
+@login_required
+@permission_required("auth.add_user", raise_exception=True)
+def unit_suggestions(request):
+    return JsonResponse({"results": _suggest_units(request.GET.get("q", ""))})
+
+
+@login_required
+@permission_required("auth.view_user", raise_exception=True)
+def user_list(request):
+    users = (
+        get_user_model()
+        .objects.select_related("profile__unit")
+        .prefetch_related("groups")
+        .order_by("first_name", "last_name", "username")
+    )
+    return render(request, "core/user_list.html", {"users": users})
+
+
+@login_required
+@permission_required("auth.add_user", raise_exception=True)
+def user_create(request):
+    form = UserCreateForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        user = form.save()
+        messages.success(request, f"Usuário {user.get_full_name()} cadastrado.")
+        return redirect("user_list")
+    return render(request, "core/user_form.html", {"form": form, "has_groups": Group.objects.exists()})
+
+
+@login_required
+@permission_required("auth.change_user", raise_exception=True)
+def user_edit(request, user_id):
+    user = get_object_or_404(get_user_model(), pk=user_id)
+    form = UserCreateForm(request.POST or None, user=user)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, f"Usuário {user.get_full_name() or user.username} atualizado.")
+        return redirect("user_list")
+    return render(request, "core/user_form.html", {"form": form, "edited_user": user, "has_groups": Group.objects.exists()})
+
+
+@login_required
+@permission_required("auth.delete_user", raise_exception=True)
+def user_delete(request, user_id):
+    user = get_object_or_404(get_user_model(), pk=user_id)
+    if user.pk == request.user.pk:
+        messages.error(request, "Você não pode excluir o próprio usuário.")
+        return redirect("user_list")
+    if request.method == "POST":
+        name = user.get_full_name() or user.username
+        try:
+            user.delete()
+        except ProtectedError:
+            messages.error(
+                request,
+                f"{name} possui atividades, riscos ou registros vinculados e não pode ser excluído. Desative o usuário na edição.",
+            )
+        else:
+            messages.success(request, f"Usuário {name} excluído.")
+        return redirect("user_list")
+    return render(request, "core/user_confirm_delete.html", {"edited_user": user})
+
+
+@login_required
+@permission_required("auth.view_group", raise_exception=True)
+def group_list(request):
+    groups = Group.objects.annotate(user_total=Count("user", distinct=True), permission_total=Count("permissions", distinct=True)).order_by("name")
+    return render(request, "core/group_list.html", {"groups": groups})
+
+
+def _group_form(request, group=None):
+    modules = permission_modules()
+    allowed = {permission["id"] for module in modules for entity in module["entities"] for permission in entity["permissions"]}
+    selected = set(group.permissions.values_list("id", flat=True)) & allowed if group else set()
+    form = GroupForm(request.POST or None, group=group)
+    if request.method == "POST":
+        selected = {int(value) for value in request.POST.getlist("permissions") if value.isdigit()} & allowed
+        if form.is_valid():
+            if group is None:
+                group = Group.objects.create(name=form.cleaned_data["name"])
+                action = "cadastrado"
+            else:
+                group.name = form.cleaned_data["name"]
+                group.save()
+                action = "atualizado"
+            group.permissions.set(selected)
+            messages.success(request, f"Grupo {group.name} {action} com {len(selected)} permiss{'ão' if len(selected) == 1 else 'ões'}.")
+            return redirect("group_list")
+    return render(request, "core/group_form.html", {"form": form, "modules": modules, "selected": selected, "group": group})
+
+
+@login_required
+@permission_required("auth.add_group", raise_exception=True)
+def group_create(request):
+    return _group_form(request)
+
+
+@login_required
+@permission_required("auth.change_group", raise_exception=True)
+def group_edit(request, group_id):
+    return _group_form(request, get_object_or_404(Group, pk=group_id))
+
+
+@login_required
+@permission_required("auth.delete_group", raise_exception=True)
+def group_delete(request, group_id):
+    group = get_object_or_404(Group.objects.annotate(user_total=Count("user")), pk=group_id)
+    if request.method == "POST":
+        name = group.name
+        group.delete()
+        messages.success(request, f"Grupo {name} excluído.")
+        return redirect("group_list")
+    return render(request, "core/group_confirm_delete.html", {"group": group})
 
 
 def _get_activity_for_action(action_id, activity_id):
