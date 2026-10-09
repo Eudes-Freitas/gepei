@@ -1,21 +1,21 @@
 {% extends "base.html" %}
-{% block title %}Grupos | GEPEI{% endblock %}
+{% block title %}Perfis | GEPEI{% endblock %}
 {% block content %}
   <a class="back-link" href="{% url 'dashboard' %}">← Voltar</a>
   <section class="page-heading dashboard-heading">
     <div>
       <p class="eyebrow">Acesso ao sistema</p>
-      <h1>Grupos</h1>
-      <p>Cada grupo reúne as permissões que seus usuários têm em cada módulo do sistema.</p>
+      <h1>Perfis</h1>
+      <p>Cada perfil reúne as permissões que seus usuários têm em cada módulo do sistema.</p>
     </div>
-    {% if perms.auth.add_group %}<a class="button button-primary" href="{% url 'group_create' %}">Cadastrar grupo</a>{% endif %}
+    {% if perms.auth.add_group %}<a class="button button-primary" href="{% url 'group_create' %}">Cadastrar perfil</a>{% endif %}
   </section>
 
   <section class="panel">
-    <div class="panel-heading"><div><p class="eyebrow">Cadastro</p><h2>Grupos cadastrados</h2></div><span class="chip chip-neutral">{{ groups|length }} grupo{{ groups|length|pluralize:"s" }}</span></div>
+    <div class="panel-heading"><div><p class="eyebrow">Cadastro</p><h2>Perfis cadastrados</h2></div><span class="chip chip-neutral">{{ groups|length }} perfil{{ groups|length|pluralize:"s" }}</span></div>
     {% if groups %}
       <div class="responsive-table"><table>
-        <thead><tr><th>Grupo</th><th>Usuários</th><th>Permissões</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Perfil</th><th>Usuários</th><th>Permissões</th><th>Ações</th></tr></thead>
         <tbody>
           {% for group in groups %}
             <tr>
@@ -31,7 +31,7 @@
         </tbody>
       </table></div>
     {% else %}
-      <div class="empty-state large-empty"><strong>Nenhum grupo cadastrado.</strong><span>Use “Cadastrar grupo” para definir as permissões do primeiro grupo.</span></div>
+      <div class="empty-state large-empty"><strong>Nenhum perfil cadastrado.</strong><span>Use “Cadastrar perfil” para definir as permissões do primeiro perfil.</span></div>
     {% endif %}
   </section>
 {% endblock %}

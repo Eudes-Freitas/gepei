@@ -6,7 +6,7 @@
     <div>
       <p class="eyebrow">Acesso ao sistema</p>
       <h1>Usuários</h1>
-      <p>Consulte os usuários cadastrados, o grupo que define suas permissões e o setor em que atuam.</p>
+      <p>Consulte os usuários cadastrados, o perfil que define suas permissões e o setor em que atuam.</p>
     </div>
     {% if perms.auth.add_user %}<a class="button button-primary" href="{% url 'user_create' %}">Cadastrar usuário</a>{% endif %}
   </section>
@@ -15,13 +15,13 @@
     <div class="panel-heading"><div><p class="eyebrow">Cadastro</p><h2>Usuários cadastrados</h2></div><span class="chip chip-neutral">{{ users|length }} usuário{{ users|length|pluralize:"s" }}</span></div>
     {% if users %}
       <div class="responsive-table"><table>
-        <thead><tr><th>Nome</th><th>E-mail</th><th>Grupo</th><th>Setor</th><th>Situação</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Setor</th><th>Situação</th><th>Ações</th></tr></thead>
         <tbody>
           {% for person in users %}
             <tr>
               <td>{{ person.get_full_name|default:person.username }}</td>
               <td>{{ person.email|default:person.username }}</td>
-              <td>{% for group in person.groups.all %}{{ group.name }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="muted-text">Sem grupo</span>{% endfor %}</td>
+              <td>{% for group in person.groups.all %}{{ group.name }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="muted-text">Sem perfil</span>{% endfor %}</td>
               <td>{% if person.profile.unit %}{{ person.profile.unit.acronym|default:person.profile.unit.name }}{% else %}<span class="muted-text">Sem setor</span>{% endif %}</td>
               <td><span class="chip {% if person.is_active %}chip-concluida{% else %}chip-nao_iniciada{% endif %}">{% if person.is_active %}Ativo{% else %}Inativo{% endif %}</span></td>
               <td><div class="row-actions">

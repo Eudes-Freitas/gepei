@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}GEPEI{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'css/gepei.css' %}?v=20261006-3">
+  <link rel="stylesheet" href="{% static 'css/gepei.css' %}?v=20261009-6">
 </head>
 <body>
   <header class="topbar">
@@ -33,7 +33,7 @@
           <summary {% if '/usuarios/' in request.path %}aria-current="page"{% endif %}>Usuários</summary>
           <div class="plans-dropdown">
             {% if perms.auth.view_user %}<a href="{% url 'user_list' %}" {% if '/usuarios/' in request.path and '/usuarios/grupos/' not in request.path %}aria-current="page"{% endif %}>Usuários</a>{% endif %}
-            {% if perms.auth.view_group %}<a href="{% url 'group_list' %}" {% if '/usuarios/grupos/' in request.path %}aria-current="page"{% endif %}>Grupos</a>{% endif %}
+            {% if perms.auth.view_group %}<a href="{% url 'group_list' %}" {% if '/usuarios/grupos/' in request.path %}aria-current="page"{% endif %}>Perfis</a>{% endif %}
           </div>
         </details>
         {% endif %}
@@ -41,6 +41,10 @@
           {% csrf_token %}
           <button type="submit">Sair</button>
         </form>
+        <a class="nav-user{% if request.path == '/minha-conta/' %} nav-active{% endif %}" href="{% url 'profile_edit' %}" title="Minha conta">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
+          <span>{{ user.first_name|default:user.username }}</span>
+        </a>
       </nav>
     {% endif %}
   </header>

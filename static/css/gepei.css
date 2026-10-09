@@ -88,3 +88,30 @@ td .financial-summary,td .financial-summary > div { justify-items:center; justif
 .weight-confirm-dialog::backdrop { background:rgba(7,38,79,.35); }
 .weight-confirm-dialog h2 { font-size:1.15rem; margin:.2rem 0 .6rem; }
 .weight-confirm-actions { display:flex; flex-wrap:wrap; gap:.6rem; justify-content:flex-end; margin-top:1rem; }
+
+.nav-user { align-items:center; display:inline-flex; gap:.4rem; margin-left:.5rem; }
+.nav-user span { max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.col-center { text-align:center; }
+.risk-map-table th,.risk-map-table td { text-align:center; vertical-align:middle; }
+.risk-map-table th:first-child,.risk-map-table td:first-child { text-align:left; }
+.risk-map-table .risk-level { display:inline-block; white-space:nowrap; }
+.risk-map-table .row-actions { align-items:center; justify-content:center; }
+.indicator-chart { display:block; height:auto; max-width:100%; width:100%; }
+.indicator-chart .chart-grid { stroke:var(--border); stroke-width:1; }
+.indicator-chart .chart-axis { fill:var(--muted); font-size:11px; }
+.indicator-chart .chart-value { fill:var(--ink); font-size:11px; font-weight:700; }
+.indicator-chart .chart-result { fill:none; stroke:var(--accent); stroke-linejoin:round; stroke-width:2.5; }
+.indicator-chart .chart-expected { fill:none; stroke:var(--muted); stroke-dasharray:6 4; stroke-width:2; }
+.indicator-chart .chart-dot { fill:var(--accent); stroke:#fff; stroke-width:2; }
+.indicator-chart .chart-expected-dot { fill:var(--muted); }
+.chart-legend { color:var(--muted); display:flex; font-size:.82rem; gap:1.2rem; justify-content:center; margin:.4rem 0 0; }
+.chart-legend span::before { border-radius:2px; content:""; display:inline-block; height:3px; margin-right:.4rem; vertical-align:middle; width:18px; }
+.chart-legend .legend-result::before { background:var(--accent); }
+.chart-legend .legend-expected::before { background:var(--muted); }
+.indicator-chart .chart-baseline-dot { fill:#fff; stroke:var(--accent); stroke-width:3; }
+.chart-legend .legend-baseline::before { background:#fff; border:2px solid var(--accent); box-sizing:border-box; height:10px; width:10px; border-radius:50%; }
+.indicator-detail-grid { grid-template-columns:minmax(0,1fr); }
+.cell-link { color:inherit; display:block; text-decoration:none; }
+.cell-link + .cell-link { margin-top:.6rem; }
+.cell-link:hover strong,.cell-link:focus-visible strong { color:var(--accent); text-decoration:underline; }
+.cell-link:hover span,.cell-link:focus-visible span { text-decoration:underline; }

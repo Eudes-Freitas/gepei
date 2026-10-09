@@ -1,15 +1,17 @@
 import unicodedata
+from datetime import datetime
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from difflib import SequenceMatcher
 
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, update_session_auth_hash
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.models import Group
 from django.contrib import messages
+from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Avg, Count, F, Max, ProtectedError, Q, Sum
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -21,7 +23,9 @@ from .forms import (
     ActivityForm,
     ActivityRiskForm,
     GroupForm,
+    IndicatorDefinitionForm,
     IndicatorMeasurementForm,
+    ProfileForm,
     ReportCycleForm,
     ReportValidationForm,
     RiskAcceptanceForm,
@@ -35,7 +39,13 @@ from .forms import (
     SectorReportForm,
     UserCreateForm,
 )
-from .permissions import permission_modules
+from .permissions import (
+    permission_modules,
+    scope_actions,
+    scope_by_unit,
+    scope_units,
+    user_unit_ids,
+)
 from .models import (
     ActionPlan,
     Activity,
@@ -69,6 +79,46 @@ def _decimal_from_measurement(value):
         return Decimal(text)
     except InvalidOperation:
         return None
+
+
+def _final_target_value(indicator):
+    for target in indicator.targets.all():
+        value = _decimal_from_measurement(target.target_value)
+        if value is not None:
+            return value
+    return None
+
+
+def _plan_end_date(indicator):
+    ends = [artifact.plan.end_date for artifact in indicator.artifacts.all() if artifact.plan_id]
+    return max(ends) if ends else None
+
+
+def _period_target(indicator, baseline_value, baseline_date, period_end):
+    """Meta do período: evolução linear do valor basal (na data do basal) até a meta final no fim do plano."""
+    final = _final_target_value(indicator)
+    plan_end = _plan_end_date(indicator)
+    basal = _decimal_from_measurement(baseline_value)
+    if final is None or plan_end is None or basal is None or not baseline_date or not period_end:
+        return None
+    total_days = (plan_end - baseline_date).days
+    if total_days <= 0:
+        return None
+    elapsed = min(max((period_end - baseline_date).days, 0), total_days)
+    expected = basal + (final - basal) * Decimal(elapsed) / Decimal(total_days)
+    return expected.quantize(Decimal("0.01"))
+
+
+def _final_progress(indicator, measurement):
+    """Percentual do caminho já percorrido do valor basal até a meta final do plano."""
+    if measurement is None:
+        return None
+    final = _final_target_value(indicator)
+    basal = _decimal_from_measurement(measurement.baseline_value)
+    measured = _decimal_from_measurement(measurement.measured_value)
+    if final is None or basal is None or measured is None or final == basal:
+        return None
+    return round(float((measured - basal) / (final - basal) * 100), 1)
 
 
 def _indicator_signal(indicator):
@@ -111,8 +161,10 @@ def _indicator_signal(indicator):
 @login_required
 def dashboard(request):
     plans = Plan.objects.filter(active=True).order_by("acronym")
-    units = OrganizationalUnit.objects.select_related("organization").order_by("name")
-    actions = StrategicAction.objects.select_related("artifact", "artifact__plan", "coordinating_unit")
+    units = scope_units(OrganizationalUnit.objects.select_related("organization").order_by("name"), request.user)
+    actions = scope_actions(
+        StrategicAction.objects.select_related("artifact", "artifact__plan", "coordinating_unit"), request.user
+    )
 
     selected_plan = request.GET.get("plan", "")
     selected_unit = request.GET.get("unit", "")
@@ -161,7 +213,7 @@ def dashboard(request):
     objective_query = PlanArtifact.objects.filter(artifact_type=PlanArtifact.ArtifactType.OBJECTIVE)
     if selected_plan.isdigit():
         objective_query = objective_query.filter(plan_id=selected_plan)
-    if unit_filter:
+    if unit_filter or user_unit_ids(request.user) is not None:
         objective_query = objective_query.filter(
             Q(actions__in=actions)
             | Q(planartifact__actions__in=actions)
@@ -220,7 +272,7 @@ def pei_overview(request):
         .order_by("id")
     )
     actions = list(
-        StrategicAction.objects.filter(artifact__plan=plan)
+        scope_actions(StrategicAction.objects.filter(artifact__plan=plan), request.user)
         .select_related("artifact", "coordinating_unit")
         .prefetch_related("participating_units")
         .order_by("artifact__id", "code")
@@ -293,7 +345,7 @@ def pei_overview(request):
 @login_required
 def indicator_overview(request):
     plans = Plan.objects.filter(active=True).order_by("start_date", "acronym")
-    units = OrganizationalUnit.objects.order_by("name")
+    units = scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
     selected_plan = request.GET.get("plan", "")
     selected_unit = request.GET.get("unit", "")
     selected_objective = request.GET.get("objective", "")
@@ -308,9 +360,9 @@ def indicator_overview(request):
             artifact_type=PlanArtifact.ArtifactType.OBJECTIVE,
         ).order_by("code", "title")
         indicators = (
-            Indicator.objects.filter(artifacts__plan=plan)
+            scope_by_unit(Indicator.objects.filter(artifacts__plan=plan), request.user, "responsible_unit_id", include_unassigned=True)
             .select_related("responsible_unit")
-            .prefetch_related("artifacts", "artifacts__plan", "targets", "measurements")
+            .prefetch_related("artifacts", "artifacts__plan", "targets", "targets__artifact", "measurements")
             .distinct()
             .order_by("code", "name")
         )
@@ -365,6 +417,9 @@ def target_overview(request):
         ).order_by("code", "title")
         targets = (
             StrategicTarget.objects.filter(artifact__plan=plan)
+            .filter(
+                Q(action__isnull=True) | Q(action__in=scope_actions(StrategicAction.objects.all(), request.user))
+            )
             .select_related("artifact", "action")
             .prefetch_related("indicators")
             .order_by("code", "description")
@@ -386,10 +441,72 @@ def target_overview(request):
     )
 
 
+def _measurement_chart(indicator):
+    """Geometria (SVG) do gráfico de linha.
+
+    Parte do valor basal (na data do basal) e liga cada resultado aferido ao fim do seu
+    período de aferição, em ordem cronológica; a meta de cada período vai em linha à parte.
+    """
+    entries = []
+    baseline = None
+    for measurement in indicator.measurements.all():
+        basal = _decimal_from_measurement(measurement.baseline_value)
+        if basal is not None and measurement.baseline_date and (
+            baseline is None or measurement.baseline_date < baseline[0]
+        ):
+            baseline = (measurement.baseline_date, float(basal), measurement.baseline_value)
+        value = _decimal_from_measurement(measurement.measured_value)
+        if value is None:
+            continue
+        when = measurement.period_end
+        if when is None:
+            try:
+                when = datetime.strptime(measurement.reference_period.strip()[-10:], "%d/%m/%Y").date()
+            except ValueError:
+                when = timezone.localtime(measurement.recorded_at).date()
+        entries.append(
+            {
+                "when": when,
+                "order": measurement.recorded_at,
+                "value": float(value),
+                "text": measurement.measured_value,
+                "expected": measurement.expected_value,
+                "label": when.strftime("%d/%m/%Y"),
+                "tip": f"{measurement.reference_period}: {measurement.measured_value}",
+                "kind": "measured",
+            }
+        )
+    if baseline:
+        entries.append(
+            {
+                "when": baseline[0],
+                "order": None,
+                "value": baseline[1],
+                "text": baseline[2],
+                "expected": None,
+                "label": baseline[0].strftime("%d/%m/%Y"),
+                "tip": f"Valor basal em {baseline[0]:%d/%m/%Y}: {baseline[2]}",
+                "kind": "baseline",
+            }
+        )
+    if not any(item["kind"] == "measured" for item in entries):
+        return None
+    entries.sort(key=lambda item: (item["when"], item["kind"] != "baseline", str(item["order"])))
+
+    return {
+        "categories": [item["label"] for item in entries],
+        "result": [
+            {"y": item["value"], "baseline": item["kind"] == "baseline", "tip": item["tip"]} for item in entries
+        ],
+        "expected": [float(item["expected"]) if item["expected"] is not None else None for item in entries],
+        "has_baseline": baseline is not None,
+        "has_expected": any(item["expected"] is not None for item in entries),
+    }
+
 @login_required
 def indicator_detail(request, indicator_id):
     indicator = get_object_or_404(
-        Indicator.objects.select_related("responsible_unit").prefetch_related(
+        scope_by_unit(Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True).select_related("responsible_unit").prefetch_related(
             "artifacts",
             "artifacts__plan",
             "targets",
@@ -398,22 +515,66 @@ def indicator_detail(request, indicator_id):
         ),
         pk=indicator_id,
     )
-    if request.method == "POST":
-        form = IndicatorMeasurementForm(request.POST, request.FILES)
+    can_edit_definition = request.user.has_perm("core.change_indicator")
+    can_edit_measurement = request.user.has_perm("core.change_indicatormeasurement")
+    editing_measurement = None
+    definition_form = IndicatorDefinitionForm(instance=indicator) if can_edit_definition else None
+    form = None
+    if request.method == "POST" and request.POST.get("operation") == "edit_definition":
+        if not can_edit_definition:
+            raise PermissionDenied
+        definition_form = IndicatorDefinitionForm(request.POST, instance=indicator)
+        if definition_form.is_valid():
+            definition_form.save()
+            messages.success(request, "Ficha do indicador atualizada.")
+            return redirect("indicator_detail", indicator_id=indicator.id)
+    elif request.method == "POST":
+        editing = None
+        if request.POST.get("measurement_id", "").isdigit():
+            if not can_edit_measurement:
+                raise PermissionDenied
+            editing = get_object_or_404(indicator.measurements.all(), pk=request.POST["measurement_id"])
+        form = IndicatorMeasurementForm(request.POST, request.FILES, instance=editing)
         if form.is_valid():
             measurement = form.save(commit=False)
             measurement.indicator = indicator
-            measurement.recorded_by = request.user
+            if editing is None:
+                measurement.recorded_by = request.user
+            profile = getattr(measurement.measured_by, "profile", None)
+            measurement.measured_unit = profile.unit if profile else None
+            measurement.expected_value = _period_target(
+                indicator, measurement.baseline_value, measurement.baseline_date, measurement.period_end
+            )
             measurement.save()
-            messages.success(request, "Aferição registrada e semáforo atualizado.")
+            if editing is None:
+                messages.success(request, "Aferição registrada e semáforo atualizado.")
+            else:
+                messages.success(request, "Aferição atualizada e semáforo recalculado.")
             return redirect("indicator_detail", indicator_id=indicator.id)
-    else:
-        form = IndicatorMeasurementForm()
+        if editing is not None:
+            editing_measurement = editing
+    elif request.GET.get("editar", "").isdigit() and can_edit_measurement:
+        editing_measurement = get_object_or_404(indicator.measurements.all(), pk=request.GET["editar"])
+        form = IndicatorMeasurementForm(instance=editing_measurement)
+    if form is None:
+        form = IndicatorMeasurementForm(
+            initial={"baseline_value": indicator.baseline, "measured_by": request.user.pk}
+        )
     signal = _indicator_signal(indicator)
     return render(
         request,
         "core/indicator_detail.html",
-        {"indicator": indicator, "signal": signal, "measurement_form": form},
+        {
+            "indicator": indicator,
+            "signal": signal,
+            "measurement_form": form,
+            "editing_measurement": editing_measurement,
+            "can_edit_measurement": can_edit_measurement,
+            "definition_form": definition_form,
+            "final_target": _final_target_value(indicator),
+            "final_progress": _final_progress(indicator, signal["measurement"]),
+            "chart": _measurement_chart(indicator),
+        },
     )
 
 
@@ -489,9 +650,14 @@ def report_cycle_overview(request):
     else:
         form = ReportCycleForm()
     cycles = ReportCycle.objects.select_related("plan", "created_by").prefetch_related("sector_reports", "participating_units")
+    visible_units = user_unit_ids(request.user)
+    if visible_units is not None:
+        cycles = cycles.filter(sector_reports__unit_id__in=visible_units).distinct()
     cycle_rows = []
     for cycle in cycles:
-        reports = list(cycle.sector_reports.all())
+        reports = [
+            item for item in cycle.sector_reports.all() if visible_units is None or item.unit_id in visible_units
+        ]
         cycle_rows.append(
             {
                 "cycle": cycle,
@@ -509,11 +675,15 @@ def report_cycle_detail(request, cycle_id):
         ReportCycle.objects.select_related("plan", "created_by").prefetch_related("sector_reports__unit", "sector_reports__validator"),
         pk=cycle_id,
     )
-    reports = list(cycle.sector_reports.all())
+    all_reports = list(cycle.sector_reports.all())
+    visible_units = user_unit_ids(request.user)
+    reports = [item for item in all_reports if visible_units is None or item.unit_id in visible_units]
+    if visible_units is not None and not reports:
+        raise Http404
     if request.method == "POST":
         operation = request.POST.get("operation")
         if operation == "consolidate":
-            if reports and all(item.status == SectorReport.Status.APPROVED for item in reports):
+            if all_reports and all(item.status == SectorReport.Status.APPROVED for item in all_reports):
                 cycle.status = ReportCycle.Status.CONSOLIDATING
                 cycle.save(update_fields=["status"])
                 cycle.sector_reports.update(status=SectorReport.Status.CONSOLIDATED)
@@ -542,7 +712,9 @@ def report_cycle_detail(request, cycle_id):
 @login_required
 def sector_report_detail(request, cycle_id, report_id):
     report = get_object_or_404(
-        SectorReport.objects.select_related("cycle", "cycle__plan", "unit", "prepared_by", "validator"),
+        scope_by_unit(SectorReport.objects.all(), request.user, "unit_id").select_related(
+            "cycle", "cycle__plan", "unit", "prepared_by", "validator"
+        ),
         pk=report_id,
         cycle_id=cycle_id,
     )
@@ -600,8 +772,10 @@ def sector_report_detail(request, cycle_id, report_id):
 @login_required
 def action_plan_list(request):
     plans = Plan.objects.filter(active=True).order_by("acronym")
-    units = OrganizationalUnit.objects.order_by("name")
-    actions = StrategicAction.objects.select_related("artifact", "artifact__plan", "coordinating_unit").annotate(
+    units = scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
+    actions = scope_actions(
+        StrategicAction.objects.select_related("artifact", "artifact__plan", "coordinating_unit"), request.user
+    ).annotate(
         activity_count=Count("action_plan__activities"),
         allocated_weight=Sum("action_plan__activities__weight"),
         activity_progress=Avg("action_plan__activities__progress"),
@@ -634,8 +808,8 @@ def action_plan_list(request):
 @login_required
 def risk_overview(request):
     plans = Plan.objects.filter(active=True).order_by("acronym")
-    units = OrganizationalUnit.objects.order_by("name")
-    risks = Risk.objects.select_related(
+    units = scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
+    risks = Risk.objects.filter(action__in=scope_actions(StrategicAction.objects.all(), request.user)).select_related(
         "action",
         "action__artifact",
         "action__artifact__plan",
@@ -710,7 +884,9 @@ def _rebalance_activity_weights(action_plan, new_weight):
 @login_required
 def action_plan_detail(request, action_id):
     action = get_object_or_404(
-        StrategicAction.objects.select_related("artifact", "artifact__plan", "coordinating_unit"),
+        scope_actions(
+            StrategicAction.objects.select_related("artifact", "artifact__plan", "coordinating_unit"), request.user
+        ),
         pk=action_id,
     )
     try:
@@ -849,6 +1025,17 @@ def user_edit(request, user_id):
 
 
 @login_required
+def profile_edit(request):
+    form = ProfileForm(request.POST or None, user=request.user)
+    if request.method == "POST" and form.is_valid():
+        user = form.save()
+        update_session_auth_hash(request, user)
+        messages.success(request, "Seus dados foram atualizados.")
+        return redirect("profile_edit")
+    return render(request, "core/profile_form.html", {"form": form})
+
+
+@login_required
 @permission_required("auth.delete_user", raise_exception=True)
 def user_delete(request, user_id):
     user = get_object_or_404(get_user_model(), pk=user_id)
@@ -893,7 +1080,7 @@ def _group_form(request, group=None):
                 group.save()
                 action = "atualizado"
             group.permissions.set(selected)
-            messages.success(request, f"Grupo {group.name} {action} com {len(selected)} permiss{'ão' if len(selected) == 1 else 'ões'}.")
+            messages.success(request, f"Perfil {group.name} {action} com {len(selected)} permiss{'ão' if len(selected) == 1 else 'ões'}.")
             return redirect("group_list")
     return render(request, "core/group_form.html", {"form": form, "modules": modules, "selected": selected, "group": group})
 
@@ -917,14 +1104,16 @@ def group_delete(request, group_id):
     if request.method == "POST":
         name = group.name
         group.delete()
-        messages.success(request, f"Grupo {name} excluído.")
+        messages.success(request, f"Perfil {name} excluído.")
         return redirect("group_list")
     return render(request, "core/group_confirm_delete.html", {"group": group})
 
 
-def _get_activity_for_action(action_id, activity_id):
+def _get_activity_for_action(user, action_id, activity_id):
     return get_object_or_404(
-        Activity.objects.select_related("action_plan", "action_plan__action"),
+        Activity.objects.filter(
+            action_plan__action__in=scope_actions(StrategicAction.objects.all(), user)
+        ).select_related("action_plan", "action_plan__action"),
         pk=activity_id,
         action_plan__action_id=action_id,
     )
@@ -932,7 +1121,7 @@ def _get_activity_for_action(action_id, activity_id):
 
 @login_required
 def activity_edit(request, action_id, activity_id):
-    activity = _get_activity_for_action(action_id, activity_id)
+    activity = _get_activity_for_action(request.user, action_id, activity_id)
     action = activity.action_plan.action
     if request.method == "POST":
         form = ActivityForm(request.POST, instance=activity, action_plan=activity.action_plan)
@@ -948,7 +1137,7 @@ def activity_edit(request, action_id, activity_id):
 
 @login_required
 def activity_follow_up(request, action_id, activity_id):
-    activity = _get_activity_for_action(action_id, activity_id)
+    activity = _get_activity_for_action(request.user, action_id, activity_id)
     action = activity.action_plan.action
     operation = request.POST.get("operation") if request.method == "POST" else ""
 
@@ -1025,7 +1214,9 @@ def activity_follow_up(request, action_id, activity_id):
 @login_required
 def risk_map(request, action_id):
     action = get_object_or_404(
-        StrategicAction.objects.select_related("artifact", "artifact__plan", "coordinating_unit"),
+        scope_actions(
+            StrategicAction.objects.select_related("artifact", "artifact__plan", "coordinating_unit"), request.user
+        ),
         pk=action_id,
     )
     action_plan = get_object_or_404(ActionPlan, action=action)
@@ -1073,9 +1264,11 @@ def risk_map(request, action_id):
     )
 
 
-def _get_risk_for_action(action_id, risk_id):
+def _get_risk_for_action(user, action_id, risk_id):
     return get_object_or_404(
-        Risk.objects.select_related("action", "activity", "owner"),
+        Risk.objects.filter(action__in=scope_actions(StrategicAction.objects.all(), user)).select_related(
+            "action", "activity", "owner"
+        ),
         pk=risk_id,
         action_id=action_id,
     )
@@ -1083,7 +1276,7 @@ def _get_risk_for_action(action_id, risk_id):
 
 @login_required
 def risk_detail(request, action_id, risk_id):
-    risk = _get_risk_for_action(action_id, risk_id)
+    risk = _get_risk_for_action(request.user, action_id, risk_id)
     action = risk.action
     action_plan = action.action_plan
     operation = request.POST.get("operation") if request.method == "POST" else ""
@@ -1218,7 +1411,7 @@ def risk_detail(request, action_id, risk_id):
 
 @login_required
 def activity_delete(request, action_id, activity_id):
-    activity = _get_activity_for_action(action_id, activity_id)
+    activity = _get_activity_for_action(request.user, action_id, activity_id)
     action = activity.action_plan.action
     if request.method == "POST":
         activity.delete()
@@ -1232,7 +1425,7 @@ def activity_delete(request, action_id, activity_id):
 def activity_move(request, action_id, activity_id, direction):
     if request.method != "POST" or direction not in {"acima", "abaixo"}:
         return redirect("action_plan_detail", action_id=action_id)
-    activity = _get_activity_for_action(action_id, activity_id)
+    activity = _get_activity_for_action(request.user, action_id, activity_id)
     action_plan = activity.action_plan
     activities = list(action_plan.activities.order_by("position", "start_date", "end_date", "id"))
     index = next(index for index, item in enumerate(activities) if item.pk == activity.pk)

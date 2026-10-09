@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}{% if group %}Editar grupo{% else %}Cadastrar grupo{% endif %} | GEPEI{% endblock %}
+{% block title %}{% if group %}Editar perfil{% else %}Cadastrar perfil{% endif %} | GEPEI{% endblock %}
 {% block content %}
   <a class="back-link" href="{% url 'group_list' %}">← Voltar</a>
   <section class="page-heading">
-    <p class="eyebrow">Grupos</p>
-    <h1>{% if group %}Editar grupo{% else %}Cadastrar grupo{% endif %}</h1>
-    <p class="form-hint">Defina o nome do grupo e marque o que seus integrantes podem fazer em cada módulo.</p>
+    <p class="eyebrow">Perfis</p>
+    <h1>{% if group %}Editar perfil{% else %}Cadastrar perfil{% endif %}</h1>
+    <p class="form-hint">Defina o nome do perfil e marque o que seus integrantes podem fazer em cada módulo.</p>
   </section>
 
   <form method="post" class="group-form">{% csrf_token %}
@@ -39,7 +39,7 @@
     {% endfor %}
     <p class="strategy-empty" data-no-results hidden>Nenhuma permissão encontrada para o filtro informado.</p>
 
-    <div class="form-buttons"><button class="button button-primary" type="submit">{% if group %}Salvar alterações{% else %}Cadastrar grupo{% endif %}</button><a class="button button-secondary" href="{% url 'group_list' %}">Cancelar</a></div>
+    <div class="form-buttons"><button class="button button-primary" type="submit">{% if group %}Salvar alterações{% else %}Cadastrar perfil{% endif %}</button><a class="button button-secondary" href="{% url 'group_list' %}">Cancelar</a></div>
   </form>
 {% endblock %}
 {% block extra_script %}

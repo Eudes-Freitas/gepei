@@ -8,7 +8,7 @@
   </section>
 
   <section class="risk-summary panel">
-    <div><span>Causa</span><strong>{{ risk.cause }}</strong></div><div><span>Possível momento</span><strong>{{ risk.occurrence_timing_summary }}{% if risk.trigger_description %} · {{ risk.trigger_description }}{% endif %}</strong></div><div><span>Classificação atual</span><strong>{{ risk.level_label }} · P{{ risk.probability }} × I{{ risk.impact }}</strong></div><div><span>Resposta atual</span><strong>{% with treatment=risk.treatments.first %}{% if treatment %}{{ treatment.get_decision_display }}{% elif risk.treatment %}{{ risk.treatment|title }}{% else %}A definir{% endif %}{% endwith %}</strong></div>
+    <div><span>Causa</span><strong>{{ risk.cause }}</strong></div><div><span>Possível momento</span><strong>{{ risk.occurrence_timing_summary }}{% if risk.trigger_description %}{% if risk.occurrence_timing_summary %} · {% endif %}{{ risk.trigger_description }}{% endif %}</strong></div><div><span>Classificação atual</span><strong>{{ risk.level_label }} · P{{ risk.probability }} × I{{ risk.impact }}</strong></div><div><span>Resposta atual</span><strong>{% with treatment=risk.treatments.first %}{% if treatment %}{{ treatment.get_decision_display }}{% elif risk.treatment %}{{ risk.treatment|title }}{% else %}A definir{% endif %}{% endwith %}</strong></div>
   </section>
 
   <nav class="risk-action-nav" aria-label="Atalhos para alterar o risco">

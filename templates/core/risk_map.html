@@ -13,7 +13,7 @@
           {% for risk in risks %}<tr>
             <td><a href="{% url 'risk_detail' action.id risk.id %}"><strong>{{ risk.title }}</strong></a><span>{{ risk.cause|truncatechars:80 }}</span></td>
             <td>{% if risk.activity %}Atividade: {{ risk.activity.title }}{% else %}Ação estratégica{% endif %}</td>
-            <td>{{ risk.occurrence_timing_summary }}</td>
+            <td>{{ risk.occurrence_timing_summary|default:risk.trigger_description|default:"—" }}</td>
             <td>{{ risk.owner.get_full_name|default:risk.owner.username }}</td>
             <td class="col-center">{{ risk.probability }}</td><td class="col-center">{{ risk.impact }}</td>
             <td class="col-center"><span class="risk-level {% if risk.level >= 20 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }} · {{ risk.level_label }}</span></td>

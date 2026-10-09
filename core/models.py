@@ -279,6 +279,10 @@ class Indicator(models.Model):
 class IndicatorMeasurement(models.Model):
     indicator = models.ForeignKey(Indicator, on_delete=models.CASCADE, related_name="measurements")
     reference_period = models.CharField(max_length=120)
+    baseline_value = models.CharField(max_length=120, blank=True)
+    baseline_date = models.DateField(null=True, blank=True)
+    period_start = models.DateField(null=True, blank=True)
+    period_end = models.DateField(null=True, blank=True)
     measured_value = models.CharField(max_length=120)
     expected_value = models.DecimalField(
         max_digits=14,
@@ -288,6 +292,20 @@ class IndicatorMeasurement(models.Model):
         help_text="Meta prevista especificamente para o período desta aferição.",
     )
     recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    measured_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="performed_measurements",
+    )
+    measured_unit = models.ForeignKey(
+        OrganizationalUnit,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="performed_measurements",
+    )
     source_reference = models.CharField(max_length=255, blank=True)
     evidence_attachment = models.FileField(upload_to="indicator_measurements/%Y/%m/", blank=True)
     note = models.TextField(blank=True)
@@ -295,6 +313,17 @@ class IndicatorMeasurement(models.Model):
 
     class Meta:
         ordering = ["-recorded_at"]
+
+    @property
+    def responsible_name(self):
+        """Quem realizou a aferição; nas aferições antigas, quem a registrou."""
+        user = self.measured_by or self.recorded_by
+        return user.get_full_name() or user.username
+
+    @property
+    def responsible_unit_label(self):
+        unit = self.measured_unit
+        return (unit.acronym or unit.name) if unit else ""
 
 
 class CriticalSuccessFactor(models.Model):
@@ -452,7 +481,7 @@ class Risk(models.Model):
         if self.occurrence_timing == self.OccurrenceTiming.DATE_OR_MILESTONE:
             if self.expected_occurrence_date:
                 return f"Data provável: {self.expected_occurrence_date:%d/%m/%Y}"
-            return "Associado a um marco ou condição"
+            return ""
         return "Momento indeterminado"
 
 

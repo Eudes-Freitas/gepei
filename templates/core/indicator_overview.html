@@ -50,9 +50,9 @@
         <tbody>
           {% for row in indicator_rows %}
             <tr>
-              <td class="indicator-name-cell"><strong>{{ row.indicator.code|default:"Indicador" }}</strong><span>{{ row.indicator.name }}</span><small>{% if row.indicator.indicator_type %}{{ row.indicator.get_indicator_type_display }} · {% endif %}{{ row.indicator.get_frequency_display }} · {{ row.indicator.get_direction_display }}</small></td>
-              <td class="indicator-links-cell">
-                {% for target in row.indicator.targets.all %}<span><strong>{{ target.code }}</strong> {{ target.description }}</span>{% empty %}<span class="muted-text">Meta não vinculada</span>{% endfor %}
+              <td class="indicator-name-cell"><a class="cell-link" href="{% url 'indicator_detail' row.indicator.id %}"><strong>{{ row.indicator.code|default:"Indicador" }}</strong><span>{{ row.indicator.name }}</span></a></td>
+              <td class="indicator-name-cell">
+                {% for target in row.indicator.targets.all %}<a class="cell-link" href="{% url 'target_overview' %}?plan={{ target.artifact.plan_id }}&amp;objective={{ target.artifact_id }}#meta-{{ target.id }}"><strong>{{ target.code|default:"Meta" }}</strong><span>{{ target.description }}</span></a>{% empty %}<span class="muted-text">Meta não vinculada</span>{% endfor %}
               </td>
               <td>{{ row.indicator.responsible_unit.acronym|default:row.indicator.responsible_unit.name|default:"A definir" }}</td>
               <td>{% if row.signal.measurement %}<strong>{{ row.signal.measurement.measured_value }}</strong><span>{{ row.signal.measurement.reference_period }}</span>{% if row.signal.measurement.expected_value != None %}<small>Meta do período: {{ row.signal.measurement.expected_value|floatformat:"-1" }}</small>{% endif %}{% else %}<span class="muted-text">Ainda não informada</span>{% endif %}</td>

@@ -109,7 +109,7 @@ class UserAndGroupManagementTests(TestCase):
         response = self.client.get("/")
         self.assertContains(response, 'href="/usuarios/"', html=False)
         self.assertContains(response, 'href="/usuarios/grupos/"', html=False)
-        self.assertNotContains(response, "Cadastrar grupo")
+        self.assertNotContains(response, "Cadastrar perfil")
 
     def test_user_list_shows_registered_users_with_group_and_unit(self):
         member = User.objects.create_user(username="ana@exemplo.gov.br", email="ana@exemplo.gov.br", first_name="Ana", last_name="Lima")
@@ -129,7 +129,7 @@ class UserAndGroupManagementTests(TestCase):
         self.client.login(username="admin", password="senha-segura")
         response = self.client.post(
             f"/usuarios/{member.id}/editar/",
-            {"name": "Ana Lima", "email": "ana.lima@exemplo.gov.br", "password": "", "group": other_group.id, "unit_name": "Setor Novo", "is_active": ""},
+            {"name": "Ana Lima", "email": "ana.lima@exemplo.gov.br", "password": "", "group": other_group.id, "unit_name": "Setor Novo", "is_active": "0"},
         )
         self.assertEqual(response.status_code, 302)
         member.refresh_from_db()
@@ -164,10 +164,10 @@ class UserAndGroupManagementTests(TestCase):
         self.client.login(username="admin", password="senha-segura")
         response = self.client.get("/usuarios/grupos/")
         self.assertContains(response, "Gestores")
-        self.assertContains(response, "Cadastrar grupo")
+        self.assertContains(response, "Cadastrar perfil")
 
         response = self.client.get(f"/usuarios/grupos/{self.group.id}/editar/")
-        self.assertContains(response, "Editar grupo")
+        self.assertContains(response, "Editar perfil")
         self.assertContains(response, f'value="{view_perm.id}" checked', html=False)
 
         new_perm = Permission.objects.get(codename="add_risk")
@@ -234,6 +234,41 @@ class UserAndGroupManagementTests(TestCase):
         self.assertEqual(list(group.permissions.all()), [chosen])
 
 
+class LoginAndProfileTests(TestCase):
+    def setUp(self):
+        self.person = User.objects.create_user(
+            username="ana@exemplo.gov.br", email="ana@exemplo.gov.br", password="senha-segura", first_name="Ana", last_name="Lima"
+        )
+
+    def test_login_accepts_email_or_full_name(self):
+        for typed in ["ana@exemplo.gov.br", "ANA@exemplo.gov.br", "Ana Lima", "ana lima"]:
+            self.client.logout()
+            response = self.client.post("/login/", {"username": typed, "password": "senha-segura"})
+            self.assertEqual(response.status_code, 302, typed)
+        self.client.logout()
+        response = self.client.post("/login/", {"username": "Ana Lima", "password": "errada"})
+        self.assertEqual(response.status_code, 200)
+
+    def test_login_by_name_is_refused_when_name_is_ambiguous(self):
+        User.objects.create_user(username="ana2@exemplo.gov.br", password="senha-segura", first_name="Ana", last_name="Lima")
+        response = self.client.post("/login/", {"username": "Ana Lima", "password": "senha-segura"})
+        self.assertEqual(response.status_code, 200)
+
+    def test_user_edits_only_own_name_email_and_password(self):
+        self.client.login(username="ana@exemplo.gov.br", password="senha-segura")
+        response = self.client.get("/minha-conta/")
+        self.assertEqual(list(response.context["form"].fields), ["name", "email", "password"])
+        response = self.client.post(
+            "/minha-conta/", {"name": "Ana Maria Lima", "email": "ana.maria@exemplo.gov.br", "password": "nova-senha-123"}
+        )
+        self.assertRedirects(response, "/minha-conta/")
+        self.person.refresh_from_db()
+        self.assertEqual(self.person.get_full_name(), "Ana Maria Lima")
+        self.assertEqual(self.person.username, "ana.maria@exemplo.gov.br")
+        self.assertTrue(self.person.check_password("nova-senha-123"))
+        self.assertEqual(self.client.get("/").status_code, 200)  # sessão preservada após trocar a senha
+
+
 class DashboardAndRiskTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="copin", password="senha-segura")
@@ -266,6 +301,26 @@ class DashboardAndRiskTests(TestCase):
         )
         self.unit = unit
         self.artifact = artifact
+        UserProfile.objects.create(user=self.user, unit=unit)
+
+    def test_non_administrator_only_sees_own_sector(self):
+        other_unit = OrganizationalUnit.objects.create(
+            organization=self.unit.organization, name="Outro Setor", acronym="OUTRO", unit_type=OrganizationalUnit.UnitType.SECTOR
+        )
+        other_action = StrategicAction.objects.create(
+            artifact=self.artifact, coordinating_unit=other_unit, code="AE 09.09", title="Ação de outro setor"
+        )
+        self.client.login(username="copin", password="senha-segura")
+        response = self.client.get("/planos-de-acao/")
+        self.assertContains(response, "AE 01.01")
+        self.assertNotContains(response, "AE 09.09")
+        self.assertEqual(self.client.get(f"/planos-de-acao/{other_action.id}/").status_code, 404)
+
+        admin_group = Group.objects.create(name="Administrador")
+        self.user.groups.add(admin_group)
+        response = self.client.get("/planos-de-acao/")
+        self.assertContains(response, "AE 09.09")
+        self.assertEqual(self.client.get(f"/planos-de-acao/{other_action.id}/").status_code, 200)
 
     def test_dashboard_requires_login_and_loads_for_authorized_user(self):
         response = self.client.get("/")
@@ -338,9 +393,13 @@ class DashboardAndRiskTests(TestCase):
         response = self.client.post(
             f"/indicadores/{indicator.id}/",
             {
-                "reference_period": "[DEMONSTRAÇÃO] Exercício 2026",
+                "measured_by": self.user.id,
+                "baseline_value": "40",
+                "baseline_date": "2025-12-31",
+                "period_start": "2026-01-01",
+                "period_end": "2026-06-30",
                 "measured_value": "63",
-                "expected_value": "70",
+                "expected_value": "999",
                 "source_reference": "[DEMONSTRAÇÃO] Planilha fictícia",
                 "note": "[DEMONSTRAÇÃO] Valor criado para testar o semáforo.",
             },
@@ -348,17 +407,100 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(response.status_code, 302)
         measurement = IndicatorMeasurement.objects.get(indicator=indicator)
         self.assertEqual(measurement.recorded_by, self.user)
-        self.assertEqual(measurement.expected_value, 70)
+        # 40 -> 70 entre 31/12/2025 e 31/12/2034 (3287 dias); 181 dias decorridos: 40 + 30 * 181 / 3287.
+        self.assertEqual(measurement.expected_value, Decimal("41.65"))
+        self.assertEqual(measurement.reference_period, "01/01/2026 a 30/06/2026")
+        self.assertEqual(str(measurement.baseline_date), "2025-12-31")
+        self.assertEqual(measurement.measured_by, self.user)
+        self.assertEqual(measurement.measured_unit, self.unit)
+        self.assertEqual(measurement.baseline_value, "40")
 
         response = self.client.get(f"/indicadores/{indicator.id}/")
-        self.assertContains(response, "Atenção")
-        self.assertContains(response, "90%")
+        self.assertContains(response, "Setor responsável")
+        self.assertContains(response, "indicator-chart-data", html=False)
+        self.assertContains(response, "vendor/highcharts.js", html=False)
+        self.assertContains(response, "data-view-measurement", html=False)
+        self.assertContains(response, 'type="date"', html=False)
+        self.assertContains(response, "Conforme")
         self.assertContains(response, "[DEMONSTRAÇÃO] Planilha fictícia")
         self.assertContains(response, "Anexar evidência da aferição")
         self.assertContains(response, 'enctype="multipart/form-data"', html=False)
 
+    def test_indicator_definition_can_be_edited_by_authorized_user(self):
+        indicator = Indicator.objects.create(code="IE 02.1", name="Taxa de crescimento", responsible_unit=self.unit)
+        indicator.artifacts.add(self.artifact)
+        self.client.login(username="copin", password="senha-segura")
+        response = self.client.get(f"/indicadores/{indicator.id}/")
+        self.assertNotContains(response, "data-open-definition-form>Editar")
+        response = self.client.post(
+            f"/indicadores/{indicator.id}/", {"operation": "edit_definition", "formula": "x", "direction": "MAIOR_MELHOR"}
+        )
+        self.assertEqual(response.status_code, 403)
+
+        self.user.user_permissions.add(Permission.objects.get(codename="change_indicator"))
+        response = self.client.get(f"/indicadores/{indicator.id}/")
+        self.assertContains(response, "data-open-definition-form>Editar")
+        response = self.client.post(
+            f"/indicadores/{indicator.id}/",
+            {
+                "operation": "edit_definition",
+                "indicator_type": "RESULTADO",
+                "formula": "(A / B) x 100",
+                "unit_of_measure": "%",
+                "data_source": "Folha de pagamento",
+                "baseline": "37%",
+                "direction": "MAIOR_MELHOR",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        indicator.refresh_from_db()
+        self.assertEqual((indicator.formula, indicator.unit_of_measure, indicator.baseline), ("(A / B) x 100", "%", "37%"))
+
+    def test_indicator_page_renders_legacy_measurement_without_responsible(self):
+        indicator = Indicator.objects.create(code="IE 03.1", name="Indicador antigo", responsible_unit=self.unit)
+        indicator.artifacts.add(self.artifact)
+        IndicatorMeasurement.objects.create(
+            indicator=indicator, reference_period="2025", measured_value="5", recorded_by=self.user
+        )
+        self.client.login(username="copin", password="senha-segura")
+        response = self.client.get(f"/indicadores/{indicator.id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "copin")
+        self.assertContains(response, "Setor responsável")
+
+    def test_measurement_can_be_edited_by_authorized_user(self):
+        indicator = Indicator.objects.create(code="IE 04.1", name="Indicador editável", responsible_unit=self.unit)
+        indicator.artifacts.add(self.artifact)
+        measurement = IndicatorMeasurement.objects.create(
+            indicator=indicator, reference_period="2026", measured_value="5", recorded_by=self.user
+        )
+        self.client.login(username="copin", password="senha-segura")
+        self.assertNotContains(self.client.get(f"/indicadores/{indicator.id}/?editar={measurement.id}"), 'name="measurement_id"')
+
+        self.user.user_permissions.add(Permission.objects.get(codename="change_indicatormeasurement"))
+        response = self.client.get(f"/indicadores/{indicator.id}/?editar={measurement.id}")
+        self.assertContains(response, f'name="measurement_id" value="{measurement.id}"', html=False)
+        response = self.client.post(
+            f"/indicadores/{indicator.id}/",
+            {
+                "measurement_id": measurement.id,
+                "measured_by": self.user.id,
+                "baseline_value": "2",
+                "baseline_date": "2025-12-31",
+                "period_start": "2026-01-01",
+                "period_end": "2026-12-31",
+                "measured_value": "9",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(IndicatorMeasurement.objects.filter(indicator=indicator).count(), 1)
+        measurement.refresh_from_db()
+        self.assertEqual((measurement.measured_value, measurement.baseline_value), ("9", "2"))
+        self.assertEqual(measurement.reference_period, "01/01/2026 a 31/12/2026")
+
     def test_report_cycle_submission_validation_and_closure(self):
         validator = User.objects.create_user(username="validador", password="senha-segura")
+        UserProfile.objects.create(user=validator, unit=self.unit)
         self.client.login(username="copin", password="senha-segura")
         response = self.client.post(
             "/relatorios/",

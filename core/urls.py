@@ -21,6 +21,7 @@ urlpatterns = [
     path("planos-de-acao/<int:action_id>/atividades/<int:activity_id>/acompanhar/", views.activity_follow_up, name="activity_follow_up"),
     path("planos-de-acao/<int:action_id>/atividades/<int:activity_id>/excluir/", views.activity_delete, name="activity_delete"),
     path("planos-de-acao/<int:action_id>/atividades/<int:activity_id>/mover/<str:direction>/", views.activity_move, name="activity_move"),
+    path("minha-conta/", views.profile_edit, name="profile_edit"),
     path("usuarios/", views.user_list, name="user_list"),
     path("usuarios/novo/", views.user_create, name="user_create"),
     path("usuarios/<int:user_id>/editar/", views.user_edit, name="user_edit"),

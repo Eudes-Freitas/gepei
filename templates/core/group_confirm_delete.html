@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Excluir grupo | GEPEI{% endblock %}
+{% block title %}Excluir perfil | GEPEI{% endblock %}
 {% block content %}
   <a class="back-link" href="{% url 'group_list' %}">← Voltar</a>
   <section class="panel confirm-panel">
-    <p class="eyebrow">Exclusão de grupo</p>
+    <p class="eyebrow">Exclusão de perfil</p>
     <h1>Excluir “{{ group.name }}”?</h1>
-    <p>{% if group.user_total %}{{ group.user_total }} usuário{{ group.user_total|pluralize:"s" }} deste grupo {{ group.user_total|pluralize:"ficará,ficarão" }} sem as permissões dele até {{ group.user_total|pluralize:"ser colocado,serem colocados" }} em outro grupo.{% else %}Nenhum usuário pertence a este grupo.{% endif %}</p>
-    <form method="post" class="form-buttons">{% csrf_token %}<button class="button button-danger" type="submit">Excluir grupo</button><a class="button button-secondary" href="{% url 'group_list' %}">Cancelar</a></form>
+    <p>{% if group.user_total %}{{ group.user_total }} usuário{{ group.user_total|pluralize:"s" }} deste perfil {{ group.user_total|pluralize:"ficará,ficarão" }} sem as permissões dele até {{ group.user_total|pluralize:"ser colocado,serem colocados" }} em outro perfil.{% else %}Nenhum usuário pertence a este perfil.{% endif %}</p>
+    <form method="post" class="form-buttons">{% csrf_token %}<button class="button button-danger" type="submit">Excluir perfil</button><a class="button button-secondary" href="{% url 'group_list' %}">Cancelar</a></form>
   </section>
 {% endblock %}

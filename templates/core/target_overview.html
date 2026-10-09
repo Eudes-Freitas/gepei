@@ -29,7 +29,7 @@
         <thead><tr><th>Meta</th><th>Valor esperado</th><th>Período</th><th>Vinculada a</th><th>Indicadores</th></tr></thead>
         <tbody>
           {% for target in targets %}
-            <tr>
+            <tr id="meta-{{ target.id }}">
               <td class="indicator-name-cell"><strong>{{ target.code|default:"Meta" }}</strong><span>{{ target.description }}</span></td>
               <td>{{ target.target_value|default:"A definir" }}{% if target.unit_of_measure %} <small>{{ target.unit_of_measure }}</small>{% endif %}</td>
               <td>{{ target.reference_period|default:"A definir" }}</td>

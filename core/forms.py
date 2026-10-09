@@ -9,6 +9,7 @@ from .models import (
     Activity,
     ActivityBlocker,
     ActivityEvidence,
+    Indicator,
     IndicatorMeasurement,
     Organization,
     OrganizationalUnit,
@@ -25,35 +26,82 @@ from .models import (
 )
 
 
+class IndicatorDefinitionForm(forms.ModelForm):
+    """Edição da ficha (definição) do indicador."""
+
+    class Meta:
+        model = Indicator
+        fields = ["indicator_type", "formula", "unit_of_measure", "data_source", "baseline", "direction"]
+        labels = {
+            "indicator_type": "Tipo",
+            "formula": "Fórmula",
+            "unit_of_measure": "Unidade de medida",
+            "data_source": "Fonte de dados",
+            "baseline": "Linha de base",
+            "direction": "Sentido esperado",
+        }
+        widgets = {"formula": forms.Textarea(attrs={"rows": 3})}
+
+
 class IndicatorMeasurementForm(forms.ModelForm):
     class Meta:
         model = IndicatorMeasurement
         fields = [
-            "reference_period",
+            "measured_by",
+            "baseline_value",
+            "baseline_date",
             "measured_value",
-            "expected_value",
+            "period_start",
+            "period_end",
             "source_reference",
             "evidence_attachment",
             "note",
         ]
         labels = {
-            "reference_period": "Período de referência",
+            "measured_by": "Responsável pela aferição",
+            "baseline_value": "Valor basal",
+            "baseline_date": "Data do valor basal",
             "measured_value": "Resultado aferido",
-            "expected_value": "Meta prevista para o período",
+            "period_start": "Período de aferição — início",
+            "period_end": "Período de aferição — fim",
             "source_reference": "Referência da fonte",
             "evidence_attachment": "Anexar evidência da aferição",
             "note": "Observações",
         }
-        widgets = {"note": forms.Textarea(attrs={"rows": 3})}
+        widgets = {
+            "note": forms.Textarea(attrs={"rows": 3}),
+            "baseline_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+            "period_start": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+            "period_end": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["reference_period"].help_text = "Ex.: 2º trimestre/2026 ou exercício 2026."
+        for name in ["measured_by", "baseline_value", "baseline_date", "period_start", "period_end"]:
+            self.fields[name].required = True
+        measured_by = self.fields["measured_by"]
+        measured_by.queryset = get_user_model().objects.filter(is_active=True).order_by("first_name", "last_name", "username")
+        measured_by.label_from_instance = lambda user: user.get_full_name() or user.username
+        measured_by.empty_label = "Selecione quem realizou a aferição"
+        measured_by.help_text = "O setor da pessoa selecionada será registrado como setor responsável pela aferição."
+        self.fields["baseline_value"].help_text = "Valor de partida (linha de base) usado como comparação para este resultado."
+        self.fields["baseline_date"].help_text = "Data em que o valor basal foi apurado."
         self.fields["measured_value"].help_text = "Informe o valor apurado. Use apenas o número para calcular o semáforo."
-        self.fields["expected_value"].help_text = "Use a meta daquele período, que pode ser diferente da meta final do PEI."
+        self.fields["period_start"].help_text = "Primeiro dia do período a que o resultado se refere."
+        self.fields["period_end"].help_text = "Último dia do período a que o resultado se refere."
         self.fields["source_reference"].help_text = "Informe planilha, processo SEI, sistema ou documento que comprove o resultado."
         self.fields["evidence_attachment"].help_text = "Anexe a planilha, relatório, PDF, imagem ou outro arquivo comprobatório, quando houver."
 
+    def clean(self):
+        cleaned = super().clean()
+        start, end = cleaned.get("period_start"), cleaned.get("period_end")
+        if start and end:
+            if end < start:
+                self.add_error("period_end", "O fim do período não pode ser anterior ao início.")
+            else:
+                # O texto do período continua sendo guardado para exibição e para as aferições antigas.
+                self.instance.reference_period = f"{start:%d/%m/%Y} a {end:%d/%m/%Y}"
+        return cleaned
 
 class ReportCycleForm(forms.ModelForm):
     class Meta:
@@ -221,9 +269,10 @@ class ActivityForm(forms.ModelForm):
             Decimal("0"),
         )
         if self.instance.pk and current_total + weight > Decimal("100"):
-            remaining = Decimal("100") - current_total
+            remaining = (Decimal("100") - current_total).quantize(Decimal("0.01"))
+            remaining_text = f"{remaining:f}".rstrip("0").rstrip(".").replace(".", ",") or "0"
             raise forms.ValidationError(
-                f"O peso excede 100%. Restam {remaining.normalize()}% para distribuir nesta ação."
+                f"O peso excede 100%. Restam {remaining_text}% para distribuir nesta ação."
             )
         return weight
 
@@ -667,10 +716,15 @@ class UserCreateForm(forms.Form):
     name = forms.CharField(label="Nome", max_length=150)
     email = forms.EmailField(label="E-mail", max_length=150)
     password = forms.CharField(label="Senha inicial", widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}))
-    group = forms.ModelChoiceField(label="Grupo", queryset=Group.objects.order_by("name"), empty_label="Selecione o grupo")
+    group = forms.ModelChoiceField(label="Perfil", queryset=Group.objects.order_by("name"), empty_label="Selecione o perfil")
     unit_name = forms.CharField(label="Setor", max_length=180)
 
-    is_active = forms.BooleanField(label="Usuário ativo", required=False)
+    is_active = forms.TypedChoiceField(
+        label="Situação",
+        choices=[("1", "Ativo"), ("0", "Inativo")],
+        coerce=lambda value: value == "1",
+        initial="1",
+    )
 
     def __init__(self, *args, user=None, **kwargs):
         """Sem `user` cadastra um usuário novo; com `user` edita o existente."""
@@ -684,7 +738,7 @@ class UserCreateForm(forms.Form):
                     "email": user.email or user.username,
                     "group": user.groups.first(),
                     "unit_name": profile.unit.name if profile and profile.unit else "",
-                    "is_active": user.is_active,
+                    "is_active": "1" if user.is_active else "0",
                 },
             )
         super().__init__(*args, **kwargs)
@@ -758,8 +812,47 @@ class UserCreateForm(forms.Form):
         return user
 
 
+class ProfileForm(forms.Form):
+    """Autoedição: o próprio usuário altera apenas nome, e-mail e senha."""
+
+    name = forms.CharField(label="Nome", max_length=150)
+    email = forms.EmailField(label="E-mail", max_length=150)
+    password = forms.CharField(
+        label="Nova senha",
+        required=False,
+        widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
+        help_text="Deixe em branco para manter a senha atual.",
+    )
+
+    def __init__(self, *args, user, **kwargs):
+        self.user = user
+        kwargs.setdefault("initial", {"name": user.get_full_name(), "email": user.email or user.username})
+        super().__init__(*args, **kwargs)
+        self.fields["email"].help_text = "O e-mail também é o seu login."
+
+    def clean_name(self):
+        return " ".join(self.cleaned_data["name"].split())
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip().lower()
+        others = get_user_model().objects.exclude(pk=self.user.pk)
+        if others.filter(username__iexact=email).exists() or others.filter(email__iexact=email).exists():
+            raise forms.ValidationError("Já existe um usuário com este e-mail.")
+        return email
+
+    def save(self):
+        data = self.cleaned_data
+        user = self.user
+        user.username = user.email = data["email"]
+        user.first_name, _, user.last_name = data["name"].partition(" ")
+        if data["password"]:
+            user.set_password(data["password"])
+        user.save()
+        return user
+
+
 class GroupForm(forms.Form):
-    name = forms.CharField(label="Nome do grupo", max_length=150)
+    name = forms.CharField(label="Nome do perfil", max_length=150)
 
     def __init__(self, *args, group=None, **kwargs):
         self.group = group
@@ -773,5 +866,5 @@ class GroupForm(forms.Form):
         if self.group is not None:
             others = others.exclude(pk=self.group.pk)
         if others.filter(name__iexact=name).exists():
-            raise forms.ValidationError("Já existe um grupo com este nome.")
+            raise forms.ValidationError("Já existe um perfil com este nome.")
         return name

@@ -5,8 +5,8 @@
   <section class="panel form-page-panel">
     <p class="eyebrow">Usuários</p>
     <h1>{% if edited_user %}Editar usuário{% else %}Cadastrar usuário{% endif %}</h1>
-    <p class="form-hint">Informe os dados de acesso, o grupo que define as permissões e o setor onde a pessoa atua.</p>
-    {% if not has_groups %}<div class="planning-note"><strong>Nenhum grupo cadastrado</strong><span>Antes de cadastrar usuários, <a href="{% url 'group_create' %}">cadastre um grupo</a> com as permissões desejadas.</span></div>{% endif %}
+    <p class="form-hint">Informe os dados de acesso, o perfil que define as permissões e o setor onde a pessoa atua.</p>
+    {% if not has_groups %}<div class="planning-note"><strong>Nenhum perfil cadastrado</strong><span>Antes de cadastrar usuários, <a href="{% url 'group_create' %}">cadastre um perfil</a> com as permissões desejadas.</span></div>{% endif %}
     <form method="post" class="activity-form" autocomplete="off">{% csrf_token %}
       {% for field in form %}
         <div class="form-field {% if field.name == 'unit_name' %}unit-field{% endif %}">
@@ -44,16 +44,17 @@
           button.addEventListener('mousedown', function (event) {
             event.preventDefault();
             input.value = unit.name;
+            request += 1;
             list.hidden = true;
             showStatus(true, unit.name);
           });
           item.appendChild(button);
           list.appendChild(item);
         });
-        list.hidden = results.length === 0;
         var exact = results.some(function (unit) {
           return normalize(unit.name) === normalize(typed) || (unit.acronym && normalize(unit.acronym) === normalize(typed));
         });
+        list.hidden = results.length === 0 || exact;
         showStatus(exact, typed);
       }
 
@@ -69,14 +70,21 @@
         var current = ++request;
         fetch(endpoint + '?q=' + encodeURIComponent(typed), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
           .then(function (response) { return response.json(); })
-          .then(function (data) { if (current === request) { render(data.results, typed); } })
+          .then(function (data) {
+            if (current !== request) { return; }
+            render(data.results, typed);
+            if (document.activeElement !== input) { list.hidden = true; }
+          })
           .catch(function () {});
       }
 
       input.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(search, 200); });
       input.addEventListener('focus', function () { if (input.value.trim()) { search(); } });
-      input.addEventListener('blur', function () { list.hidden = true; });
-      if (input.value.trim()) { search(); }
+      input.addEventListener('blur', function () { request += 1; list.hidden = true; });
+      input.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') { request += 1; list.hidden = true; }
+      });
+      list.hidden = true;
     }());
   </script>
 {% endblock %}
