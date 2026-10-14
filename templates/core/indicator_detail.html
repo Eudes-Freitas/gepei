@@ -40,37 +40,38 @@
         </div>
       </article>
 
-      <article class="panel indicator-chart-panel">
+      {% if can_view_measurements %}<article class="panel indicator-chart-panel">
         <div class="panel-heading"><div><p class="eyebrow">Evolução</p><h2>Resultado aferido por período</h2></div></div>
         {% if chart %}
-          <div id="indicator-chart" class="indicator-chart" role="img" aria-label="Gráfico de linha com o valor basal, o resultado aferido e a meta de cada período"></div>
+          <div id="indicator-chart" class="indicator-chart" role="img" aria-label="Gráfico de linha com a linha de base, o resultado aferido e a meta de cada período"></div>
           {{ chart|json_script:"indicator-chart-data" }}
         {% else %}
           <div class="empty-state"><strong>Sem dados para o gráfico.</strong><span>Registre aferições com resultado numérico para acompanhar a evolução.</span></div>
         {% endif %}
-      </article>
+      </article>{% endif %}
       <article class="panel">
-        <div class="panel-heading"><div><p class="eyebrow">Série histórica</p><h2>Aferições registradas</h2></div><div class="panel-heading-actions"><span class="chip chip-neutral">{{ indicator.measurements.all|length }} registro{{ indicator.measurements.all|length|pluralize:"s" }}</span><button class="button button-primary" type="button" data-open-measurement-form>Nova aferição</button></div></div>
-        {% if indicator.measurements.all %}
+        <div class="panel-heading"><div><p class="eyebrow">Série histórica</p><h2>Aferições registradas</h2></div><div class="panel-heading-actions"><span class="chip chip-neutral">{{ indicator.measurements.all|length }} registro{{ indicator.measurements.all|length|pluralize:"s" }}</span>{% if can_add_measurement %}<button class="button button-primary" type="button" data-open-measurement-form>Nova aferição</button>{% endif %}</div></div>
+        {% if not can_view_measurements %}<div class="empty-state" role="alert"><strong>Sem permissão.</strong><span>Você não tem permissão para visualizar as aferições deste indicador.</span></div>
+        {% elif indicator.measurements.all %}
           <div class="responsive-table"><table>
-            <thead><tr><th>Período</th><th>Valor basal</th><th>Resultado</th><th>Meta do período</th><th>Fonte/evidência</th><th>Registrado por</th><th>Detalhes</th></tr></thead>
-            <tbody>{% for measurement in indicator.measurements.all %}<tr><td><strong>{{ measurement.reference_period }}</strong>{% if measurement.note %}<span>{{ measurement.note }}</span>{% endif %}</td><td>{{ measurement.baseline_value|default:"—" }}</td><td>{{ measurement.measured_value }}</td><td>{{ measurement.expected_value|floatformat:"-1"|default:"Não informada" }}</td><td>{% if measurement.source_reference %}<span>{{ measurement.source_reference }}</span>{% endif %}{% if measurement.evidence_attachment %}<a href="{{ measurement.evidence_attachment.url }}" target="_blank" rel="noopener">Abrir arquivo anexado</a>{% elif not measurement.source_reference %}Não informada{% endif %}</td><td>{{ measurement.recorded_by.get_full_name|default:measurement.recorded_by.username }}<small>{{ measurement.recorded_at|date:"d/m/Y H:i" }}</small></td><td><button class="text-button" type="button" data-view-measurement data-period="{{ measurement.reference_period }}" data-baseline="{{ measurement.baseline_value }}" data-baseline-date="{{ measurement.baseline_date|date:"d/m/Y" }}" data-measured="{{ measurement.measured_value }}" data-expected="{% if measurement.expected_value != None %}{{ measurement.expected_value|floatformat:"-2" }}{% endif %}" data-source="{{ measurement.source_reference }}" data-file="{% if measurement.evidence_attachment %}{{ measurement.evidence_attachment.url }}{% endif %}" data-note="{{ measurement.note }}" data-by="{{ measurement.responsible_name }}" data-unit="{{ measurement.responsible_unit_label }}" data-at="{{ measurement.recorded_at|date:"d/m/Y H:i" }}">Ver</button>{% if can_edit_measurement %} <a class="text-button" href="?editar={{ measurement.id }}">Editar</a>{% endif %}</td></tr>{% endfor %}</tbody>
+            <thead><tr><th>Período</th><th>Linha de base</th><th>Resultado</th><th>Meta do período</th><th>Fonte/evidência</th><th>Registrado por</th><th>Detalhes</th></tr></thead>
+            <tbody>{% for measurement in indicator.measurements.all %}<tr><td><strong>{{ measurement.reference_period }}</strong>{% if measurement.note %}<span>{{ measurement.note }}</span>{% endif %}</td><td>{{ measurement.baseline_value|default:"—" }}</td><td>{{ measurement.measured_value }}</td><td>{{ measurement.expected_value|floatformat:"-1"|default:"Não informada" }}</td><td>{% if measurement.source_reference %}<span>{{ measurement.source_reference }}</span>{% endif %}{% if measurement.evidence_attachment %}<a href="{{ measurement.evidence_attachment.url }}" target="_blank" rel="noopener">Abrir arquivo anexado</a>{% elif not measurement.source_reference %}Não informada{% endif %}</td><td>{{ measurement.recorded_by.get_full_name|default:measurement.recorded_by.username }}<small>{{ measurement.recorded_at|date:"d/m/Y H:i" }}</small></td><td><button class="text-button" type="button" data-view-measurement data-period="{{ measurement.reference_period }}" data-baseline="{{ measurement.baseline_value }}" data-baseline-date="{{ measurement.baseline_date|date:"d/m/Y" }}" data-measured="{{ measurement.measured_value }}" data-expected="{% if measurement.expected_value != None %}{{ measurement.expected_value|floatformat:"-2" }}{% endif %}" data-source="{{ measurement.source_reference }}" data-file="{% if measurement.evidence_attachment %}{{ measurement.evidence_attachment.url }}{% endif %}" data-file-name="{% if measurement.evidence_attachment %}{{ measurement.evidence_attachment.name|cut:"indicator_measurements/" }}{% endif %}" data-note="{{ measurement.note }}" data-by="{{ measurement.responsible_name }}" data-unit="{{ measurement.responsible_unit_label }}" data-at="{{ measurement.recorded_at|date:"d/m/Y H:i" }}">Ver</button>{% if can_edit_measurement %} <a class="text-button" href="?editar={{ measurement.id }}">Editar</a>{% endif %}</td></tr>{% endfor %}</tbody>
           </table></div>
         {% else %}<div class="empty-state"><strong>Nenhuma aferição registrada.</strong><span>Use o botão “Nova aferição” para iniciar a série histórica.</span></div>{% endif %}
       </article>
     </div>
   </section>
 
-  <dialog class="panel activity-form-panel indicator-measurement-panel" aria-labelledby="measurement-form-title" {% if measurement_form.errors or editing_measurement %}data-open-on-load{% endif %}>
+  {% if can_add_measurement or can_edit_measurement %}<dialog class="panel activity-form-panel indicator-measurement-panel" aria-labelledby="measurement-form-title" {% if measurement_form.errors or editing_measurement %}data-open-on-load{% endif %}>
     <div class="dialog-heading"><div><p class="eyebrow">{% if editing_measurement %}Editar aferição{% else %}Nova aferição{% endif %}</p><h2 id="measurement-form-title">{% if editing_measurement %}Alterar aferição de {{ editing_measurement.reference_period }}{% else %}Registrar resultado do período{% endif %}</h2></div><button class="icon-button dialog-close" type="button" data-close-measurement-form aria-label="Fechar">×</button></div>
-    <p class="form-hint">A meta do período é calculada automaticamente: evolução linear do valor basal, na data do basal, até a meta final no fim do plano, no último dia do período de aferição. O semáforo compara o resultado com essa meta.</p>
+    <p class="form-hint">A meta do período é calculada automaticamente: evolução linear da linha de base, na data da linha de base, até a meta final no fim do plano, no último dia do período de aferição. O semáforo compara o resultado com essa meta.</p>
     <form method="post" enctype="multipart/form-data" class="activity-form">
       {% csrf_token %}
       {% if editing_measurement %}<input type="hidden" name="measurement_id" value="{{ editing_measurement.id }}">{% endif %}
       {% for field in measurement_form %}<div class="form-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}{% for error in field.errors %}<span class="field-error">{{ error }}</span>{% endfor %}</div>{% endfor %}
       <button class="button button-primary" type="submit">{% if editing_measurement %}Salvar alterações{% else %}Salvar aferição{% endif %}</button>
     </form>
-  </dialog>
+  </dialog>{% endif %}
   {% if definition_form %}
   <dialog class="panel activity-form-panel" id="definition-form" aria-labelledby="definition-form-title" {% if definition_form.errors %}data-open-on-load{% endif %}>
     <div class="dialog-heading"><div><p class="eyebrow">Definição</p><h2 id="definition-form-title">Editar ficha do indicador</h2></div><button class="icon-button dialog-close" type="button" data-close-definition-form aria-label="Fechar">×</button></div>
@@ -83,19 +84,20 @@
   </dialog>
   {% endif %}
 
-  <dialog class="panel activity-form-panel" id="measurement-view" aria-labelledby="measurement-view-title">
+  <dialog class="panel activity-form-panel measurement-view-panel" id="measurement-view" aria-labelledby="measurement-view-title">
     <div class="dialog-heading"><div><p class="eyebrow">Aferição registrada</p><h2 id="measurement-view-title">Detalhes da aferição</h2></div><button class="icon-button dialog-close" type="button" data-close-measurement-view aria-label="Fechar">×</button></div>
     <dl class="definition-grid">
-      <div><dt>Valor basal</dt><dd data-field="baseline"></dd></div>
-      <div><dt>Data do valor basal</dt><dd data-field="baselineDate"></dd></div>
+      <div><dt>Linha de base</dt><dd data-field="baseline"></dd></div>
+      <div><dt>Data da linha de base</dt><dd data-field="baselineDate"></dd></div>
       <div><dt>Resultado aferido</dt><dd data-field="measured"></dd></div>
       <div><dt>Período de aferição</dt><dd data-field="period"></dd></div>
       <div><dt>Meta do período</dt><dd data-field="expected"></dd></div>
       <div><dt>Referência da fonte</dt><dd data-field="source"></dd></div>
-      <div><dt>Evidência</dt><dd data-field="file"></dd></div>
-      <div><dt>Observações</dt><dd data-field="note"></dd></div>
       <div><dt>Responsável pela aferição</dt><dd data-field="by"></dd></div>
       <div><dt>Setor responsável</dt><dd data-field="unit"></dd></div>
+      <div><dt>Registrado em</dt><dd data-field="at"></dd></div>
+      <div class="definition-wide"><dt>Evidência anexada</dt><dd data-field="file"></dd></div>
+      <div class="definition-wide"><dt>Observações</dt><dd data-field="note" class="measurement-note"></dd></div>
     </dl>
   </dialog>
 {% endblock %}
@@ -164,21 +166,26 @@
         document.querySelectorAll('[data-view-measurement]').forEach(function (button) {
           button.addEventListener('click', function () {
             var d = button.dataset;
-            ['period', 'baseline', 'baselineDate', 'measured', 'expected', 'source', 'note', 'by', 'unit'].forEach(function (name) { setText(name, d[name]); });
+            ['period', 'baseline', 'baselineDate', 'measured', 'expected', 'source', 'note', 'by', 'unit', 'at'].forEach(function (name) { setText(name, d[name]); });
             var fileCell = view.querySelector('[data-field="file"]');
             fileCell.textContent = '';
             if (d.file) {
-              var link = document.createElement('a');
-              link.href = d.file; link.target = '_blank'; link.rel = 'noopener'; link.textContent = 'Abrir arquivo anexado';
-              fileCell.appendChild(link);
-            } else { fileCell.textContent = empty; }
+              var name = d.fileName ? d.fileName.split('/').pop() : 'arquivo';
+              var label = document.createElement('span'); label.textContent = name + ' ';
+              var download = document.createElement('a');
+              download.href = d.file; download.download = name; download.className = 'button button-secondary'; download.textContent = 'Baixar arquivo';
+              var openLink = document.createElement('a');
+              openLink.href = d.file; openLink.target = '_blank'; openLink.rel = 'noopener'; openLink.className = 'text-button'; openLink.textContent = 'Abrir em nova aba';
+              fileCell.appendChild(label); fileCell.appendChild(download); fileCell.appendChild(document.createTextNode(' ')); fileCell.appendChild(openLink);
+            } else { fileCell.textContent = 'Nenhum arquivo anexado'; }
             view.showModal();
           });
         });
         view.querySelector('[data-close-measurement-view]').addEventListener('click', function () { view.close(); });
         view.addEventListener('click', function (event) { if (event.target === view) { view.close(); } });
-      }      if (!dialog || !open) { return; }
-      open.addEventListener('click', function () { dialog.showModal(); });
+      }
+      if (!dialog) { return; }
+      if (open) { open.addEventListener('click', function () { dialog.showModal(); }); }
       dialog.querySelector('[data-close-measurement-form]').addEventListener('click', function () { dialog.close(); });
       dialog.addEventListener('click', function (event) { if (event.target === dialog) { dialog.close(); } });
       if (dialog.hasAttribute('data-open-on-load')) { dialog.showModal(); }

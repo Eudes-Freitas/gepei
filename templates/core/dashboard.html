@@ -1,11 +1,12 @@
 {% extends "base.html" %}
-{% load progress %}
+{% load progress static %}
 {% block title %}Painel | GEPEI{% endblock %}
 {% block content %}
   <section class="page-heading dashboard-heading">
     <div>
       <p class="eyebrow">Piloto PEI · 2025–2034</p>
-      <h1>Painel</h1>
+      <h1>Painel executivo</h1>
+      <p>Visão geral da implementação: desempenho, execução e pontos que exigem atenção da gestão. Clique em qualquer indicador para ver o detalhe.</p>
     </div>
   </section>
 
@@ -32,31 +33,36 @@
     <a class="clear-filter" href="{% url 'dashboard' %}">Limpar</a>
   </form>
 
-  <section class="metrics metrics-centered" aria-label="Resumo estratégico">
-    <article class="metric-card metric-blue"><span>Objetivos monitorados</span><strong>{{ objective_count }}</strong></article>
-    <article class="metric-card"><span>Ações estratégicas</span><strong>{{ action_count }}</strong></article>
-    <article class="metric-card metric-warning"><span>Ações em atraso</span><strong>{{ delayed_count }}</strong></article>
-    <article class="metric-card metric-danger"><span>Riscos altos ou críticos</span><strong>{{ critical_risk_count }}</strong></article>
+  <section class="dx-kpis" aria-label="Resumo estratégico">
+    {% if can_plans %}<a class="dx-kpi" href="{% url 'pei_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}"><span class="dx-kpi-label">Objetivos monitorados</span><strong>{{ objective_count }}</strong><small>ver estrutura do plano →</small></a>{% else %}<div class="dx-kpi  dx-locked"><span class="dx-kpi-label">Objetivos monitorados</span><strong>🔒</strong><small>sem permissão</small></div>{% endif %}
+    {% if can_exec %}<a class="dx-kpi dx-green" href="{% url 'action_plan_list' %}{% if base_query %}?{{ base_query }}{% endif %}"><span class="dx-kpi-label">Ações estratégicas</span><strong>{{ action_count }}</strong><small>ver todas as ações →</small></a>
+    <a class="dx-kpi dx-amber" href="{% url 'action_plan_list' %}?{% if base_query %}{{ base_query }}&amp;{% endif %}status=ATRASADA"><span class="dx-kpi-label">Ações em atraso</span><strong>{{ delayed_count }}</strong><small>ver ações atrasadas →</small></a>{% else %}<div class="dx-kpi dx-green dx-locked"><span class="dx-kpi-label">Ações estratégicas</span><strong>🔒</strong><small>sem permissão</small></div><div class="dx-kpi dx-amber dx-locked"><span class="dx-kpi-label">Ações em atraso</span><strong>🔒</strong><small>sem permissão</small></div>{% endif %}
+    {% if can_view_risks %}
+      <a class="dx-kpi dx-red" href="{% url 'risk_overview' %}{% if base_query %}?{{ base_query }}{% endif %}"><span class="dx-kpi-label">Riscos altos ou críticos</span><strong>{{ critical_risk_count }}</strong><small>ver mapa de riscos →</small></a>
+    {% else %}
+      <div class="dx-kpi dx-red dx-locked"><span class="dx-kpi-label">Riscos altos ou críticos</span><strong>🔒</strong><small>sem permissão para ver riscos</small></div>
+    {% endif %}
   </section>
 
-  <section class="panel-grid dashboard-main-grid">
-    <article class="panel status-panel">
-      <div class="panel-heading"><div><p class="eyebrow">Execução</p><h2>Situação das ações</h2></div><span class="chip chip-neutral">{{ action_count }} no total</span></div>
-      <ul class="status-list">
-        {% for item in status_summary %}
-          <li>
-            <span class="status-dot status-{{ item.code|lower }}"></span>
-            <span>{{ item.label }}</span>
-            <strong>{{ item.total }}</strong>
-          </li>
-        {% endfor %}
-      </ul>
-      <div class="progress-summary"><span>Execução média do recorte</span><strong>{{ progress_average|floatformat:"-1" }}%</strong>{% progress_bar progress_average %}</div>
-    </article>
+  <section class="dx-grid">
+    {% if can_exec %}<article class="dx-card">
+      <div class="panel-heading"><div><p class="eyebrow">Execução</p><h2>Situação das ações</h2></div><a class="chip chip-neutral" href="{% url 'action_plan_list' %}{% if base_query %}?{{ base_query }}{% endif %}">{{ action_count }} no total</a></div>
+      <div class="dx-donut-box">
+        <a class="dx-donut" style="background:{{ donut_gradient }}" href="{% url 'action_plan_list' %}{% if base_query %}?{{ base_query }}{% endif %}" aria-label="Ver todas as ações"><b>{{ progress_average|floatformat:"-1" }}%</b></a>
+        <ul class="dx-legend">
+          {% for item in status_summary %}
+            <li><a href="{% url 'action_plan_list' %}?{{ item.query }}"><i style="background:{{ item.color }}"></i><span>{{ item.label }}</span><strong>{{ item.total }}</strong></a></li>
+          {% endfor %}
+        </ul>
+      </div>
+      <p class="dx-note">Execução média do recorte: <strong>{{ progress_average|floatformat:"-1" }}%</strong></p>
+    </article>{% endif %}
 
-    <article class="panel alert-panel">
-      <div class="panel-heading"><div><p class="eyebrow">Atenção</p><h2>Riscos prioritários</h2></div><span class="chip chip-danger">{{ critical_risk_count }} críticos</span></div>
-      {% if risk_alerts %}
+    <article class="dx-card">
+      <div class="panel-heading"><div><p class="eyebrow">Atenção</p><h2>Riscos prioritários</h2></div>{% if can_view_risks %}<a class="chip chip-danger" href="{% url 'risk_overview' %}">{{ critical_risk_count }} críticos</a>{% endif %}</div>
+      {% if not can_view_risks %}
+        <div class="empty-state"><strong>Sem permissão para visualizar riscos.</strong><span>Solicite acesso ao administrador do sistema.</span></div>
+      {% elif risk_alerts %}
         <ul class="risk-list">
           {% for risk in risk_alerts %}
             <li><a class="risk-link" href="{% url 'risk_detail' risk.action.id risk.id %}">
@@ -71,14 +77,79 @@
     </article>
   </section>
 
-  <section class="panel action-panel" id="acoes">
+  {% if can_indicators %}
+  <article class="dx-card dx-wide" id="indicadores">
+    <div class="panel-heading"><div><p class="eyebrow">Desempenho e resultados</p><h2>Indicadores</h2></div><a class="chip chip-neutral" href="{% url 'indicator_overview' %}{% if indicator_query %}?{{ indicator_query }}{% endif %}">{{ indicator_total }} indicador{{ indicator_total|pluralize:"es" }}</a></div>
+    {% if indicator_total %}
+      <div class="dx-stats">
+        <a class="dx-stat" href="{% url 'indicator_overview' %}{% if indicator_query %}?{{ indicator_query }}{% endif %}"><span>Aferidos</span><b>{{ indicator_measured_pct }}%</b><small>{{ indicator_measured }} de {{ indicator_total }} indicadores</small></a>
+        <a class="dx-stat dx-stat-green" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=green"><span>De acordo com a meta</span><b>{{ indicator_green_pct }}%</b><small>{{ signal_counts.green }} de {{ indicator_measured }} aferidos</small></a>
+        <a class="dx-stat dx-stat-red" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=red"><span>Abaixo da meta</span><b>{{ indicator_attention }}</b><small>atenção, alerta ou crítico</small></a>
+        <a class="dx-stat dx-stat-gray" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=gray"><span>Sem aferição</span><b>{{ signal_counts.gray }}</b><small>sem resultado ou dado insuficiente</small></a>
+      </div>
+      <div class="dx-charts">
+        <figure><figcaption>Aferição dos indicadores</figcaption><div id="chart-measured" class="dx-chart" role="img" aria-label="Gráfico de rosca: indicadores aferidos e sem aferição"></div></figure>
+        <figure><figcaption>Situação em relação à meta</figcaption><div id="chart-signal" class="dx-chart" role="img" aria-label="Gráfico de barras: indicadores por situação frente à meta"></div></figure>
+        <figure><figcaption>Atingimento médio da meta por objetivo</figcaption><div id="chart-objectives" class="dx-chart" role="img" aria-label="Gráfico de barras: percentual médio de atingimento da meta por objetivo"></div></figure>
+      </div>
+      <p class="dx-note">Atingimento = resultado aferido ÷ meta do período (para indicadores em que menor é melhor, a razão se inverte), limitado a 100%. Conforme ≥ 100% · Atenção ≥ 90% · Alerta ≥ 70% · Crítico &lt; 70%. Clique em um gráfico para abrir a lista filtrada.</p>
+    {% else %}
+      <div class="empty-state"><strong>Nenhum indicador no recorte.</strong><span>Altere os filtros do painel.</span></div>
+    {% endif %}
+  </article>
+  {% endif %}
+
+  {% if can_targets %}
+  <article class="dx-card dx-wide" id="metas">
+    <div class="panel-heading"><div><p class="eyebrow">Desempenho e resultados</p><h2>Metas</h2></div><a class="chip chip-neutral" href="{% url 'target_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}">{{ target_total }} meta{{ target_total|pluralize }}</a></div>
+    {% if target_total %}
+      <div class="dx-stats">
+        <a class="dx-stat" href="{% url 'target_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}"><span>Metas cadastradas</span><b>{{ target_total }}</b><small>ver metas e valores esperados</small></a>
+        {% if can_indicators %}
+        <a class="dx-stat dx-stat-green" href="{% url 'target_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}"><span>De acordo com o esperado</span><b>{{ target_green_pct }}%</b><small>{{ target_counts.green }} de {{ target_measured }} metas aferidas</small></a>
+        <a class="dx-stat dx-stat-red" href="{% url 'target_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}"><span>Exigem atenção</span><b>{{ target_attention|length }}{% if target_attention|length == 5 %}+{% endif %}</b><small>atenção, alerta ou crítico</small></a>
+        <a class="dx-stat dx-stat-gray" href="{% url 'target_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}"><span>Sem aferição</span><b>{{ target_counts.gray|add:target_counts.none }}</b><small>sem indicador aferido</small></a>
+        {% endif %}
+      </div>
+      {% if can_indicators %}
+      <div class="dx-charts dx-charts-two">
+        <figure><figcaption>Situação das metas</figcaption><div id="chart-targets" class="dx-chart" role="img" aria-label="Gráfico de rosca: metas por situação"></div></figure>
+        <div>
+          <p class="dx-subtitle">Metas que exigem atenção</p>
+          {% if target_attention %}
+            <ul class="dx-attention">
+              {% for item in target_attention %}<li><a href="{{ item.url }}"><i style="background:{{ item.color }}"></i><span><strong>{{ item.code }}</strong> {{ item.description|truncatechars:90 }}</span><em>{{ item.label }}</em></a></li>{% endfor %}
+            </ul>
+          {% else %}<div class="empty-state"><span>Nenhuma meta em atenção, alerta ou crítico.</span></div>{% endif %}
+        </div>
+      </div>
+      <p class="dx-note">A situação da meta vem dos indicadores que a medem: vale o pior indicador aferido. Metas sem indicador vinculado aparecem como “Sem indicador”.</p>
+      {% endif %}
+    {% else %}
+      <div class="empty-state"><strong>Nenhuma meta no recorte.</strong><span>{% if perms.core.add_strategictarget %}Cadastre metas na tela de Metas.{% endif %}</span></div>
+    {% endif %}
+  </article>
+  {% endif %}
+
+  {% if objective_progress and can_plans %}
+  <article class="dx-card dx-wide">
+    <div class="panel-heading"><div><p class="eyebrow">Estratégia</p><h2>Progresso por objetivo estratégico</h2></div><span class="chip chip-neutral">{{ objective_progress|length }} objetivo{{ objective_progress|length|pluralize }}</span></div>
+    <ul class="dx-bars">
+      {% for item in objective_progress %}
+        <li><a href="{% url 'pei_overview' %}?plan={{ item.plan_id }}" title="{{ item.actions }} ação{{ item.actions|pluralize:"ões" }} · ver no plano"><span class="dx-bar-label">{{ item.code }} · {{ item.title }}</span><span class="dx-track"><span class="dx-fill" style="width:{{ item.average|stringformat:'.1f' }}%"></span></span><b>{{ item.average|floatformat:"-1" }}%</b></a></li>
+      {% endfor %}
+    </ul>
+  </article>
+  {% endif %}
+
+  {% if can_exec %}<section class="panel action-panel" id="acoes">
     <div class="panel-heading"><div><h2>Acompanhamento das ações estratégicas por setor</h2><small class="panel-subtitle">{% if recent_actions %}Exibindo {{ action_page.start_index }}–{{ action_page.end_index }} de {{ sector_action_count }} ações, pelo prazo mais próximo{% else %}Nenhuma ação no recorte{% endif %}</small></div></div>
     {% if recent_actions %}
       <div class="responsive-table"><table>
         <thead><tr><th>Ação</th><th>Unidade</th><th>Atividades</th><th>Prazo</th><th>Execução</th><th>Situação</th></tr></thead>
         <tbody>{% for action in recent_actions %}
-          <tr>
-            <td><strong>{{ action.code }}</strong><span>{{ action.title }}</span></td>
+          <tr class="row-link" data-href="{% url 'action_plan_detail' action.id %}">
+            <td><a href="{% url 'action_plan_detail' action.id %}"><strong>{{ action.code }}</strong></a><span>{{ action.title }}</span></td>
             <td>{{ action.coordinating_unit.acronym|default:action.coordinating_unit.name }}</td>
             <td>{% if action.activity_count %}<a href="{% url 'action_plan_detail' action.id %}">{{ action.activity_count }} atividade{{ action.activity_count|pluralize:"s" }}</a>{% else %}<span class="financial-empty">Nenhuma</span>{% endif %}</td>
             <td class="{% if action.due_date and action.due_date < today and action.status != 'CONCLUIDA' and action.status != 'SUSPENSA' %}deadline-overdue{% endif %}">{{ action.due_date|date:"d/m/Y"|default:"A definir" }}</td>
@@ -101,5 +172,61 @@
     {% else %}
       <div class="empty-state large-empty"><strong>O painel está pronto para receber o PEI.</strong><span>Após a carga validada, as ações, os prazos, os avanços e os alertas serão exibidos automaticamente aqui.</span>{% if can_add_actions %}<a class="button button-primary" href="/admin/core/strategicaction/add/">Cadastrar primeira ação</a>{% endif %}</div>
     {% endif %}
-  </section>
+  </section>{% endif %}
+{% endblock %}
+{% block extra_script %}
+  {% if can_indicators or can_targets %}
+  <script src="{% static 'vendor/highcharts.js' %}"></script>
+  {{ performance_charts|json_script:"performance-charts-data" }}
+  <script>
+    (function () {
+      var data = JSON.parse(document.getElementById('performance-charts-data').textContent);
+      Highcharts.setOptions({ lang: { decimalPoint: ',', thousandsSep: '.' } });
+      var go = { cursor: 'pointer', point: { events: { click: function () { if (this.options.url) { window.location.href = this.options.url; } } } } };
+      function donut(id, points, centerText) {
+        var el = document.getElementById(id);
+        if (!el) { return; }
+        Highcharts.chart(id, {
+          chart: { type: 'pie', height: 250, style: { fontFamily: 'inherit' } },
+          title: { text: centerText, verticalAlign: 'middle', y: -8, style: { fontSize: '1.5rem', fontWeight: '800', color: '#0b2a4a' } },
+          credits: { enabled: false },
+          tooltip: { pointFormat: '<b>{point.y}</b> ({point.percentage:.0f}%)' },
+          legend: { enabled: true, labelFormat: '{name}: {y} ({percentage:.0f}%)' },
+          plotOptions: { pie: Object.assign({ innerSize: '62%', dataLabels: { enabled: false }, showInLegend: true, borderWidth: 2 }, go) },
+          series: [{ name: 'Total', data: points }]
+        });
+      }
+      function bars(id, categories, points, suffix, max) {
+        var el = document.getElementById(id);
+        if (!el) { return; }
+        if (!points.length) { el.innerHTML = '<p class="dx-chart-empty">Sem dados para o gráfico.</p>'; return; }
+        Highcharts.chart(id, {
+          chart: { type: 'bar', height: 250, style: { fontFamily: 'inherit' } },
+          title: { text: null }, credits: { enabled: false }, legend: { enabled: false },
+          xAxis: { categories: categories, title: { text: null } },
+          yAxis: { min: 0, max: max || null, title: { text: null }, allowDecimals: false },
+          tooltip: { formatter: function () { return (this.point.full || this.x) + '<br/><b>' + Highcharts.numberFormat(this.y, -1) + suffix + '</b>'; } },
+          plotOptions: { bar: Object.assign({ dataLabels: { enabled: true, formatter: function () { return Highcharts.numberFormat(this.y, -1) + suffix; } }, borderRadius: 3 }, go) },
+          series: [{ name: 'Valor', data: points }]
+        });
+      }
+      var total = data.measured.reduce(function (sum, p) { return sum + p.y; }, 0);
+      var measured = data.measured[0] ? data.measured[0].y : 0;
+      donut('chart-measured', data.measured.filter(function (p) { return p.y > 0; }), total ? Math.round(measured / total * 100) + '%' : '0%');
+      bars('chart-signal', data.signal.map(function (p) { return p.name; }), data.signal.map(function (p) { return { y: p.y, color: p.color, url: p.url }; }), '', null);
+      bars('chart-objectives', data.objectives.map(function (p) { return p.name; }), data.objectives.map(function (p) { return { y: p.y, url: p.url, full: p.full, color: p.y >= 100 ? '#16834a' : p.y >= 90 ? '#e5a11b' : p.y >= 70 ? '#e07b1a' : '#d84a4a' }; }), '%', 100);
+      var targetPoints = data.targets.filter(function (p) { return p.y > 0; });
+      var targetTotal = data.targets.reduce(function (sum, p) { return sum + p.y; }, 0);
+      donut('chart-targets', targetPoints, targetTotal);
+    }());
+  </script>
+  {% endif %}
+  <script>
+    document.querySelectorAll("tr.row-link").forEach(function (row) {
+      row.addEventListener("click", function (event) {
+        if (event.target.closest("a")) { return; }
+        window.location.href = row.dataset.href;
+      });
+    });
+  </script>
 {% endblock %}

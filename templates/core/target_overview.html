@@ -23,10 +23,10 @@
   </form>
 
   <section class="panel indicator-list-panel">
-    <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Metas do plano</h2></div><span class="chip chip-neutral">{{ targets|length }} exibida{{ targets|length|pluralize:"s" }}</span></div>
+    <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Metas do plano</h2></div><div class="panel-heading-actions"><span class="chip chip-neutral">{{ targets|length }} exibida{{ targets|length|pluralize:"s" }}</span>{% if can_add_target and target_form %}<button class="button button-primary" type="button" data-open-target-form>Nova meta</button>{% endif %}</div></div>
     {% if targets %}
       <div class="responsive-table"><table class="indicator-table">
-        <thead><tr><th>Meta</th><th>Valor esperado</th><th>Período</th><th>Vinculada a</th><th>Indicadores</th></tr></thead>
+        <thead><tr><th>Meta</th><th>Valor esperado</th><th>Período</th><th>Vinculada a</th><th>Indicadores</th>{% if can_edit_target %}<th>Ações</th>{% endif %}</tr></thead>
         <tbody>
           {% for target in targets %}
             <tr id="meta-{{ target.id }}">
@@ -37,12 +37,25 @@
               <td class="indicator-links-cell">
                 {% for indicator in target.indicators.all %}<span><a href="{% url 'indicator_detail' indicator.id %}"><strong>{{ indicator.code|default:"Indicador" }}</strong></a> {{ indicator.name }}</span>{% empty %}<span class="muted-text">Nenhum indicador vinculado</span>{% endfor %}
               </td>
+              {% if can_edit_target %}<td><a class="text-button" href="?{% if selected_plan %}plan={{ selected_plan }}&amp;{% endif %}{% if selected_objective %}objective={{ selected_objective }}&amp;{% endif %}editar={{ target.id }}">Editar</a></td>{% endif %}
             </tr>
           {% endfor %}
         </tbody>
       </table></div>
     {% else %}
-      <div class="empty-state large-empty"><strong>Nenhuma meta encontrada.</strong><span>Altere os filtros ou vincule metas ao plano selecionado.</span></div>
+      <div class="empty-state large-empty"><strong>Nenhuma meta encontrada.</strong><span>Altere os filtros{% if can_add_target %} ou use “Nova meta”{% endif %}.</span></div>
     {% endif %}
   </section>
+  {% if target_form %}
+  <dialog class="panel activity-form-panel" id="target-form" aria-labelledby="target-form-title" {% if target_form.errors or editing_target %}data-open-on-load{% endif %}>
+    <div class="dialog-heading"><div><p class="eyebrow">{% if editing_target %}Editar meta{% else %}Nova meta{% endif %}</p><h2 id="target-form-title">{% if editing_target %}Alterar {{ editing_target.code|default:"meta" }}{% else %}Cadastrar meta{% endif %}</h2></div><button class="icon-button dialog-close" type="button" data-close-target-form aria-label="Fechar">×</button></div>
+    <p class="form-hint">A meta fica vinculada a um objetivo do plano e pode ser medida por um ou mais indicadores.</p>
+    <form method="post" class="activity-form">{% csrf_token %}
+      {% if editing_target %}<input type="hidden" name="target_id" value="{{ editing_target.id }}">{% endif %}
+      {% for field in target_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}
+      <div class="form-buttons"><button class="button button-primary" type="submit">{% if editing_target %}Salvar alterações{% else %}Cadastrar meta{% endif %}</button><button class="button button-secondary" type="button" data-close-target-form>Cancelar</button></div>
+    </form>
+    <script>(function(){var dialog=document.getElementById('target-form');var open=document.querySelector('[data-open-target-form]');if(open){open.addEventListener('click',function(){dialog.showModal();});}dialog.querySelectorAll('[data-close-target-form]').forEach(function(b){b.addEventListener('click',function(){dialog.close();});});dialog.addEventListener('click',function(e){if(e.target===dialog){dialog.close();}});if(dialog.hasAttribute('data-open-on-load')){dialog.showModal();}}());</script>
+  </dialog>
+  {% endif %}
 {% endblock %}

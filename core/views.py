@@ -28,8 +28,10 @@ from .forms import (
     ProfileForm,
     ReportCycleForm,
     ReportValidationForm,
+    StrategicTargetForm,
     RiskAcceptanceForm,
     RiskAssessmentForm,
+    RiskCreateForm,
     RiskIdentityForm,
     RiskIdentificationForm,
     RiskMaterializationForm,
@@ -95,7 +97,7 @@ def _plan_end_date(indicator):
 
 
 def _period_target(indicator, baseline_value, baseline_date, period_end):
-    """Meta do período: evolução linear do valor basal (na data do basal) até a meta final no fim do plano."""
+    """Meta do período: evolução linear da linha de base (na data da linha de base) até a meta final no fim do plano."""
     final = _final_target_value(indicator)
     plan_end = _plan_end_date(indicator)
     basal = _decimal_from_measurement(baseline_value)
@@ -110,7 +112,7 @@ def _period_target(indicator, baseline_value, baseline_date, period_end):
 
 
 def _final_progress(indicator, measurement):
-    """Percentual do caminho já percorrido do valor basal até a meta final do plano."""
+    """Percentual do caminho já percorrido da linha de base até a meta final do plano."""
     if measurement is None:
         return None
     final = _final_target_value(indicator)
@@ -155,6 +157,132 @@ def _indicator_signal(indicator):
         "label": label,
         "achievement": round(float(achievement), 1),
         "measurement": latest,
+    }
+
+
+SIGNAL_STYLE = {
+    "green": ("Conforme", "#16834a"),
+    "yellow": ("Atenção", "#e5a11b"),
+    "orange": ("Alerta", "#e07b1a"),
+    "red": ("Crítico", "#d84a4a"),
+    "gray": ("Sem aferição", "#aebbc8"),
+}
+SIGNAL_SEVERITY = {"green": 1, "yellow": 2, "orange": 3, "red": 4}
+
+
+def _percent(part, whole):
+    return round(part / whole * 100) if whole else 0
+
+
+def _performance_summary(user, dash_plans, base_filters, unit_id):
+    """Indicadores (aferição e situação frente à meta) e metas (situação derivada dos indicadores) do painel."""
+
+    def indicator_link(**extra):
+        return f"{reverse('indicator_overview')}?{urlencode({**base_filters, **extra})}"
+
+    indicator_qs = scope_by_unit(
+        Indicator.objects.filter(artifacts__plan__in=dash_plans),
+        user,
+        "responsible_unit_id",
+        include_unassigned=True,
+    ).prefetch_related("measurements", "artifacts").distinct()
+    if unit_id:
+        indicator_qs = indicator_qs.filter(responsible_unit_id=unit_id)
+
+    signal_counts = {code: 0 for code in SIGNAL_STYLE}
+    indicator_signal = {}
+    by_objective = {}
+    for indicator in indicator_qs:
+        signal = _indicator_signal(indicator)
+        indicator_signal[indicator.id] = signal["code"]
+        signal_counts[signal["code"]] += 1
+        if signal["achievement"] is not None:
+            for artifact in indicator.artifacts.all():
+                if artifact.artifact_type == PlanArtifact.ArtifactType.OBJECTIVE:
+                    by_objective.setdefault(artifact.id, (artifact, []))[1].append(min(signal["achievement"], 100))
+    indicator_total = sum(signal_counts.values())
+    measured = indicator_total - signal_counts["gray"]
+
+    objective_bars = sorted(
+        (
+            {
+                "name": artifact.code,
+                "full": f"{artifact.code} · {artifact.title}",
+                "y": round(sum(values) / len(values), 1),
+                "url": indicator_link(objective=artifact.id, plan=artifact.plan_id),
+            }
+            for artifact, values in by_objective.values()
+        ),
+        key=lambda item: item["name"],
+    )
+
+    targets = list(
+        StrategicTarget.objects.filter(artifact__plan__in=dash_plans).select_related("artifact").prefetch_related("indicators")
+    )
+    target_counts = {"green": 0, "yellow": 0, "orange": 0, "red": 0, "gray": 0, "none": 0}
+    attention = []
+    for target in targets:
+        codes = [indicator_signal[item.id] for item in target.indicators.all() if item.id in indicator_signal]
+        measured_codes = [code for code in codes if code != "gray"]
+        if not codes:
+            key = "none"
+        elif not measured_codes:
+            key = "gray"
+        else:
+            key = max(measured_codes, key=SIGNAL_SEVERITY.get)  # a meta vale pelo pior indicador aferido
+        target_counts[key] += 1
+        if key in ("yellow", "orange", "red"):
+            attention.append((SIGNAL_SEVERITY[key], target, key))
+    attention.sort(key=lambda item: (-item[0], item[1].code))
+
+    def target_link(target=None):
+        plan_id = target.artifact.plan_id if target else (base_filters.get("plan") or "")
+        suffix = f"#meta-{target.id}" if target else ""
+        return f"{reverse('target_overview')}?{urlencode({'plan': plan_id} if plan_id else {})}{suffix}"
+
+    target_measured = len(targets) - target_counts["gray"] - target_counts["none"]
+    charts = {
+        "measured": [
+            {"name": "Aferidos", "y": measured, "color": "#1769aa", "url": indicator_link()},
+            {"name": "Sem aferição", "y": signal_counts["gray"], "color": "#aebbc8", "url": indicator_link(status="gray")},
+        ],
+        "signal": [
+            {"name": SIGNAL_STYLE[code][0], "y": signal_counts[code], "color": SIGNAL_STYLE[code][1], "url": indicator_link(status=code)}
+            for code in ("green", "yellow", "orange", "red")
+        ],
+        "objectives": objective_bars,
+        "targets": [
+            {"name": "Conforme", "y": target_counts["green"], "color": "#16834a", "url": target_link()},
+            {"name": "Atenção", "y": target_counts["yellow"], "color": "#e5a11b", "url": target_link()},
+            {"name": "Alerta", "y": target_counts["orange"], "color": "#e07b1a", "url": target_link()},
+            {"name": "Crítico", "y": target_counts["red"], "color": "#d84a4a", "url": target_link()},
+            {"name": "Sem aferição", "y": target_counts["gray"], "color": "#aebbc8", "url": target_link()},
+            {"name": "Sem indicador", "y": target_counts["none"], "color": "#d0d7de", "url": target_link()},
+        ],
+    }
+    return {
+        "indicator_query": urlencode(base_filters),
+        "signal_counts": signal_counts,
+        "indicator_total": indicator_total,
+        "indicator_measured": measured,
+        "indicator_measured_pct": _percent(measured, indicator_total),
+        "indicator_green_pct": _percent(signal_counts["green"], measured),
+        "indicator_attention": signal_counts["yellow"] + signal_counts["orange"] + signal_counts["red"],
+        "target_total": len(targets),
+        "target_counts": target_counts,
+        "target_measured": target_measured,
+        "target_green_pct": _percent(target_counts["green"], target_measured),
+        "target_attention": [
+            {
+                "code": target.code or "Meta",
+                "description": target.description,
+                "label": SIGNAL_STYLE[key][0],
+                "color": SIGNAL_STYLE[key][1],
+                "url": target_link(target),
+            }
+            for _, target, key in attention[:5]
+        ],
+        "performance_charts": charts,
     }
 
 
@@ -225,12 +353,67 @@ def dashboard(request):
         [risk for risk in risks if risk.level >= 10],
         key=lambda risk: (-risk.level, risk.title),
     )[:5]
+    can_view_risks = request.user.has_perm("core.view_risk")
+
+    # Donut e legenda clicável: cada situação leva à lista de execução já filtrada.
+    status_colors = {
+        "NAO_INICIADA": "#aebbc8",
+        "EM_ANDAMENTO": "#1769aa",
+        "CONCLUIDA": "#20a46b",
+        "ATRASADA": "#e5a11b",
+        "BLOQUEADA": "#d84a4a",
+        "SUSPENSA": "#7357c9",
+    }
+    base_filters = {key: value for key, value in (("plan", selected_plan), ("unit", selected_unit)) if value}
+    stops, cursor = [], 0.0
+    for item in status_summary:
+        item["color"] = status_colors.get(item["code"], "#aebbc8")
+        item["query"] = urlencode({**base_filters, "status": item["code"]})
+        if action_count and item["total"]:
+            end = cursor + item["total"] / action_count * 100
+            stops.append(f"{item['color']} {cursor:.2f}% {end:.2f}%")
+            cursor = end
+    donut_gradient = f"conic-gradient({', '.join(stops)})" if stops else "conic-gradient(#e9eff4 0 100%)"
+
+    # Progresso médio por objetivo estratégico (as ações podem estar em projetos abaixo do objetivo).
+    dash_plans = plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans
+    artifacts = {item.id: item for item in PlanArtifact.objects.filter(plan__in=dash_plans)}
+    progress_by_objective = {}
+    for artifact_id, progress in actions.values_list("artifact_id", "progress"):
+        node = artifacts.get(artifact_id)
+        while node is not None and node.artifact_type != PlanArtifact.ArtifactType.OBJECTIVE:
+            node = artifacts.get(node.parent_id)
+        if node is not None:
+            progress_by_objective.setdefault(node.id, []).append(float(progress or 0))
+    objective_progress = [
+        {
+            "code": artifacts[objective_id].code,
+            "title": artifacts[objective_id].title,
+            "plan_id": artifacts[objective_id].plan_id,
+            "average": round(sum(values) / len(values), 1),
+            "actions": len(values),
+        }
+        for objective_id, values in progress_by_objective.items()
+    ]
+    objective_progress.sort(key=lambda item: item["code"])
+
+    performance = _performance_summary(request.user, dash_plans, base_filters, selected_unit if unit_filter else "")
+
     context = {
+        **performance,
         "plans": plans,
         "units": units,
         "selected_plan": selected_plan,
         "selected_unit": selected_unit,
         "selected_status": selected_status,
+        "can_view_risks": can_view_risks,
+        "can_plans": request.user.has_perm("core.view_plan"),
+        "can_exec": request.user.has_perm("core.view_actionplan"),
+        "can_indicators": request.user.has_perm("core.view_indicator"),
+        "can_targets": request.user.has_perm("core.view_strategictarget"),
+        "base_query": urlencode(base_filters),
+        "donut_gradient": donut_gradient,
+        "objective_progress": objective_progress,
         "actions_status_choices": StrategicAction.Status.choices,
         "action_count": action_count,
         "objective_count": objective_query.count(),
@@ -253,6 +436,7 @@ def dashboard(request):
 
 
 @login_required
+@permission_required("core.view_plan", raise_exception=True)
 def pei_overview(request):
     plans = Plan.objects.filter(active=True).order_by("start_date", "acronym")
     selected_plan = request.GET.get("plan", "")
@@ -343,6 +527,7 @@ def pei_overview(request):
 
 
 @login_required
+@permission_required("core.view_indicator", raise_exception=True)
 def indicator_overview(request):
     plans = Plan.objects.filter(active=True).order_by("start_date", "acronym")
     units = scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
@@ -402,6 +587,7 @@ def indicator_overview(request):
 
 
 @login_required
+@permission_required("core.view_strategictarget", raise_exception=True)
 def target_overview(request):
     plans = Plan.objects.filter(active=True).order_by("start_date", "acronym")
     selected_plan = request.GET.get("plan", "")
@@ -427,10 +613,44 @@ def target_overview(request):
         if selected_objective.isdigit():
             targets = targets.filter(artifact_id=selected_objective)
 
+    can_add_target = request.user.has_perm("core.add_strategictarget")
+    can_edit_target = request.user.has_perm("core.change_strategictarget")
+    target_form = None
+    editing_target = None
+    if request.method == "POST":
+        _require_permission(
+            request.user,
+            "change_strategictarget" if request.POST.get("target_id", "").isdigit() else "add_strategictarget",
+        )
+    if plan and (can_add_target or can_edit_target):
+        form_actions = scope_actions(StrategicAction.objects.all(), request.user)
+        if request.method == "POST":
+            target_id = request.POST.get("target_id", "")
+            if target_id.isdigit():
+                _require_permission(request.user, "change_strategictarget")
+                editing_target = get_object_or_404(targets, pk=target_id)
+            else:
+                _require_permission(request.user, "add_strategictarget")
+            target_form = StrategicTargetForm(request.POST, instance=editing_target, plan=plan, actions=form_actions)
+            if target_form.is_valid():
+                target = target_form.save()
+                messages.success(request, "Meta atualizada." if editing_target else "Meta cadastrada.")
+                return redirect(f"{reverse('target_overview')}?{urlencode({'plan': plan.id})}#meta-{target.id}")
+        elif request.GET.get("editar", "").isdigit() and can_edit_target:
+            editing_target = get_object_or_404(targets, pk=request.GET["editar"])
+            target_form = StrategicTargetForm(instance=editing_target, plan=plan, actions=form_actions)
+        elif can_add_target:
+            initial = {"artifact": selected_objective} if selected_objective.isdigit() else {}
+            target_form = StrategicTargetForm(initial=initial, plan=plan, actions=form_actions)
+
     return render(
         request,
         "core/target_overview.html",
         {
+            "can_add_target": can_add_target,
+            "can_edit_target": can_edit_target,
+            "target_form": target_form,
+            "editing_target": editing_target,
             "plans": plans,
             "objectives": objectives,
             "plan": plan,
@@ -444,7 +664,7 @@ def target_overview(request):
 def _measurement_chart(indicator):
     """Geometria (SVG) do gráfico de linha.
 
-    Parte do valor basal (na data do basal) e liga cada resultado aferido ao fim do seu
+    Parte da linha de base (na data da linha de base) e liga cada resultado aferido ao fim do seu
     período de aferição, em ordem cronológica; a meta de cada período vai em linha à parte.
     """
     entries = []
@@ -485,7 +705,7 @@ def _measurement_chart(indicator):
                 "text": baseline[2],
                 "expected": None,
                 "label": baseline[0].strftime("%d/%m/%Y"),
-                "tip": f"Valor basal em {baseline[0]:%d/%m/%Y}: {baseline[2]}",
+                "tip": f"Linha de base em {baseline[0]:%d/%m/%Y}: {baseline[2]}",
                 "kind": "baseline",
             }
         )
@@ -504,6 +724,7 @@ def _measurement_chart(indicator):
     }
 
 @login_required
+@permission_required("core.view_indicator", raise_exception=True)
 def indicator_detail(request, indicator_id):
     indicator = get_object_or_404(
         scope_by_unit(Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True).select_related("responsible_unit").prefetch_related(
@@ -534,6 +755,8 @@ def indicator_detail(request, indicator_id):
             if not can_edit_measurement:
                 raise PermissionDenied
             editing = get_object_or_404(indicator.measurements.all(), pk=request.POST["measurement_id"])
+        else:
+            _require_permission(request.user, "add_indicatormeasurement")
         form = IndicatorMeasurementForm(request.POST, request.FILES, instance=editing)
         if form.is_valid():
             measurement = form.save(commit=False)
@@ -561,6 +784,7 @@ def indicator_detail(request, indicator_id):
             initial={"baseline_value": indicator.baseline, "measured_by": request.user.pk}
         )
     signal = _indicator_signal(indicator)
+    can_view_measurements = request.user.has_perm("core.view_indicatormeasurement")
     return render(
         request,
         "core/indicator_detail.html",
@@ -570,10 +794,12 @@ def indicator_detail(request, indicator_id):
             "measurement_form": form,
             "editing_measurement": editing_measurement,
             "can_edit_measurement": can_edit_measurement,
+            "can_view_measurements": can_view_measurements,
+            "can_add_measurement": request.user.has_perm("core.add_indicatormeasurement"),
             "definition_form": definition_form,
             "final_target": _final_target_value(indicator),
-            "final_progress": _final_progress(indicator, signal["measurement"]),
-            "chart": _measurement_chart(indicator),
+            "final_progress": _final_progress(indicator, signal["measurement"]) if can_view_measurements else None,
+            "chart": _measurement_chart(indicator) if can_view_measurements else None,
         },
     )
 
@@ -634,8 +860,10 @@ def _sector_report_snapshot(content):
 
 
 @login_required
+@permission_required("core.view_reportcycle", raise_exception=True)
 def report_cycle_overview(request):
     if request.method == "POST":
+        _require_permission(request.user, "add_reportcycle")
         form = ReportCycleForm(request.POST)
         if form.is_valid():
             with transaction.atomic():
@@ -666,10 +894,15 @@ def report_cycle_overview(request):
                 "approved_count": sum(item.status in [SectorReport.Status.APPROVED, SectorReport.Status.CONSOLIDATED] for item in reports),
             }
         )
-    return render(request, "core/report_cycle_overview.html", {"cycle_rows": cycle_rows, "cycle_form": form})
+    return render(
+        request,
+        "core/report_cycle_overview.html",
+        {"cycle_rows": cycle_rows, "cycle_form": form, "can_add_cycle": request.user.has_perm("core.add_reportcycle")},
+    )
 
 
 @login_required
+@permission_required("core.view_reportcycle", raise_exception=True)
 def report_cycle_detail(request, cycle_id):
     cycle = get_object_or_404(
         ReportCycle.objects.select_related("plan", "created_by").prefetch_related("sector_reports__unit", "sector_reports__validator"),
@@ -681,6 +914,7 @@ def report_cycle_detail(request, cycle_id):
     if visible_units is not None and not reports:
         raise Http404
     if request.method == "POST":
+        _require_permission(request.user, "change_reportcycle")
         operation = request.POST.get("operation")
         if operation == "consolidate":
             if all_reports and all(item.status == SectorReport.Status.APPROVED for item in all_reports):
@@ -710,6 +944,7 @@ def report_cycle_detail(request, cycle_id):
 
 
 @login_required
+@permission_required("core.view_sectorreport", raise_exception=True)
 def sector_report_detail(request, cycle_id, report_id):
     report = get_object_or_404(
         scope_by_unit(SectorReport.objects.all(), request.user, "unit_id").select_related(
@@ -721,6 +956,8 @@ def sector_report_detail(request, cycle_id, report_id):
     content = _sector_report_content(report)
     report_form = SectorReportForm(instance=report, current_user=request.user)
     validation_form = ReportValidationForm()
+    if request.method == "POST":
+        _require_permission(request.user, "change_sectorreport")
     if request.method == "POST" and report.cycle.status != ReportCycle.Status.CLOSED:
         operation = request.POST.get("operation")
         if operation in ["save", "submit"]:
@@ -770,6 +1007,7 @@ def sector_report_detail(request, cycle_id, report_id):
 
 
 @login_required
+@permission_required("core.view_actionplan", raise_exception=True)
 def action_plan_list(request):
     plans = Plan.objects.filter(active=True).order_by("acronym")
     units = scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
@@ -805,10 +1043,75 @@ def action_plan_list(request):
     )
 
 
+# Operação do ciclo do risco → permissão exigida para executá-la.
+RISK_OPERATION_PERMISSIONS = {
+    "update_identity": "change_risk",
+    "update_timing": "change_risk",
+    "add_assessment": "add_riskassessment",
+    "add_treatment": "add_risktreatment",
+    "materialize": "add_riskmaterialization",
+    "accept": "add_riskacceptance",
+    "submit_remediation": "add_riskremediationsubmission",
+}
+
+
+def _require_permission(user, codename):
+    if not user.has_perm(f"core.{codename}"):
+        raise PermissionDenied
+
+
+def _save_new_risk(user, form, action):
+    """Grava o risco com a avaliação inicial e, se informada, a resposta inicial ao risco."""
+    with transaction.atomic():
+        risk = form.save(commit=False)
+        risk.action = action
+        risk.status = Risk.Status.IDENTIFIED
+        decision = form.cleaned_data["treatment_decision"]
+        risk.treatment = decision
+        risk.save()
+        RiskAssessment.objects.create(
+            risk=risk,
+            assessment_type=RiskAssessment.AssessmentType.CURRENT,
+            probability=risk.probability,
+            impact=risk.impact,
+            author=user,
+        )
+        if decision:
+            RiskTreatment.objects.create(
+                risk=risk,
+                decision=decision,
+                responsible=risk.owner,
+                due_date=form.cleaned_data["treatment_due_date"],
+                preventive_measure=risk.preventive_measure,
+                contingency_measure=risk.contingency_measure,
+                created_by=user,
+            )
+            risk.status = Risk.Status.IN_TREATMENT
+            risk.save(update_fields=["status"])
+    return risk
+
+
 @login_required
 def risk_overview(request):
+    _require_permission(request.user, "view_risk")
     plans = Plan.objects.filter(active=True).order_by("acronym")
     units = scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
+    can_add_risk = request.user.has_perm("core.add_risk")
+    creatable_actions = scope_actions(
+        StrategicAction.objects.filter(action_plan__isnull=False).select_related("artifact"), request.user
+    ).order_by("artifact__code", "code")
+    if request.method == "POST":
+        _require_permission(request.user, "add_risk")
+        create_form = RiskCreateForm(request.POST, actions=creatable_actions)
+        if create_form.is_valid():
+            risk = _save_new_risk(request.user, create_form, create_form.cleaned_data["action"])
+            messages.success(request, "Risco cadastrado e associado à AE selecionada.")
+            return redirect("risk_overview")
+    else:
+        create_form = RiskCreateForm(actions=creatable_actions)
+    activities_by_action = {}
+    for activity in create_form.fields["activity"].queryset.select_related("action_plan"):
+        activities_by_action.setdefault(activity.action_plan.action_id, []).append([activity.id, activity.title])
     risks = Risk.objects.filter(action__in=scope_actions(StrategicAction.objects.all(), request.user)).select_related(
         "action",
         "action__artifact",
@@ -834,6 +1137,10 @@ def risk_overview(request):
         "core/risk_overview.html",
         {
             "risks": risks,
+            "create_form": create_form,
+            "activities_by_action": activities_by_action,
+            "has_creatable_actions": can_add_risk and creatable_actions.exists(),
+            "can_add_risk": can_add_risk,
             "plans": plans,
             "units": units,
             "risk_status_choices": Risk.Status.choices,
@@ -882,6 +1189,7 @@ def _rebalance_activity_weights(action_plan, new_weight):
 
 
 @login_required
+@permission_required("core.view_actionplan", raise_exception=True)
 def action_plan_detail(request, action_id):
     action = get_object_or_404(
         scope_actions(
@@ -895,6 +1203,7 @@ def action_plan_detail(request, action_id):
         action_plan = None
 
     if request.method == "POST" and request.POST.get("operation") == "start_plan":
+        _require_permission(request.user, "add_actionplan")
         action_plan = ActionPlan.objects.create(action=action, manager=request.user)
         messages.success(request, "Plano de ação iniciado. Agora você pode cadastrar as atividades e tarefas.")
         return redirect("action_plan_detail", action_id=action.id)
@@ -902,6 +1211,7 @@ def action_plan_detail(request, action_id):
     form = None
     if action_plan:
         if request.method == "POST" and request.POST.get("operation") == "add_activity":
+            _require_permission(request.user, "add_activity")
             form = ActivityForm(request.POST, action_plan=action_plan)
             if form.is_valid():
                 current_total = action_plan.activities.aggregate(total=Sum("weight"))["total"] or Decimal("0")
@@ -1120,6 +1430,7 @@ def _get_activity_for_action(user, action_id, activity_id):
 
 
 @login_required
+@permission_required("core.change_activity", raise_exception=True)
 def activity_edit(request, action_id, activity_id):
     activity = _get_activity_for_action(request.user, action_id, activity_id)
     action = activity.action_plan.action
@@ -1136,10 +1447,23 @@ def activity_edit(request, action_id, activity_id):
 
 
 @login_required
+@permission_required("core.view_activity", raise_exception=True)
 def activity_follow_up(request, action_id, activity_id):
     activity = _get_activity_for_action(request.user, action_id, activity_id)
     action = activity.action_plan.action
     operation = request.POST.get("operation") if request.method == "POST" else ""
+    follow_up_permissions = {
+        "add_evidence": "add_activityevidence",
+        "add_blocker": "add_activityblocker",
+        "add_risk": "add_risk",
+    }
+    if operation in follow_up_permissions:
+        _require_permission(request.user, follow_up_permissions[operation])
+    can_view = {
+        "evidences": request.user.has_perm("core.view_activityevidence"),
+        "blockers": request.user.has_perm("core.view_activityblocker"),
+        "risks": request.user.has_perm("core.view_risk"),
+    }
 
     evidence_form = ActivityEvidenceForm(prefix="evidence")
     blocker_form = ActivityBlockerForm(prefix="blocker")
@@ -1201,9 +1525,10 @@ def activity_follow_up(request, action_id, activity_id):
         {
             "action": action,
             "activity": activity,
-            "evidences": activity.evidences.select_related("created_by"),
-            "blockers": activity.blockers.select_related("resolution_owner", "created_by"),
-            "risks": activity.risks.select_related("owner"),
+            "can_view": can_view,
+            "evidences": activity.evidences.select_related("created_by") if can_view["evidences"] else [],
+            "blockers": activity.blockers.select_related("resolution_owner", "created_by") if can_view["blockers"] else [],
+            "risks": activity.risks.select_related("owner") if can_view["risks"] else [],
             "evidence_form": evidence_form,
             "blocker_form": blocker_form,
             "risk_form": risk_form,
@@ -1213,6 +1538,7 @@ def activity_follow_up(request, action_id, activity_id):
 
 @login_required
 def risk_map(request, action_id):
+    _require_permission(request.user, "view_risk")
     action = get_object_or_404(
         scope_actions(
             StrategicAction.objects.select_related("artifact", "artifact__plan", "coordinating_unit"), request.user
@@ -1221,34 +1547,10 @@ def risk_map(request, action_id):
     )
     action_plan = get_object_or_404(ActionPlan, action=action)
     if request.method == "POST":
+        _require_permission(request.user, "add_risk")
         form = RiskIdentificationForm(request.POST, action_plan=action_plan)
         if form.is_valid():
-            with transaction.atomic():
-                risk = form.save(commit=False)
-                risk.action = action
-                risk.status = Risk.Status.IDENTIFIED
-                decision = form.cleaned_data["treatment_decision"]
-                risk.treatment = decision
-                risk.save()
-                RiskAssessment.objects.create(
-                    risk=risk,
-                    assessment_type=RiskAssessment.AssessmentType.CURRENT,
-                    probability=risk.probability,
-                    impact=risk.impact,
-                    author=request.user,
-                )
-                if decision:
-                    RiskTreatment.objects.create(
-                        risk=risk,
-                        decision=decision,
-                        responsible=risk.owner,
-                        due_date=form.cleaned_data["treatment_due_date"],
-                        preventive_measure=risk.preventive_measure,
-                        contingency_measure=risk.contingency_measure,
-                        created_by=request.user,
-                    )
-                    risk.status = Risk.Status.IN_TREATMENT
-                    risk.save(update_fields=["status"])
+            risk = _save_new_risk(request.user, form, action)
             messages.success(request, "Risco incluído no mapa do plano de ação.")
             return redirect("risk_detail", action_id=action.id, risk_id=risk.id)
     else:
@@ -1260,7 +1562,13 @@ def risk_map(request, action_id):
     return render(
         request,
         "core/risk_map.html",
-        {"action": action, "action_plan": action_plan, "risks": risks, "form": form},
+        {
+            "action": action,
+            "action_plan": action_plan,
+            "risks": risks,
+            "form": form,
+            "can_add_risk": request.user.has_perm("core.add_risk"),
+        },
     )
 
 
@@ -1276,10 +1584,13 @@ def _get_risk_for_action(user, action_id, risk_id):
 
 @login_required
 def risk_detail(request, action_id, risk_id):
+    _require_permission(request.user, "view_risk")
     risk = _get_risk_for_action(request.user, action_id, risk_id)
     action = risk.action
-    action_plan = action.action_plan
+    action_plan = ActionPlan.objects.filter(action=action).first()  # a AE pode ter risco sem plano de ação iniciado
     operation = request.POST.get("operation") if request.method == "POST" else ""
+    if operation in RISK_OPERATION_PERMISSIONS:
+        _require_permission(request.user, RISK_OPERATION_PERMISSIONS[operation])
     identity_form = RiskIdentityForm(instance=risk, action_plan=action_plan, prefix="identity")
     assessment_form = RiskAssessmentForm(prefix="assessment")
     timing_form = RiskTimingForm(instance=risk, prefix="timing")
@@ -1380,22 +1691,36 @@ def risk_detail(request, action_id, risk_id):
             messages.success(request, "Cumprimento das diligências registrado. O risco está pronto para nova avaliação.")
             return redirect("risk_detail", action_id=action.id, risk_id=risk.id)
 
-    acceptances = risk.acceptances.select_related(
-        "authority", "recorded_by", "remediation_responsible"
-    ).prefetch_related("remediation_submissions__submitted_by")
-    pending_acceptance = acceptances.filter(
-        decision=RiskAcceptance.Decision.ACCEPTED_WITH_RESERVATIONS,
-        remediation_submissions__isnull=True,
-    ).first()
+    # Cada seção só carrega dados quando o usuário pode visualizá-la; as demais ficam vazias.
+    user = request.user
+    can_view = {
+        "assessments": user.has_perm("core.view_riskassessment"),
+        "treatments": user.has_perm("core.view_risktreatment"),
+        "materializations": user.has_perm("core.view_riskmaterialization"),
+        "acceptances": user.has_perm("core.view_riskacceptance"),
+    }
+    acceptances = RiskAcceptance.objects.none()
+    pending_acceptance = None
+    if can_view["acceptances"]:
+        acceptances = risk.acceptances.select_related(
+            "authority", "recorded_by", "remediation_responsible"
+        ).prefetch_related("remediation_submissions__submitted_by")
+        pending_acceptance = acceptances.filter(
+            decision=RiskAcceptance.Decision.ACCEPTED_WITH_RESERVATIONS,
+            remediation_submissions__isnull=True,
+        ).first()
     return render(
         request,
         "core/risk_detail.html",
         {
             "action": action,
             "risk": risk,
-            "assessments": risk.assessments.select_related("author"),
-            "treatments": risk.treatments.select_related("responsible", "created_by"),
-            "materializations": risk.materializations.select_related("recorded_by"),
+            "can_view": can_view,
+            "can_view_remediation": user.has_perm("core.view_riskremediationsubmission"),
+            "assessments": risk.assessments.select_related("author") if can_view["assessments"] else [],
+            "treatments": risk.treatments.select_related("responsible", "created_by") if can_view["treatments"] else [],
+            "current_treatment": risk.treatments.first() if can_view["treatments"] else None,
+            "materializations": risk.materializations.select_related("recorded_by") if can_view["materializations"] else [],
             "acceptances": acceptances,
             "pending_acceptance": pending_acceptance,
             "identity_form": identity_form,
@@ -1410,6 +1735,7 @@ def risk_detail(request, action_id, risk_id):
 
 
 @login_required
+@permission_required("core.delete_activity", raise_exception=True)
 def activity_delete(request, action_id, activity_id):
     activity = _get_activity_for_action(request.user, action_id, activity_id)
     action = activity.action_plan.action
@@ -1422,6 +1748,7 @@ def activity_delete(request, action_id, activity_id):
 
 
 @login_required
+@permission_required("core.change_activity", raise_exception=True)
 def activity_move(request, action_id, activity_id, direction):
     if request.method != "POST" or direction not in {"acima", "abaixo"}:
         return redirect("action_plan_detail", action_id=action_id)

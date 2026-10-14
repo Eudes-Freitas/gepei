@@ -6,8 +6,10 @@
     <div>
       <p class="eyebrow">Gestão preventiva</p>
       <h1>Riscos consolidados</h1>
-      <p>Acompanhe riscos de todas as ações e abra o ciclo completo para avaliar, tratar ou registrar uma materialização.</p>
-    </div>  </section>
+      <p>Cadastre riscos, associe-os à AE tratada e acompanhe todos em um só lugar. Abra um risco para avaliar, tratar ou registrar uma materialização.</p>
+    </div>
+    <div class="heading-actions">{% if has_creatable_actions %}<button class="button button-primary" type="button" data-open-risk-form>Cadastrar risco</button>{% else %}<span class="form-hint">Para cadastrar riscos, inicie o plano de ação de uma AE.</span>{% endif %}</div>
+  </section>
 
   <form class="dashboard-filters" method="get" aria-label="Filtros dos riscos">
     <label>Plano
@@ -40,11 +42,56 @@
           <td>{{ risk.action.coordinating_unit.acronym|default:risk.action.coordinating_unit.name }}</td>
           <td class="col-center">{{ risk.probability }}</td><td class="col-center">{{ risk.impact }}</td>
           <td class="col-center"><span class="risk-level {% if risk.level >= 20 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }} · {{ risk.level_label }}</span></td>
-          <td>{% with treatment=risk.treatments.first %}{% if treatment %}{{ treatment.get_decision_display }}{% elif risk.treatment %}{{ risk.treatment|title }}{% else %}A definir{% endif %}{% endwith %}</td>
+          <td>{% if not perms.core.view_risktreatment %}🔒{% else %}{% with treatment=risk.treatments.first %}{% if treatment %}{{ treatment.get_decision_display }}{% elif risk.treatment %}{{ risk.treatment|title }}{% else %}A definir{% endif %}{% endwith %}{% endif %}</td>
           <td><span class="chip chip-{{ risk.status|lower }}">{{ risk.get_status_display }}</span></td>
           <td><div class="row-actions"><a class="text-button" href="{% url 'risk_detail' risk.action.id risk.id %}">Abrir ciclo</a><a class="text-button" href="{% url 'risk_detail' risk.action.id risk.id %}#alcada">Decidir aceite</a></div></td>
         </tr>{% endfor %}
       </tbody></table></div>
-    {% else %}<div class="empty-state large-empty"><strong>Nenhum risco encontrado.</strong><span>Altere os filtros ou registre riscos nos planos de ação.</span></div>{% endif %}
+    {% else %}<div class="empty-state large-empty"><strong>Nenhum risco encontrado.</strong><span>Altere os filtros ou use “Cadastrar risco”.</span></div>{% endif %}
   </section>
+
+  {% include "core/_risk_legend.html" %}
+
+  {% if has_creatable_actions %}
+  <dialog class="panel activity-form-panel" aria-labelledby="risk-form-title" {% if create_form.errors %}data-open-on-load{% endif %}>
+    <div class="dialog-heading"><div><p class="eyebrow">Gestão preventiva</p><h2 id="risk-form-title">Cadastrar risco</h2></div><button class="icon-button dialog-close" type="button" data-close-risk-form aria-label="Fechar">×</button></div>
+    <p class="form-hint">Registre o que pode dar errado, em qual AE e o quão grave seria. Avaliação, tratamento e aceite são feitos depois, na tela do risco.</p>
+    <form method="post" class="activity-form" id="risk-create-form">{% csrf_token %}
+      {% include "core/_form_field.html" with field=create_form.action hint="Ação estratégica que será prejudicada se o risco ocorrer." %}
+      {% include "core/_form_field.html" with field=create_form.activity hint="Use quando o risco afeta uma atividade específica da AE; deixe em branco para toda a AE." %}
+      {% include "core/_form_field.html" with field=create_form.title hint="Evento incerto, em uma frase. Ex.: atraso no envio dos dados." %}
+      {% include "core/_form_field.html" with field=create_form.cause hint="Por que ele pode acontecer." %}
+      {% include "core/_form_field.html" with field=create_form.owner hint="Quem acompanha este risco." %}
+      {% include "core/_form_field.html" with field=create_form.probability hint="1 = muito improvável · 5 = quase certo." %}
+      {% include "core/_form_field.html" with field=create_form.impact hint="1 = efeito mínimo · 5 = compromete a AE. Nível = P × I." %}
+      <details class="entry-form" {% if create_form.occurrence_timing.errors or create_form.exposure_start_date.errors or create_form.exposure_end_date.errors or create_form.trigger_description.errors %}open{% endif %}><summary>Quando pode ocorrer (opcional)</summary>
+        {% include "core/_form_field.html" with field=create_form.occurrence_timing %}
+        {% include "core/_form_field.html" with field=create_form.exposure_start_date cls="timing-window-field" hide=True %}
+        {% include "core/_form_field.html" with field=create_form.exposure_end_date cls="timing-window-field" hide=True %}
+        {% include "core/_form_field.html" with field=create_form.expected_occurrence_date cls="timing-date-field" hide=True %}
+        {% include "core/_form_field.html" with field=create_form.trigger_description %}
+      </details>
+      <details class="entry-form"><summary>Resposta inicial (opcional)</summary>
+        {% include "core/_form_field.html" with field=create_form.treatment_decision hint="Mitigar, aceitar, evitar ou transferir. Pode ser definida depois." %}
+        {% include "core/_form_field.html" with field=create_form.treatment_due_date %}
+        {% include "core/_form_field.html" with field=create_form.preventive_measure %}
+        {% include "core/_form_field.html" with field=create_form.contingency_measure %}
+      </details>
+      <button class="button button-primary" type="submit">Cadastrar risco</button>
+    </form>
+    {{ activities_by_action|json_script:"risk-activities-data" }}
+    <script>(function(){var form=document.getElementById('risk-create-form');var dialog=form.closest('dialog');
+      document.querySelector('[data-open-risk-form]').addEventListener('click',function(){dialog.showModal();});
+      dialog.querySelector('[data-close-risk-form]').addEventListener('click',function(){dialog.close();});
+      dialog.addEventListener('click',function(event){if(event.target===dialog){dialog.close();}});
+      if(dialog.hasAttribute('data-open-on-load')){dialog.showModal();}
+      var timing=form.querySelector('[data-occurrence-timing]');var windowFields=form.querySelectorAll('.timing-window-field');var dateFields=form.querySelectorAll('.timing-date-field');
+      function updateTiming(){var value=timing.value;windowFields.forEach(function(f){f.hidden=value!=='PERIODO';});dateFields.forEach(function(f){f.hidden=value!=='DATA_MARCO';});}
+      timing.addEventListener('change',updateTiming);updateTiming();
+      var data=JSON.parse(document.getElementById('risk-activities-data').textContent);var action=form.querySelector('[name=action]');var activity=form.querySelector('[name=activity]');var selected=activity.value;
+      function updateActivities(){activity.innerHTML='';var empty=document.createElement('option');empty.value='';empty.textContent='Toda a AE';activity.appendChild(empty);(data[action.value]||[]).forEach(function(item){var o=document.createElement('option');o.value=item[0];o.textContent=item[1];if(String(item[0])===selected){o.selected=true;}activity.appendChild(o);});selected='';}
+      action.addEventListener('change',updateActivities);updateActivities();
+    }());</script>
+  </dialog>
+  {% endif %}
 {% endblock %}

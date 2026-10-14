@@ -4,7 +4,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from core.models import Indicator, PlanArtifact, StrategicAction, StrategicTarget
-from core.pei_indicator_data import INDICATOR_ROWS
+from core.pei_indicator_data import INDICATOR_ROWS, INDICATOR_UNITS_SOURCES
 
 
 class Command(BaseCommand):
@@ -56,6 +56,9 @@ class Command(BaseCommand):
             indicator.direction = (
                 Indicator.Direction.LOWER_IS_BETTER if polarity == "Negativa" else Indicator.Direction.HIGHER_IS_BETTER
             )
+            unit, source = INDICATOR_UNITS_SOURCES.get(number, ("", ""))
+            indicator.unit_of_measure = indicator.unit_of_measure or unit
+            indicator.data_source = indicator.data_source or source
             if not indicator.responsible_unit_id:
                 action = StrategicAction.objects.filter(artifact__parent=objective).order_by("code").first()
                 indicator.responsible_unit = action.coordinating_unit if action else None

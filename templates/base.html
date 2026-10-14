@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}GEPEI{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'css/gepei.css' %}?v=20261009-6">
+  <link rel="stylesheet" href="{% static 'css/gepei.css' %}?v=20261014-6">
 </head>
 <body>
   <header class="topbar">
@@ -13,7 +13,7 @@
     {% if user.is_authenticated %}
       <nav>
         <a href="{% url 'dashboard' %}" {% if request.path == '/' %}class="nav-active" aria-current="page"{% endif %}>Painel</a>
-        <details class="nav-plans{% if '/pei/' in request.path %} nav-active{% endif %}">
+        {% if perms.core.view_plan %}<details class="nav-plans{% if '/pei/' in request.path %} nav-active{% endif %}">
           <summary {% if '/pei/' in request.path %}aria-current="page"{% endif %}>Planos</summary>
           <div class="plans-dropdown">
             {% for navigation_plan in navigation_plans %}
@@ -22,12 +22,12 @@
               <span class="plans-empty">Nenhum plano cadastrado.</span>
             {% endfor %}
           </div>
-        </details>
-        <a href="{% url 'action_plan_list' %}" {% if '/planos-de-acao/' in request.path and '/riscos/' not in request.path %}class="nav-active" aria-current="page"{% endif %}>Execução</a>
-        <a href="{% url 'risk_overview' %}" {% if '/riscos/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Riscos</a>
-        <a href="{% url 'target_overview' %}" {% if '/metas/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Metas</a>
-        <a href="{% url 'indicator_overview' %}" {% if '/indicadores/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Indicadores</a>
-        <a href="{% url 'report_cycle_overview' %}" {% if '/relatorios/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Relatórios</a>
+        </details>{% endif %}
+        {% if perms.core.view_actionplan %}<a href="{% url 'action_plan_list' %}" {% if '/planos-de-acao/' in request.path and '/riscos/' not in request.path %}class="nav-active" aria-current="page"{% endif %}>Execução</a>{% endif %}
+        {% if perms.core.view_risk %}<a href="{% url 'risk_overview' %}" {% if '/riscos/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Riscos</a>{% endif %}
+        {% if perms.core.view_strategictarget %}<a href="{% url 'target_overview' %}" {% if '/metas/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Metas</a>{% endif %}
+        {% if perms.core.view_indicator %}<a href="{% url 'indicator_overview' %}" {% if '/indicadores/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Indicadores</a>{% endif %}
+        {% if perms.core.view_reportcycle %}<a href="{% url 'report_cycle_overview' %}" {% if '/relatorios/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Relatórios</a>{% endif %}
         {% if perms.auth.view_user or perms.auth.view_group %}
         <details class="nav-plans{% if '/usuarios/' in request.path %} nav-active{% endif %}">
           <summary {% if '/usuarios/' in request.path %}aria-current="page"{% endif %}>Usuários</summary>

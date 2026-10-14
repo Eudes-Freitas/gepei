@@ -1,87 +1,167 @@
 {% extends "base.html" %}
 {% block title %}{{ risk.title }} | GEPEI{% endblock %}
 {% block content %}
-  <a class="back-link" href="{% url 'risk_map' action.id %}">← Voltar ao mapa de riscos</a>
+  <a class="back-link" href="{% url 'risk_overview' %}">← Voltar aos riscos</a>
   <section class="action-detail-heading">
     <div><p class="eyebrow">{{ action.code }} · Ciclo do risco</p><h1>{{ risk.title }}</h1><p>{% if risk.activity %}Atividade: {{ risk.activity.title }}{% else %}Ação estratégica{% endif %} · Responsável: {{ risk.owner.get_full_name|default:risk.owner.username }}</p></div>
     <div class="risk-heading-status"><span class="risk-score {% if risk.level >= 20 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }}</span><span class="chip chip-neutral">{{ risk.get_status_display }}</span></div>
   </section>
 
-  <section class="risk-summary panel">
-    <div><span>Causa</span><strong>{{ risk.cause }}</strong></div><div><span>Possível momento</span><strong>{{ risk.occurrence_timing_summary }}{% if risk.trigger_description %}{% if risk.occurrence_timing_summary %} · {% endif %}{{ risk.trigger_description }}{% endif %}</strong></div><div><span>Classificação atual</span><strong>{{ risk.level_label }} · P{{ risk.probability }} × I{{ risk.impact }}</strong></div><div><span>Resposta atual</span><strong>{% with treatment=risk.treatments.first %}{% if treatment %}{{ treatment.get_decision_display }}{% elif risk.treatment %}{{ risk.treatment|title }}{% else %}A definir{% endif %}{% endwith %}</strong></div>
-  </section>
+  <div class="risk-workspace">
+    <nav class="risk-side-menu" aria-label="Seções do risco">
+      <a href="#dados" data-section-link="dados">Dados e momento</a>
+      <a href="#analise" data-section-link="analise">Avaliações {% if can_view.assessments %}<span class="risk-count">{{ assessments|length }}</span>{% else %}<span class="risk-lock" title="Sem permissão">🔒</span>{% endif %}</a>
+      <a href="#tratamento" data-section-link="tratamento">Tratamento {% if can_view.treatments %}<span class="risk-count">{{ treatments|length }}</span>{% else %}<span class="risk-lock" title="Sem permissão">🔒</span>{% endif %}</a>
+      <a href="#ocorrencia" data-section-link="ocorrencia">Materialização {% if can_view.materializations %}<span class="risk-count">{{ materializations|length }}</span>{% else %}<span class="risk-lock" title="Sem permissão">🔒</span>{% endif %}</a>
+      <a href="#alcada" data-section-link="alcada">Aceite {% if not can_view.acceptances %}<span class="risk-lock" title="Sem permissão">🔒</span>{% elif pending_acceptance %}<span class="risk-count risk-count-warn">pendente</span>{% endif %}</a>
+      <div class="risk-side-tools"><button type="button" class="text-button" data-expand-all>Expandir tudo</button><button type="button" class="text-button" data-collapse-all>Recolher tudo</button></div>
+    </nav>
 
-  <nav class="risk-action-nav" aria-label="Atalhos para alterar o risco">
-    <strong>O que você deseja alterar?</strong>
-    <a href="#identificacao">Identificação</a>
-    <a href="#exposicao">Possível momento</a>
-    <a href="#analise">Classificação</a>
-    <a href="#tratamento">Resposta e tratamento</a>
-    <a href="#ocorrencia">Materialização</a>
-    <a href="#alcada">Aceite</a>
-  </nav>
+    <div class="panel risk-sections">
+      <div class="risk-summary-line">
+        <div><span>Causa</span><strong>{{ risk.cause }}</strong></div>
+        <div><span>Possível momento</span><strong>{{ risk.occurrence_timing_summary }}{% if risk.trigger_description %}{% if risk.occurrence_timing_summary %} · {% endif %}{{ risk.trigger_description }}{% endif %}</strong></div>
+        <div><span>Classificação atual</span><strong>{{ risk.level_label }} · P{{ risk.probability }} × I{{ risk.impact }}</strong></div>
+        <div><span>Resposta atual</span><strong>{% if not can_view.treatments %}Sem permissão{% elif current_treatment %}{{ current_treatment.get_decision_display }}{% elif risk.treatment %}{{ risk.treatment|title }}{% else %}A definir{% endif %}</strong></div>
+      </div>
 
-  <section class="risk-cycle-grid">
-    <article class="panel cycle-panel" id="identificacao">
-      <p class="eyebrow">Identificação</p><h2>Dados básicos e responsabilidade</h2>
-      <div class="record-card"><strong>{{ risk.title }}</strong><p>{{ risk.cause }}</p><small>{% if risk.activity %}Atividade afetada: {{ risk.activity.title }}{% else %}Afeta toda a ação estratégica{% endif %}</small><small>Responsável: {{ risk.owner.get_full_name|default:risk.owner.username }}</small></div>
-      <details class="entry-form"><summary>Editar identificação e responsabilidade</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="update_identity">{% for field in identity_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Salvar alterações</button></form></details>
-    </article>
-
-    <article class="panel cycle-panel" id="exposicao"><p class="eyebrow">Exposição</p><h2>Possível momento de ocorrência</h2><div class="record-card"><strong>{{ risk.occurrence_timing_summary }}</strong>{% if risk.trigger_description %}<p>{{ risk.trigger_description }}</p>{% endif %}<small>A data futura é opcional; use-a somente quando houver uma estimativa razoável.</small></div><details class="entry-form"><summary>Revisar momento ou condição</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="update_timing">{% for field in timing_form %}<div class="form-field {% if field.name == 'exposure_start_date' or field.name == 'exposure_end_date' %}timing-window-field{% elif field.name == 'expected_occurrence_date' %}timing-date-field{% endif %}" {% if field.name == 'exposure_start_date' or field.name == 'exposure_end_date' or field.name == 'expected_occurrence_date' %}hidden{% endif %}>{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Atualizar condição</button></form><script>(function(){var form=document.currentScript.previousElementSibling;var timing=form.querySelector('[data-occurrence-timing]');var windowFields=form.querySelectorAll('.timing-window-field');var dateFields=form.querySelectorAll('.timing-date-field');function update(){var value=timing.value;windowFields.forEach(function(field){field.hidden=value!=='PERIODO';});dateFields.forEach(function(field){field.hidden=value!=='DATA_MARCO';});}timing.addEventListener('change',update);update();}());</script></details></article>
-
-    <article class="panel cycle-panel" id="analise"><p class="eyebrow">Análise</p><h2>Avaliações</h2>{% for item in assessments %}<div class="record-card"><div class="record-card-heading"><strong>{{ item.get_assessment_type_display }}</strong><span class="risk-score {% if item.level >= 20 %}risk-critical{% elif item.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ item.level }}</span></div><small>P{{ item.probability }} × I{{ item.impact }} · {{ item.assessed_at|date:"d/m/Y H:i" }}</small>{% if item.notes %}<p>{{ item.notes }}</p>{% endif %}</div>{% empty %}<div class="empty-state"><span>Sem histórico de avaliação.</span></div>{% endfor %}<details class="entry-form"><summary>Reavaliar classificação</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_assessment">{% for field in assessment_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Salvar avaliação</button></form></details></article>
-
-    <article class="panel cycle-panel" id="tratamento"><p class="eyebrow">Resposta</p><h2>Tratamentos</h2>{% for item in treatments %}<div class="record-card"><div class="record-card-heading"><strong>{{ item.get_decision_display }}</strong>{% if item.due_date %}<span class="chip chip-neutral">até {{ item.due_date|date:"d/m/Y" }}</span>{% endif %}</div><small>Responsável: {{ item.responsible.get_full_name|default:item.responsible.username }}</small>{% if item.preventive_measure %}<p><strong>Controle:</strong> {{ item.preventive_measure }}</p>{% endif %}{% if item.contingency_measure %}<p><strong>Contingência:</strong> {{ item.contingency_measure }}</p>{% endif %}</div>{% empty %}<div class="empty-state"><span>Tratamento ainda não definido.</span></div>{% endfor %}<details class="entry-form"><summary>Revisar resposta e tratamento</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_treatment">{% for field in treatment_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Salvar tratamento</button></form></details></article>
-
-    <article class="panel cycle-panel" id="ocorrencia"><p class="eyebrow">Ocorrência</p><h2>Materializações</h2>{% for item in materializations %}<div class="record-card"><div class="record-card-heading"><strong>{{ item.occurred_on|date:"d/m/Y" }}</strong><span class="chip chip-atrasada">Materializado</span></div><p>{{ item.description }}</p><p><strong>Impacto:</strong> {{ item.actual_impact }}</p><p><strong>Providências:</strong> {{ item.actions_taken }}</p>{% if item.evidence_reference %}<small>Evidência: {{ item.evidence_reference }}</small>{% endif %}</div>{% empty %}<div class="empty-state"><span>Este risco ainda não se materializou.</span></div>{% endfor %}<details class="entry-form"><summary>Registrar materialização</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="materialize">{% for field in materialization_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Registrar ocorrência</button></form></details></article>
-
-    <article class="panel cycle-panel" id="alcada">
-      <p class="eyebrow">Alçada</p><h2>Aceites formais</h2>
-      {% for item in acceptances %}
-        <div class="record-card">
-          <div class="record-card-heading"><strong>{{ item.get_decision_display }}</strong><span class="chip chip-neutral">{{ item.recorded_at|date:"d/m/Y" }}</span></div>
-          <small><strong>Autoridade decisora:</strong> {{ item.authority.get_full_name|default:item.authority.username }}</small>
-          <small><strong>Registrado no GEPEI por:</strong> {{ item.recorded_by.get_full_name|default:item.recorded_by.username }}</small>
-          <p><strong>Fundamentação:</strong> {{ item.justification }}</p>
-          {% if item.decision == "ACEITO_RESSALVAS" %}
-            <p><strong>Diligências saneadoras:</strong> {{ item.remedial_actions }}</p>
-            <small><strong>Responsável:</strong> {{ item.remediation_responsible.get_full_name|default:item.remediation_responsible.username }}</small>
-            <small><strong>Reapresentação:</strong> {% if item.reevaluation_due_date %}até {{ item.reevaluation_due_date|date:"d/m/Y" }}{% else %}sem prazo definido{% endif %}</small>
-            {% for submission in item.remediation_submissions.all %}
-              <div class="remediation-update">
-                <strong>Diligências reapresentadas em {{ submission.submitted_at|date:"d/m/Y H:i" }}</strong>
-                <p>{{ submission.completion_summary }}</p>
-                {% if submission.evidence_reference %}<small><strong>Evidência:</strong> {{ submission.evidence_reference }}</small>{% endif %}
-                <small><strong>Enviado por:</strong> {{ submission.submitted_by.get_full_name|default:submission.submitted_by.username }}</small>
-              </div>
-            {% empty %}<span class="chip chip-warning">Aguardando cumprimento</span>{% endfor %}
+      <details class="risk-section" id="dados" data-section="dados" open>
+        <summary><span>Dados e momento de ocorrência</span></summary>
+        <div class="risk-section-body">
+          <div class="record-card"><strong>{{ risk.title }}</strong><p>{{ risk.cause }}</p><small>{% if risk.activity %}Atividade afetada: {{ risk.activity.title }}{% else %}Afeta toda a ação estratégica{% endif %}</small><small>Responsável: {{ risk.owner.get_full_name|default:risk.owner.username }}</small></div>
+          <div class="record-card"><strong>{{ risk.occurrence_timing_summary }}</strong>{% if risk.trigger_description %}<p>{{ risk.trigger_description }}</p>{% endif %}<small>A data futura é opcional; use-a somente quando houver uma estimativa razoável.</small></div>
+          {% if perms.core.change_risk %}
+          <details class="entry-form" id="identificacao"><summary>Editar identificação e responsabilidade</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="update_identity">{% for field in identity_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Salvar alterações</button></form></details>
+          <details class="entry-form" id="exposicao"><summary>Revisar momento ou condição</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="update_timing">{% for field in timing_form %}<div class="form-field {% if field.name == 'exposure_start_date' or field.name == 'exposure_end_date' %}timing-window-field{% elif field.name == 'expected_occurrence_date' %}timing-date-field{% endif %}" {% if field.name == 'exposure_start_date' or field.name == 'exposure_end_date' or field.name == 'expected_occurrence_date' %}hidden{% endif %}>{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Atualizar condição</button></form><script>(function(){var form=document.currentScript.previousElementSibling;var timing=form.querySelector('[data-occurrence-timing]');var windowFields=form.querySelectorAll('.timing-window-field');var dateFields=form.querySelectorAll('.timing-date-field');function update(){var value=timing.value;windowFields.forEach(function(field){field.hidden=value!=='PERIODO';});dateFields.forEach(function(field){field.hidden=value!=='DATA_MARCO';});}timing.addEventListener('change',update);update();}());</script></details>
           {% endif %}
         </div>
-      {% empty %}<div class="empty-state"><span>Nenhuma decisão formal registrada.</span></div>{% endfor %}
-      {% if pending_acceptance %}
-        <details class="entry-form" open>
-          <summary>Registrar cumprimento das diligências</summary>
-          <p class="form-hint">Use este registro para devolver o caso à autoridade. Depois, registre uma nova avaliação e uma nova decisão de aceite.</p>
-          <form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="submit_remediation"><input type="hidden" name="acceptance_id" value="{{ pending_acceptance.id }}">
-            {% for field in remediation_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}
-            {% if remediation_form.non_field_errors %}<small class="field-error">{{ remediation_form.non_field_errors|striptags }}</small>{% endif %}
-            <button class="button button-primary" type="submit">Enviar para nova avaliação</button>
-          </form>
-        </details>
-      {% endif %}
-      <details class="entry-form">
-        <summary>Registrar decisão de aceite</summary>
-        <div class="role-explanation">
-          <p><strong>Quem decide:</strong> a autoridade com alçada selecionada abaixo.</p>
-          <p><strong>Quem registra:</strong> {{ request.user.get_full_name|default:request.user.username }}, usuário conectado que lança a decisão no GEPEI.</p>
-        </div>
-        <form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="accept">
-          {% for field in acceptance_form %}<div class="form-field {% if field.name == 'remedial_actions' or field.name == 'remediation_responsible' or field.name == 'reevaluation_due_date' %}acceptance-reservation-field{% endif %}" {% if field.name == 'remedial_actions' or field.name == 'remediation_responsible' or field.name == 'reevaluation_due_date' %}hidden{% endif %}>{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}
-          <button class="button button-primary" type="submit">Registrar decisão</button>
-        </form>
-        <script>(function(){var form=document.currentScript.previousElementSibling;var decision=form.querySelector('#id_acceptance-decision');var fields=form.querySelectorAll('.acceptance-reservation-field');function update(){var show=decision.value==='ACEITO_RESSALVAS';fields.forEach(function(field){field.hidden=!show;});}decision.addEventListener('change',update);update();}());</script>
       </details>
-    </article>
-  </section>
+
+      {% if can_view.assessments %}
+      <details class="risk-section" id="analise" data-section="analise">
+        <summary><span>Avaliações</span><span class="risk-count">{{ assessments|length }}</span></summary>
+        <div class="risk-section-body">
+          {% for item in assessments %}<div class="record-card"><div class="record-card-heading"><strong>{{ item.get_assessment_type_display }}</strong><span class="risk-score {% if item.level >= 20 %}risk-critical{% elif item.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ item.level }}</span></div><small>P{{ item.probability }} × I{{ item.impact }} · {{ item.assessed_at|date:"d/m/Y H:i" }}</small>{% if item.notes %}<p>{{ item.notes }}</p>{% endif %}</div>{% empty %}<div class="empty-state"><span>Sem histórico de avaliação.</span></div>{% endfor %}
+          {% if perms.core.add_riskassessment %}<details class="entry-form"><summary>Reavaliar classificação</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_assessment">{% for field in assessment_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Salvar avaliação</button></form></details>{% endif %}
+        </div>
+      </details>
+      {% else %}
+      <section class="risk-section risk-section-locked" id="analise" data-section="analise">
+        <button type="button" class="risk-locked-toggle" data-locked-toggle aria-expanded="false" aria-controls="analise-aviso"><span>Avaliações</span><span class="risk-lock">🔒 Sem permissão</span></button>
+        <p class="risk-lock-notice" id="analise-aviso" role="alert" hidden>Você não tem permissão para visualizar as avaliações deste risco. Solicite acesso ao administrador do sistema.</p>
+      </section>
+      {% endif %}
+
+      {% if can_view.treatments %}
+      <details class="risk-section" id="tratamento" data-section="tratamento">
+        <summary><span>Resposta e tratamento</span><span class="risk-count">{{ treatments|length }}</span></summary>
+        <div class="risk-section-body">
+          {% for item in treatments %}<div class="record-card"><div class="record-card-heading"><strong>{{ item.get_decision_display }}</strong>{% if item.due_date %}<span class="chip chip-neutral">até {{ item.due_date|date:"d/m/Y" }}</span>{% endif %}</div><small>Responsável: {{ item.responsible.get_full_name|default:item.responsible.username }}</small>{% if item.preventive_measure %}<p><strong>Controle:</strong> {{ item.preventive_measure }}</p>{% endif %}{% if item.contingency_measure %}<p><strong>Contingência:</strong> {{ item.contingency_measure }}</p>{% endif %}</div>{% empty %}<div class="empty-state"><span>Tratamento ainda não definido.</span></div>{% endfor %}
+          {% if perms.core.add_risktreatment %}<details class="entry-form"><summary>Revisar resposta e tratamento</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_treatment">{% for field in treatment_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Salvar tratamento</button></form></details>{% endif %}
+        </div>
+      </details>
+      {% else %}
+      <section class="risk-section risk-section-locked" id="tratamento" data-section="tratamento">
+        <button type="button" class="risk-locked-toggle" data-locked-toggle aria-expanded="false" aria-controls="tratamento-aviso"><span>Resposta e tratamento</span><span class="risk-lock">🔒 Sem permissão</span></button>
+        <p class="risk-lock-notice" id="tratamento-aviso" role="alert" hidden>Você não tem permissão para visualizar os tratamentos deste risco. Solicite acesso ao administrador do sistema.</p>
+      </section>
+      {% endif %}
+
+      {% if can_view.materializations %}
+      <details class="risk-section" id="ocorrencia" data-section="ocorrencia">
+        <summary><span>Materialização</span><span class="risk-count">{{ materializations|length }}</span></summary>
+        <div class="risk-section-body">
+          {% for item in materializations %}<div class="record-card"><div class="record-card-heading"><strong>{{ item.occurred_on|date:"d/m/Y" }}</strong><span class="chip chip-atrasada">Materializado</span></div><p>{{ item.description }}</p><p><strong>Impacto:</strong> {{ item.actual_impact }}</p><p><strong>Providências:</strong> {{ item.actions_taken }}</p>{% if item.evidence_reference %}<small>Evidência: {{ item.evidence_reference }}</small>{% endif %}</div>{% empty %}<div class="empty-state"><span>Este risco ainda não se materializou.</span></div>{% endfor %}
+          {% if perms.core.add_riskmaterialization %}<details class="entry-form"><summary>Registrar materialização</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="materialize">{% for field in materialization_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Registrar ocorrência</button></form></details>{% endif %}
+        </div>
+      </details>
+      {% else %}
+      <section class="risk-section risk-section-locked" id="ocorrencia" data-section="ocorrencia">
+        <button type="button" class="risk-locked-toggle" data-locked-toggle aria-expanded="false" aria-controls="ocorrencia-aviso"><span>Materialização</span><span class="risk-lock">🔒 Sem permissão</span></button>
+        <p class="risk-lock-notice" id="ocorrencia-aviso" role="alert" hidden>Você não tem permissão para visualizar as materializações deste risco. Solicite acesso ao administrador do sistema.</p>
+      </section>
+      {% endif %}
+
+      {% if can_view.acceptances %}
+      <details class="risk-section" id="alcada" data-section="alcada">
+        <summary><span>Aceites formais</span><span class="risk-count">{{ acceptances|length }}</span>{% if pending_acceptance %}<span class="risk-count risk-count-warn">diligências pendentes</span>{% endif %}</summary>
+        <div class="risk-section-body">
+          {% for item in acceptances %}
+            <div class="record-card">
+              <div class="record-card-heading"><strong>{{ item.get_decision_display }}</strong><span class="chip chip-neutral">{{ item.recorded_at|date:"d/m/Y" }}</span></div>
+              <small><strong>Autoridade decisora:</strong> {{ item.authority.get_full_name|default:item.authority.username }}</small>
+              <small><strong>Registrado no GEPEI por:</strong> {{ item.recorded_by.get_full_name|default:item.recorded_by.username }}</small>
+              <p><strong>Fundamentação:</strong> {{ item.justification }}</p>
+              {% if item.decision == "ACEITO_RESSALVAS" %}
+                <p><strong>Diligências saneadoras:</strong> {{ item.remedial_actions }}</p>
+                <small><strong>Responsável:</strong> {{ item.remediation_responsible.get_full_name|default:item.remediation_responsible.username }}</small>
+                <small><strong>Reapresentação:</strong> {% if item.reevaluation_due_date %}até {{ item.reevaluation_due_date|date:"d/m/Y" }}{% else %}sem prazo definido{% endif %}</small>
+                {% if can_view_remediation %}
+                  {% for submission in item.remediation_submissions.all %}
+                    <div class="remediation-update">
+                      <strong>Diligências reapresentadas em {{ submission.submitted_at|date:"d/m/Y H:i" }}</strong>
+                      <p>{{ submission.completion_summary }}</p>
+                      {% if submission.evidence_reference %}<small><strong>Evidência:</strong> {{ submission.evidence_reference }}</small>{% endif %}
+                      <small><strong>Enviado por:</strong> {{ submission.submitted_by.get_full_name|default:submission.submitted_by.username }}</small>
+                    </div>
+                  {% empty %}<span class="chip chip-warning">Aguardando cumprimento</span>{% endfor %}
+                {% else %}<small class="form-hint">Você não tem permissão para ver o cumprimento das diligências.</small>{% endif %}
+              {% endif %}
+            </div>
+          {% empty %}<div class="empty-state"><span>Nenhuma decisão formal registrada.</span></div>{% endfor %}
+          {% if pending_acceptance and perms.core.add_riskremediationsubmission %}
+            <details class="entry-form" open>
+              <summary>Registrar cumprimento das diligências</summary>
+              <p class="form-hint">Use este registro para devolver o caso à autoridade. Depois, registre uma nova avaliação e uma nova decisão de aceite.</p>
+              <form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="submit_remediation"><input type="hidden" name="acceptance_id" value="{{ pending_acceptance.id }}">
+                {% for field in remediation_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}
+                {% if remediation_form.non_field_errors %}<small class="field-error">{{ remediation_form.non_field_errors|striptags }}</small>{% endif %}
+                <button class="button button-primary" type="submit">Enviar para nova avaliação</button>
+              </form>
+            </details>
+          {% endif %}
+          {% if perms.core.add_riskacceptance %}
+          <details class="entry-form">
+            <summary>Registrar decisão de aceite</summary>
+            <div class="role-explanation">
+              <p><strong>Quem decide:</strong> a autoridade com alçada selecionada abaixo.</p>
+              <p><strong>Quem registra:</strong> {{ request.user.get_full_name|default:request.user.username }}, usuário conectado que lança a decisão no GEPEI.</p>
+            </div>
+            <form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="accept">
+              {% for field in acceptance_form %}<div class="form-field {% if field.name == 'remedial_actions' or field.name == 'remediation_responsible' or field.name == 'reevaluation_due_date' %}acceptance-reservation-field{% endif %}" {% if field.name == 'remedial_actions' or field.name == 'remediation_responsible' or field.name == 'reevaluation_due_date' %}hidden{% endif %}>{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}
+              <button class="button button-primary" type="submit">Registrar decisão</button>
+            </form>
+            <script>(function(){var form=document.currentScript.previousElementSibling;var decision=form.querySelector('#id_acceptance-decision');var fields=form.querySelectorAll('.acceptance-reservation-field');function update(){var show=decision.value==='ACEITO_RESSALVAS';fields.forEach(function(field){field.hidden=!show;});}decision.addEventListener('change',update);update();}());</script>
+          </details>
+          {% endif %}
+        </div>
+      </details>
+      {% else %}
+      <section class="risk-section risk-section-locked" id="alcada" data-section="alcada">
+        <button type="button" class="risk-locked-toggle" data-locked-toggle aria-expanded="false" aria-controls="alcada-aviso"><span>Aceites formais</span><span class="risk-lock">🔒 Sem permissão</span></button>
+        <p class="risk-lock-notice" id="alcada-aviso" role="alert" hidden>Você não tem permissão para visualizar os aceites deste risco. Solicite acesso ao administrador do sistema.</p>
+      </section>
+      {% endif %}
+    </div>
+  </div>
+
+  <script>(function(){
+    var links=document.querySelectorAll('[data-section-link]');
+    var alias={identificacao:'dados',exposicao:'dados'};
+    var byOperation={update_identity:'dados',update_timing:'dados',add_assessment:'analise',add_treatment:'tratamento',materialize:'ocorrencia',accept:'alcada',submit_remediation:'alcada'};
+    function find(name){return document.querySelector('[data-section="'+name+'"]');}
+    function reveal(name){
+      var section=find(name);if(!section){return;}
+      if(section.tagName==='DETAILS'){section.open=true;}
+      else{var toggle=section.querySelector('[data-locked-toggle]');var notice=section.querySelector('.risk-lock-notice');toggle.setAttribute('aria-expanded','true');notice.hidden=false;}
+      links.forEach(function(l){if(l.dataset.sectionLink===name){l.setAttribute('aria-current','true');}else{l.removeAttribute('aria-current');}});
+      section.scrollIntoView({behavior:'smooth',block:'start'});
+    }
+    links.forEach(function(l){l.addEventListener('click',function(e){e.preventDefault();var name=l.dataset.sectionLink;history.replaceState(null,'','#'+name);reveal(name);});});
+    document.querySelectorAll('[data-locked-toggle]').forEach(function(btn){btn.addEventListener('click',function(){var notice=document.getElementById(btn.getAttribute('aria-controls'));var open=btn.getAttribute('aria-expanded')==='true';btn.setAttribute('aria-expanded',open?'false':'true');notice.hidden=open;});});
+    document.querySelector('[data-expand-all]').addEventListener('click',function(){document.querySelectorAll('details.risk-section').forEach(function(d){d.open=true;});});
+    document.querySelector('[data-collapse-all]').addEventListener('click',function(){document.querySelectorAll('details.risk-section').forEach(function(d){d.open=false;});});
+    var hash=location.hash.slice(1);var start=alias[hash]||(find(hash)?hash:'')||byOperation['{{ request.POST.operation|escapejs }}']||'';
+    if(start){reveal(start);}
+  }());</script>
 {% endblock %}

@@ -302,6 +302,159 @@ class DashboardAndRiskTests(TestCase):
         self.unit = unit
         self.artifact = artifact
         UserProfile.objects.create(user=self.user, unit=unit)
+        self.user.user_permissions.add(
+            *Permission.objects.filter(content_type__app_label="core").exclude(codename__in=["change_indicator", "change_indicatormeasurement"])
+        )
+
+    def test_risk_sections_require_their_own_permissions(self):
+        action_plan = ActionPlan.objects.create(action=self.action, manager=self.user)
+        risk = Risk.objects.create(
+            action=self.action, owner=self.user, title="Risco restrito", cause="Teste", probability=2, impact=2
+        )
+        RiskAssessment.objects.create(risk=risk, probability=2, impact=2, author=self.user, notes="Nota sigilosa")
+        self.assertTrue(action_plan.pk)
+        limited = User.objects.create_user(username="limitado", password="senha-segura")
+        UserProfile.objects.create(user=limited, unit=self.unit)
+        limited.user_permissions.add(Permission.objects.get(codename="view_risk"))
+        self.client.login(username="limitado", password="senha-segura")
+
+        response = self.client.get(f"/planos-de-acao/{self.action.id}/riscos/{risk.id}/")
+        self.assertContains(response, "Você não tem permissão para visualizar as avaliações")
+        self.assertNotContains(response, "Nota sigilosa")
+        self.assertNotContains(response, "Reavaliar classificação")
+        response = self.client.post(
+            f"/planos-de-acao/{self.action.id}/riscos/{risk.id}/",
+            {"operation": "add_assessment", "assessment-assessment_type": "ATUAL", "assessment-probability": 5, "assessment-impact": 5},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(RiskAssessment.objects.filter(risk=risk).count(), 1)
+
+        limited.user_permissions.add(Permission.objects.get(codename="view_riskassessment"))
+        response = self.client.get(f"/planos-de-acao/{self.action.id}/riscos/{risk.id}/")
+        self.assertContains(response, "Nota sigilosa")
+        self.assertNotContains(response, "Reavaliar classificação")
+
+        nobody = User.objects.create_user(username="semriscos", password="senha-segura")
+        self.client.login(username="semriscos", password="senha-segura")
+        self.assertEqual(self.client.get("/riscos/").status_code, 403)
+
+    def test_risk_detail_opens_when_action_has_no_action_plan(self):
+        risk = Risk.objects.create(
+            action=self.action, owner=self.user, title="Risco sem plano", cause="Teste", probability=2, impact=2
+        )
+        self.client.login(username="copin", password="senha-segura")
+        response = self.client.get(f"/planos-de-acao/{self.action.id}/riscos/{risk.id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Risco sem plano")
+
+    def test_modules_without_permission_are_blocked_and_hidden_from_menu(self):
+        ActionPlan.objects.create(action=self.action, manager=self.user)
+        only_risks = User.objects.create_user(username="soriscos", password="senha-segura")
+        UserProfile.objects.create(user=only_risks, unit=self.unit)
+        only_risks.user_permissions.add(Permission.objects.get(codename="view_risk"))
+        self.client.login(username="soriscos", password="senha-segura")
+
+        home = self.client.get("/")
+        self.assertContains(home, 'href="/riscos/"')
+        for hidden in ["/planos-de-acao/", "/metas/", "/indicadores/", "/relatorios/", "/pei/"]:
+            self.assertNotContains(home, f'<a href="{hidden}"')
+        for blocked in [
+            "/planos-de-acao/",
+            f"/planos-de-acao/{self.action.id}/",
+            "/metas/",
+            "/indicadores/",
+            "/relatorios/",
+            "/pei/",
+        ]:
+            self.assertEqual(self.client.get(blocked).status_code, 403, blocked)
+        self.assertEqual(self.client.post(f"/planos-de-acao/{self.action.id}/", {"operation": "start_plan"}).status_code, 403)
+
+    def test_view_only_profile_cannot_change_execution_or_reports(self):
+        action_plan = ActionPlan.objects.create(action=self.action, manager=self.user)
+        activity = Activity.objects.create(
+            action_plan=action_plan, executor=self.user, title="Ativ", weight=100,
+            start_date=date(2026, 5, 1), end_date=date(2026, 6, 30),
+        )
+        viewer = User.objects.create_user(username="leitor", password="senha-segura")
+        UserProfile.objects.create(user=viewer, unit=self.unit)
+        viewer.user_permissions.add(*Permission.objects.filter(codename__startswith="view_", content_type__app_label="core"))
+        self.client.login(username="leitor", password="senha-segura")
+        detail = self.client.get(f"/planos-de-acao/{self.action.id}/")
+        self.assertEqual(detail.status_code, 200)
+        self.assertNotContains(detail, "Nova atividade")
+        self.assertEqual(self.client.get(f"/planos-de-acao/{self.action.id}/atividades/{activity.id}/editar/").status_code, 403)
+        self.assertEqual(self.client.post(f"/planos-de-acao/{self.action.id}/atividades/{activity.id}/excluir/").status_code, 403)
+        self.assertTrue(Activity.objects.filter(pk=activity.pk).exists())
+        self.assertEqual(self.client.post("/relatorios/", {"name": "x"}).status_code, 403)
+
+    def test_target_can_be_created_and_edited_with_permissions(self):
+        indicator = Indicator.objects.create(code="IE 01.1", name="Percentual capacitado")
+        indicator.artifacts.add(self.artifact)
+        self.client.login(username="copin", password="senha-segura")
+        page = self.client.get("/metas/")
+        self.assertContains(page, "Nova meta")
+
+        payload = {
+            "artifact": self.artifact.id,
+            "code": "Mt 01.9",
+            "description": "Capacitar 100% dos servidores até 2034.",
+            "target_value": "100%",
+            "unit_of_measure": "%",
+            "reference_period": "Anual",
+            "indicators": [indicator.id],
+        }
+        response = self.client.post("/metas/", payload)
+        self.assertEqual(response.status_code, 302)
+        target = StrategicTarget.objects.get(code="Mt 01.9")
+        self.assertEqual(target.artifact, self.artifact)
+        self.assertEqual(list(target.indicators.all()), [indicator])
+
+        response = self.client.get(f"/metas/?editar={target.id}")
+        self.assertContains(response, "Alterar Mt 01.9")
+        response = self.client.post("/metas/", {**payload, "target_id": target.id, "target_value": "90%", "indicators": []})
+        self.assertEqual(response.status_code, 302)
+        target.refresh_from_db()
+        self.assertEqual(target.target_value, "90%")
+        self.assertEqual(target.indicators.count(), 0)
+
+        viewer = User.objects.create_user(username="leitormetas", password="senha-segura")
+        UserProfile.objects.create(user=viewer, unit=self.unit)
+        viewer.user_permissions.add(Permission.objects.get(codename="view_strategictarget"))
+        self.client.login(username="leitormetas", password="senha-segura")
+        self.assertNotContains(self.client.get("/metas/"), "Nova meta")
+        self.assertEqual(self.client.post("/metas/", payload).status_code, 403)
+        self.assertEqual(self.client.post("/metas/", {**payload, "target_id": target.id}).status_code, 403)
+    def test_dashboard_performance_charts_show_measured_and_on_target_percentages(self):
+        good = Indicator.objects.create(code="IE 01.1", name="Capacitados")
+        bad = Indicator.objects.create(code="IE 01.2", name="Satisfação")
+        none = Indicator.objects.create(code="IE 01.3", name="Sem aferição")
+        for indicator in (good, bad, none):
+            indicator.artifacts.add(self.artifact)
+        for indicator, measured in ((good, "100"), (bad, "50")):
+            IndicatorMeasurement.objects.create(
+                indicator=indicator, reference_period="2026", measured_value=measured,
+                expected_value=Decimal("100"), recorded_by=self.user,
+            )
+        target = StrategicTarget.objects.create(artifact=self.artifact, code="Mt 01.1", description="Capacitar todos")
+        target.indicators.set([good, bad])
+        self.client.login(username="copin", password="senha-segura")
+        response = self.client.get("/")
+        self.assertEqual(response.context["indicator_total"], 3)
+        self.assertEqual(response.context["indicator_measured_pct"], 67)
+        self.assertEqual(response.context["indicator_green_pct"], 50)
+        self.assertEqual(response.context["signal_counts"]["red"], 1)
+        self.assertEqual(response.context["target_counts"]["red"], 1)  # a meta vale pelo pior indicador aferido
+        self.assertEqual(response.context["target_attention"][0]["code"], "Mt 01.1")
+        self.assertContains(response, 'id="chart-measured"')
+        self.assertContains(response, 'id="chart-targets"')
+        self.assertContains(response, "/indicadores/?status=red")
+    def test_dashboard_links_and_indicator_card(self):
+        self.client.login(username="copin", password="senha-segura")
+        response = self.client.get("/")
+        self.assertContains(response, "Desempenho e resultados")
+        self.assertContains(response, "/indicadores/")
+        self.assertContains(response, "/metas/")
+        self.assertContains(response, "/planos-de-acao/?status=ATRASADA")
 
     def test_non_administrator_only_sees_own_sector(self):
         other_unit = OrganizationalUnit.objects.create(
@@ -327,7 +480,7 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.client.login(username="copin", password="senha-segura")
         response = self.client.get("/")
-        self.assertContains(response, "<h1>Painel</h1>", html=False)
+        self.assertContains(response, "<h1>Painel executivo</h1>", html=False)
         self.assertContains(response, "AE 01.01")
         self.assertContains(response, ">Planos</summary>", html=False)
         self.assertContains(response, f'href="/pei/?plan={self.artifact.plan_id}"', html=False)
@@ -501,6 +654,7 @@ class DashboardAndRiskTests(TestCase):
     def test_report_cycle_submission_validation_and_closure(self):
         validator = User.objects.create_user(username="validador", password="senha-segura")
         UserProfile.objects.create(user=validator, unit=self.unit)
+        validator.user_permissions.add(*Permission.objects.filter(codename__in=["view_sectorreport", "change_sectorreport"]))
         self.client.login(username="copin", password="senha-segura")
         response = self.client.post(
             "/relatorios/",
@@ -834,6 +988,33 @@ class DashboardAndRiskTests(TestCase):
         self.assertContains(response, "Unidade não enviou os dados")
         self.assertContains(response, "Atraso na consolidação")
 
+    def test_risk_can_be_registered_from_overview_linked_to_chosen_action(self):
+        self.client.login(username="copin", password="senha-segura")
+        ActionPlan.objects.create(action=self.action, manager=self.user)
+        payload = {
+            "action": self.action.id,
+            "title": "Atraso no envio",
+            "cause": "Equipe sobrecarregada",
+            "owner": self.user.id,
+            "probability": 2,
+            "impact": 3,
+            "occurrence_timing": Risk.OccurrenceTiming.UNKNOWN,
+            "treatment_decision": "",
+        }
+        response = self.client.get("/riscos/")
+        self.assertContains(response, "Cadastrar risco")
+
+        response = self.client.post("/riscos/", payload)
+        self.assertEqual(response.status_code, 302)
+        risk = Risk.objects.get(title="Atraso no envio")
+        self.assertEqual(risk.action, self.action)
+        self.assertEqual(risk.status, Risk.Status.IDENTIFIED)
+        self.assertEqual(RiskAssessment.objects.get(risk=risk).level, 6)
+
+        response = self.client.post("/riscos/", {**payload, "title": "Sem AE", "action": ""})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Risk.objects.filter(title="Sem AE").exists())
+
     def test_risk_map_covers_identification_treatment_materialization_and_acceptance(self):
         self.client.login(username="copin", password="senha-segura")
         action_plan = ActionPlan.objects.create(action=self.action, manager=self.user)
@@ -872,7 +1053,7 @@ class DashboardAndRiskTests(TestCase):
 
         detail_url = f"{map_url}{risk.id}/"
         response = self.client.get(detail_url)
-        self.assertContains(response, "O que você deseja alterar?")
+        self.assertContains(response, "Dados e momento")
         self.assertContains(response, "Editar identificação e responsabilidade")
         self.assertContains(response, "Reavaliar classificação")
 

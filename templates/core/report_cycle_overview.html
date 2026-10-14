@@ -17,10 +17,10 @@
         <div class="empty-state large-empty panel"><strong>Nenhum ciclo aberto.</strong><span>Crie o primeiro ciclo para preparar os relatórios das unidades participantes.</span></div>
       {% endfor %}
     </div>
-    <aside class="panel report-cycle-form-panel">
+    {% if can_add_cycle %}<aside class="panel report-cycle-form-panel">
       <div class="panel-heading"><div><p class="eyebrow">Novo ciclo</p><h2>Abrir período de relatório</h2></div></div>
       <p class="form-hint">Um relatório em rascunho será criado automaticamente para cada unidade selecionada.</p>
       <form method="post" class="activity-form">{% csrf_token %}{% for field in cycle_form %}<div class="form-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<span class="field-error">{{ error }}</span>{% endfor %}</div>{% endfor %}<button class="button button-primary" type="submit">Abrir ciclo</button></form>
-    </aside>
+    </aside>{% endif %}
   </section>
 {% endblock %}

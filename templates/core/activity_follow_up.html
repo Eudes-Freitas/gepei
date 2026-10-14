@@ -8,19 +8,20 @@
       <h1>{{ activity.title }}</h1>
       <p>{{ activity.get_status_display }} · {{ activity.progress|floatformat:"-1" }}% executado · conclusão em {{ activity.end_date|date:"d/m/Y" }}</p>
     </div>
-      <div class="heading-actions"><a class="button button-secondary" href="{% url 'risk_map' action.id %}">Riscos e aceites</a><a class="button button-secondary" href="{% url 'activity_edit' action.id activity.id %}">Editar atividade</a></div>
+      <div class="heading-actions">{% if perms.core.view_risk %}<a class="button button-secondary" href="{% url 'risk_map' action.id %}">Riscos e aceites</a>{% endif %}{% if perms.core.change_activity %}<a class="button button-secondary" href="{% url 'activity_edit' action.id activity.id %}">Editar atividade</a>{% endif %}</div>
   </section>
 
   <section class="metrics follow-up-metrics">
-    <article class="metric-card"><span>Evidências</span><strong>{{ evidences|length }}</strong><small>registros de comprovação</small></article>
-    <article class="metric-card metric-warning"><span>Impedimentos</span><strong>{{ blockers|length }}</strong><small>ocorrências registradas</small></article>
-    <article class="metric-card metric-danger"><span>Riscos</span><strong>{{ risks|length }}</strong><small>vinculados à atividade</small></article>
+    <article class="metric-card"><span>Evidências</span><strong>{% if can_view.evidences %}{{ evidences|length }}{% else %}🔒{% endif %}</strong><small>registros de comprovação</small></article>
+    <article class="metric-card metric-warning"><span>Impedimentos</span><strong>{% if can_view.blockers %}{{ blockers|length }}{% else %}🔒{% endif %}</strong><small>ocorrências registradas</small></article>
+    <article class="metric-card metric-danger"><span>Riscos</span><strong>{% if can_view.risks %}{{ risks|length }}{% else %}🔒{% endif %}</strong><small>vinculados à atividade</small></article>
   </section>
 
   <section class="follow-up-grid">
     <article class="panel follow-up-panel" id="evidencias">
       <div class="panel-heading"><div><p class="eyebrow">Comprovação</p><h2>Evidências</h2></div></div>
-      {% if evidences %}
+      {% if not can_view.evidences %}<div class="empty-state" role="alert"><strong>Sem permissão.</strong><span>Você não tem permissão para visualizar as evidências.</span></div>
+      {% else %}{% if evidences %}
         <div class="record-list">
           {% for evidence in evidences %}
             <div class="record-card">
@@ -33,16 +34,17 @@
           {% endfor %}
         </div>
       {% else %}<div class="empty-state"><span>Nenhuma evidência registrada.</span></div>{% endif %}
-      <details class="entry-form" open>
+      {% if perms.core.add_activityevidence %}<details class="entry-form" open>
         <summary>Adicionar evidência</summary>
         <p class="form-hint">O anexo é obrigatório, e a atividade só pode ser concluída depois que houver uma evidência com anexo.</p>
         <form method="post" enctype="multipart/form-data" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_evidence">{% for field in evidence_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}{% if evidence_form.non_field_errors %}<small class="field-error">{{ evidence_form.non_field_errors|striptags }}</small>{% endif %}<button class="button button-primary" type="submit">Registrar evidência</button></form>
-      </details>
+      </details>{% endif %}{% endif %}
     </article>
 
     <article class="panel follow-up-panel">
       <div class="panel-heading"><div><p class="eyebrow">Desbloqueio</p><h2>Impedimentos</h2></div></div>
-      {% if blockers %}
+      {% if not can_view.blockers %}<div class="empty-state" role="alert"><strong>Sem permissão.</strong><span>Você não tem permissão para visualizar os impedimentos.</span></div>
+      {% else %}{% if blockers %}
         <div class="record-list">
           {% for blocker in blockers %}
             <div class="record-card">
@@ -54,15 +56,16 @@
           {% endfor %}
         </div>
       {% else %}<div class="empty-state"><span>Nenhum impedimento registrado.</span></div>{% endif %}
-      <details class="entry-form">
+      {% if perms.core.add_activityblocker %}<details class="entry-form">
         <summary>Registrar impedimento</summary>
         <form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_blocker">{% for field in blocker_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Registrar impedimento</button></form>
-      </details>
+      </details>{% endif %}{% endif %}
     </article>
 
     <article class="panel follow-up-panel">
       <div class="panel-heading"><div><p class="eyebrow">Prevenção</p><h2>Riscos da atividade</h2></div></div>
-      {% if risks %}
+      {% if not can_view.risks %}<div class="empty-state" role="alert"><strong>Sem permissão.</strong><span>Você não tem permissão para visualizar os riscos.</span></div>
+      {% else %}{% if risks %}
         <div class="record-list">
           {% for risk in risks %}
             <div class="record-card">
@@ -74,10 +77,10 @@
           {% endfor %}
         </div>
       {% else %}<div class="empty-state"><span>Nenhum risco específico registrado.</span></div>{% endif %}
-      <details class="entry-form">
+      {% if perms.core.add_risk %}<details class="entry-form">
         <summary>Registrar risco</summary>
         <form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_risk">{% for field in risk_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Registrar risco</button></form>
-      </details>
+      </details>{% endif %}{% endif %}
     </article>
   </section>
 {% endblock %}

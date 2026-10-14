@@ -13,6 +13,7 @@ from .models import (
     IndicatorMeasurement,
     Organization,
     OrganizationalUnit,
+    PlanArtifact,
     ReportCycle,
     Risk,
     RiskAcceptance,
@@ -22,8 +23,63 @@ from .models import (
     RiskTreatment,
     SectorReport,
     StrategicAction,
+    StrategicTarget,
     UserProfile,
 )
+
+
+class StrategicTargetForm(forms.ModelForm):
+    """Cadastro e edição de meta, vinculada a um objetivo (ou projeto) do plano e, opcionalmente, a uma ação."""
+
+    indicators = forms.ModelMultipleChoiceField(
+        queryset=Indicator.objects.none(),
+        required=False,
+        label="Indicadores que medem esta meta",
+        widget=forms.SelectMultiple(attrs={"size": 6}),
+        help_text="Opcional. Segure Ctrl para escolher mais de um.",
+    )
+
+    class Meta:
+        model = StrategicTarget
+        fields = ["artifact", "action", "code", "description", "target_value", "unit_of_measure", "reference_period"]
+        labels = {
+            "artifact": "Objetivo ou projeto estratégico",
+            "action": "Ação estratégica (opcional)",
+            "code": "Código",
+            "description": "Meta",
+            "target_value": "Valor esperado",
+            "unit_of_measure": "Unidade de medida",
+            "reference_period": "Período de referência",
+        }
+        help_texts = {
+            "code": "Ex.: Mt 01.1",
+            "description": "O que deve ser alcançado e até quando.",
+            "target_value": "Ex.: 100%, 3 iniciativas, 20 por 100 mil.",
+            "reference_period": "Ex.: Anual, Bienal, até 2034.",
+        }
+        widgets = {"description": forms.Textarea(attrs={"rows": 3})}
+
+    def __init__(self, *args, plan, actions, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.plan = plan
+        self.fields["artifact"].queryset = PlanArtifact.objects.filter(
+            plan=plan,
+            artifact_type__in=[PlanArtifact.ArtifactType.OBJECTIVE, PlanArtifact.ArtifactType.PROJECT],
+        ).order_by("code", "title")
+        self.fields["artifact"].label_from_instance = lambda artifact: f"{artifact.code} · {artifact.title}"
+        self.fields["action"].queryset = actions.filter(artifact__plan=plan).order_by("code")
+        self.fields["action"].label_from_instance = lambda action: f"{action.code} · {action.title}"
+        self.fields["action"].empty_label = "Toda a meta do objetivo (sem ação específica)"
+        self.fields["indicators"].queryset = Indicator.objects.filter(artifacts__plan=plan).distinct().order_by("code", "name")
+        self.fields["indicators"].label_from_instance = lambda indicator: f"{indicator.code} · {indicator.name}".strip(" ·")
+        if self.instance.pk:
+            self.fields["indicators"].initial = self.instance.indicators.all()
+
+    def save(self, commit=True):
+        target = super().save(commit=commit)
+        if commit:
+            target.indicators.set(self.cleaned_data["indicators"])
+        return target
 
 
 class IndicatorDefinitionForm(forms.ModelForm):
@@ -59,8 +115,8 @@ class IndicatorMeasurementForm(forms.ModelForm):
         ]
         labels = {
             "measured_by": "Responsável pela aferição",
-            "baseline_value": "Valor basal",
-            "baseline_date": "Data do valor basal",
+            "baseline_value": "Linha de base",
+            "baseline_date": "Data da linha de base",
             "measured_value": "Resultado aferido",
             "period_start": "Período de aferição — início",
             "period_end": "Período de aferição — fim",
@@ -85,7 +141,7 @@ class IndicatorMeasurementForm(forms.ModelForm):
         measured_by.empty_label = "Selecione quem realizou a aferição"
         measured_by.help_text = "O setor da pessoa selecionada será registrado como setor responsável pela aferição."
         self.fields["baseline_value"].help_text = "Valor de partida (linha de base) usado como comparação para este resultado."
-        self.fields["baseline_date"].help_text = "Data em que o valor basal foi apurado."
+        self.fields["baseline_date"].help_text = "Data em que a linha de base foi apurada."
         self.fields["measured_value"].help_text = "Informe o valor apurado. Use apenas o número para calcular o semáforo."
         self.fields["period_start"].help_text = "Primeiro dia do período a que o resultado se refere."
         self.fields["period_end"].help_text = "Último dia do período a que o resultado se refere."
@@ -507,6 +563,32 @@ class RiskIdentificationForm(forms.ModelForm):
         return cleaned_data
 
 
+class RiskCreateForm(RiskIdentificationForm):
+    """Cadastro de risco a partir da visão consolidada: a ação estratégica (AE) é escolhida no próprio formulário."""
+
+    action = forms.ModelChoiceField(
+        queryset=StrategicAction.objects.none(),
+        label="Ação estratégica (AE) tratada",
+        empty_label="Selecione a AE",
+    )
+    field_order = ["action", "activity", "title", "cause", "owner", "probability", "impact"]
+
+    def __init__(self, *args, actions, **kwargs):
+        forms.ModelForm.__init__(self, *args, **kwargs)
+        self.fields["action"].queryset = actions
+        self.fields["action"].label_from_instance = lambda action: f"{action.code} · {action.title}"
+        self.fields["activity"].queryset = Activity.objects.filter(action_plan__action__in=actions).order_by("position", "title")
+        self.fields["owner"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
+
+    def clean(self):
+        cleaned_data = super().clean()
+        action = cleaned_data.get("action")
+        activity = cleaned_data.get("activity")
+        if action and activity and activity.action_plan.action_id != action.id:
+            self.add_error("activity", "A atividade escolhida não pertence à AE selecionada.")
+        return cleaned_data
+
+
 class RiskTimingForm(forms.ModelForm):
     class Meta:
         model = Risk
@@ -569,8 +651,7 @@ class RiskIdentityForm(forms.ModelForm):
 
     def __init__(self, *args, action_plan=None, **kwargs):
         super().__init__(*args, **kwargs)
-        if action_plan is not None:
-            self.fields["activity"].queryset = action_plan.activities.all()
+        self.fields["activity"].queryset = action_plan.activities.all() if action_plan is not None else Activity.objects.none()
         self.fields["owner"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
 
 

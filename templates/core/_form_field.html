@@ -1,0 +1,1 @@
+<div class="form-field {{ cls }}" {% if hide %}hidden{% endif %}>{{ field.label_tag }}{{ field }}{% if hint %}<small class="form-hint">{{ hint }}</small>{% elif field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>
