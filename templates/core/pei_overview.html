@@ -17,7 +17,11 @@
         {% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}
       </select>
     </label>
-    <button class="button button-primary" type="submit">Abrir plano</button>
+    <label>Setor
+      <select name="unit"><option value="">Todos os setores disponíveis</option>{% for unit in units %}<option value="{{ unit.id }}" {% if selected_unit == unit.id|stringformat:"s" %}selected{% endif %}>{{ unit.acronym|default:unit.name }}</option>{% endfor %}</select>
+    </label>
+    <button class="button button-primary" type="submit">Aplicar filtros</button>
+    <a class="clear-filter" href="{% url 'pei_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}">Limpar</a>
   </form>
 
   {% if plan %}
@@ -27,10 +31,10 @@
     </section>
 
     <section class="metrics strategy-metrics" aria-label="Resumo do plano estratégico">
-      <article class="metric-card metric-blue"><span>Objetivos estratégicos</span><strong>{{ objective_count }}</strong><small>resultados pretendidos</small></article>
-      <article class="metric-card"><span>Projetos estratégicos</span><strong>{{ project_count }}</strong><small>iniciativas estruturantes</small></article>
-      <article class="metric-card"><span>Ações estratégicas</span><strong>{{ action_count }}</strong><small>desdobramentos executáveis</small></article>
-      <article class="metric-card"><span>Execução média</span><strong>{{ progress_average|floatformat:"-1" }}%</strong><small>calculada pelas ações</small></article>
+      <article class="metric-card metric-blue"><span>Objetivos estratégicos</span><strong>{{ objective_count }}</strong></article>
+      <article class="metric-card"><span>Projetos estratégicos</span><strong>{{ project_count }}</strong></article>
+      <article class="metric-card"><span>Ações estratégicas</span><strong>{{ action_count }}</strong></article>
+      <article class="metric-card"><span>Execução média</span><strong>{{ progress_average|floatformat:"-1" }}%</strong></article>
     </section>
 
     <section class="strategy-map" aria-label="Estrutura do plano {{ plan.acronym }}">
@@ -73,4 +77,22 @@
   {% else %}
     <div class="empty-state large-empty"><strong>Nenhum plano ativo cadastrado.</strong><span>Cadastre ou ative um plano para visualizar a cadeia estratégica.</span></div>
   {% endif %}
+{% endblock %}
+
+{% block extra_script %}
+<script>
+(function () {
+  function revealSelection() {
+    var target = document.getElementById(window.location.hash.slice(1));
+    if (!target) { return; }
+    for (var node = target; node; node = node.parentElement) {
+      if (node.tagName === 'DETAILS') { node.open = true; }
+    }
+    target.scrollIntoView({ block: 'center' });
+    target.focus({ preventScroll: true });
+  }
+  revealSelection();
+  window.addEventListener('hashchange', revealSelection);
+}());
+</script>
 {% endblock %}

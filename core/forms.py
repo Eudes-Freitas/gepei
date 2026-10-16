@@ -59,7 +59,7 @@ class StrategicTargetForm(forms.ModelForm):
         }
         widgets = {"description": forms.Textarea(attrs={"rows": 3})}
 
-    def __init__(self, *args, plan, actions, **kwargs):
+    def __init__(self, *args, plan, actions, visible_indicators=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.plan = plan
         self.fields["artifact"].queryset = PlanArtifact.objects.filter(
@@ -71,6 +71,8 @@ class StrategicTargetForm(forms.ModelForm):
         self.fields["action"].label_from_instance = lambda action: f"{action.code} · {action.title}"
         self.fields["action"].empty_label = "Toda a meta do objetivo (sem ação específica)"
         self.fields["indicators"].queryset = Indicator.objects.filter(artifacts__plan=plan).distinct().order_by("code", "name")
+        if visible_indicators is not None:
+            self.fields["indicators"].queryset = self.fields["indicators"].queryset.filter(pk__in=visible_indicators.values("pk"))
         self.fields["indicators"].label_from_instance = lambda indicator: f"{indicator.code} · {indicator.name}".strip(" ·")
         if self.instance.pk:
             self.fields["indicators"].initial = self.instance.indicators.all()
@@ -708,13 +710,14 @@ class RiskTreatmentForm(forms.ModelForm):
 class RiskMaterializationForm(forms.ModelForm):
     class Meta:
         model = RiskMaterialization
-        fields = ["occurred_on", "description", "actual_impact", "actions_taken", "evidence_reference"]
+        fields = ["occurred_on", "description", "actual_impact", "actions_taken", "evidence_reference", "evidence_attachment"]
         labels = {
             "occurred_on": "Data em que ocorreu (registro posterior)",
             "description": "O que ocorreu",
             "actual_impact": "Impacto ocorrido",
             "actions_taken": "Providências adotadas",
             "evidence_reference": "Referência da evidência",
+            "evidence_attachment": "Anexo da evidência do risco (opcional)",
         }
         widgets = {
             "occurred_on": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
@@ -949,3 +952,60 @@ class GroupForm(forms.Form):
         if others.filter(name__iexact=name).exists():
             raise forms.ValidationError("Já existe um perfil com este nome.")
         return name
+
+
+class ActivityRiskReportForm(forms.Form):
+    risk = forms.ModelChoiceField(queryset=Risk.objects.none(), required=False, label="Qual risco?", empty_label="Cadastrar risco não previsto")
+    materialized = forms.ChoiceField(label="O risco se materializou?", choices=(("", "Selecione"), ("SIM", "Sim"), ("NAO", "Não")))
+
+    edit_materialization = forms.BooleanField(required=False, label="Editar os dados de materialização já cadastrados")
+
+    def __init__(self, *args, risks, can_create=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["risk"].queryset = risks
+        self.fields["risk"].label_from_instance = lambda risk: risk.title
+        if not can_create:
+            self.fields["risk"].required = True
+            self.fields["risk"].empty_label = "Selecione um risco"
+
+    def clean(self):
+        data = super().clean()
+        risk = data.get("risk")
+        if risk and risk.status == Risk.Status.MATERIALIZED and data.get("materialized") == "NAO":
+            self.add_error("materialized", "Este risco já está materializado. Selecione Sim; o histórico de ocorrências será mantido.")
+        return data
+
+
+class UnforeseenActivityRiskForm(ActivityRiskForm):
+    class Meta(ActivityRiskForm.Meta):
+        fields = [field for field in ActivityRiskForm.Meta.fields if field != "status"]
+
+
+class QuarterlyReportForm(forms.Form):
+    plan = forms.ModelChoiceField(queryset=None, label="Plano")
+    unit = forms.ModelChoiceField(queryset=OrganizationalUnit.objects.none(), label="Setor")
+    year = forms.IntegerField(label="Ano", min_value=2000, max_value=9999)
+    quarter = forms.TypedChoiceField(label="Trimestre", coerce=int, choices=((1, "1º trimestre · janeiro a março"), (2, "2º trimestre · abril a junho"), (3, "3º trimestre · julho a setembro"), (4, "4º trimestre · outubro a dezembro")))
+
+    def __init__(self, *args, units, **kwargs):
+        from .models import Plan
+        super().__init__(*args, **kwargs)
+        self.fields["plan"].queryset = Plan.objects.filter(active=True).order_by("acronym")
+        self.fields["unit"].queryset = units
+
+    def clean(self):
+        import calendar
+        from datetime import date
+        from django.utils import timezone
+        data = super().clean()
+        year, quarter, plan = data.get("year"), data.get("quarter"), data.get("plan")
+        if year and quarter:
+            month = (quarter - 1) * 3 + 1
+            start = date(year, month, 1)
+            end = date(year, month + 2, calendar.monthrange(year, month + 2)[1])
+            if start > timezone.localdate():
+                self.add_error("quarter", "Selecione um trimestre que já tenha iniciado.")
+            if plan and (end < plan.start_date or start > plan.end_date):
+                self.add_error("year", "O período precisa estar dentro da vigência do plano.")
+        return data
+

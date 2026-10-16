@@ -1,0 +1,4 @@
+<div class="result-record-actions measurement-actions">
+  {% if perms.core.change_indicatormeasurement and indicator.can_write %}<a class="button button-secondary" href="{% url 'indicator_detail' indicator.id %}?editar={{ measurement.id }}">Editar aferição</a>{% endif %}
+  {% if perms.core.delete_indicatormeasurement and indicator.can_write %}<form method="post" action="{% url 'measurement_delete' indicator.id measurement.id %}" onsubmit="return confirm('Remover esta aferição?');">{% csrf_token %}<button class="button button-secondary" type="submit">Remover aferição</button></form>{% endif %}
+</div>

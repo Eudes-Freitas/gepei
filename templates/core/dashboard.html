@@ -34,11 +34,11 @@
   </form>
 
   <section class="dx-kpis" aria-label="Resumo estratégico">
-    {% if can_plans %}<a class="dx-kpi" href="{% url 'pei_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}"><span class="dx-kpi-label">Objetivos monitorados</span><strong>{{ objective_count }}</strong><small>ver estrutura do plano →</small></a>{% else %}<div class="dx-kpi  dx-locked"><span class="dx-kpi-label">Objetivos monitorados</span><strong>🔒</strong><small>sem permissão</small></div>{% endif %}
-    {% if can_exec %}<a class="dx-kpi dx-green" href="{% url 'action_plan_list' %}{% if base_query %}?{{ base_query }}{% endif %}"><span class="dx-kpi-label">Ações estratégicas</span><strong>{{ action_count }}</strong><small>ver todas as ações →</small></a>
-    <a class="dx-kpi dx-amber" href="{% url 'action_plan_list' %}?{% if base_query %}{{ base_query }}&amp;{% endif %}status=ATRASADA"><span class="dx-kpi-label">Ações em atraso</span><strong>{{ delayed_count }}</strong><small>ver ações atrasadas →</small></a>{% else %}<div class="dx-kpi dx-green dx-locked"><span class="dx-kpi-label">Ações estratégicas</span><strong>🔒</strong><small>sem permissão</small></div><div class="dx-kpi dx-amber dx-locked"><span class="dx-kpi-label">Ações em atraso</span><strong>🔒</strong><small>sem permissão</small></div>{% endif %}
+    {% if can_plans %}<a class="dx-kpi" href="{% url 'pei_overview' %}?{{ objective_query }}"><span class="dx-kpi-label">Objetivos monitorados</span><strong>{{ objective_count }}</strong></a>{% else %}<div class="dx-kpi  dx-locked"><span class="dx-kpi-label">Objetivos monitorados</span><strong>🔒</strong><small>sem permissão</small></div>{% endif %}
+    {% if can_exec %}<a class="dx-kpi dx-green" href="{% url 'action_plan_list' %}{% if base_query %}?{{ base_query }}{% endif %}"><span class="dx-kpi-label">Ações estratégicas</span><strong>{{ action_count }}</strong></a>
+    <a class="dx-kpi dx-amber" href="{% url 'action_plan_list' %}?{{ delayed_query }}"><span class="dx-kpi-label">Ações em atraso</span><strong>{{ delayed_count }}</strong></a>{% else %}<div class="dx-kpi dx-green dx-locked"><span class="dx-kpi-label">Ações estratégicas</span><strong>🔒</strong><small>sem permissão</small></div><div class="dx-kpi dx-amber dx-locked"><span class="dx-kpi-label">Ações em atraso</span><strong>🔒</strong><small>sem permissão</small></div>{% endif %}
     {% if can_view_risks %}
-      <a class="dx-kpi dx-red" href="{% url 'risk_overview' %}{% if base_query %}?{{ base_query }}{% endif %}"><span class="dx-kpi-label">Riscos altos ou críticos</span><strong>{{ critical_risk_count }}</strong><small>ver mapa de riscos →</small></a>
+      <a class="dx-kpi dx-red" href="{% url 'risk_overview' %}?{{ risk_query }}"><span class="dx-kpi-label">Riscos altos ou críticos</span><strong>{{ critical_risk_count }}</strong></a>
     {% else %}
       <div class="dx-kpi dx-red dx-locked"><span class="dx-kpi-label">Riscos altos ou críticos</span><strong>🔒</strong><small>sem permissão para ver riscos</small></div>
     {% endif %}
@@ -48,10 +48,10 @@
     {% if can_exec %}<article class="dx-card">
       <div class="panel-heading"><div><p class="eyebrow">Execução</p><h2>Situação das ações</h2></div><a class="chip chip-neutral" href="{% url 'action_plan_list' %}{% if base_query %}?{{ base_query }}{% endif %}">{{ action_count }} no total</a></div>
       <div class="dx-donut-box">
-        <a class="dx-donut" style="background:{{ donut_gradient }}" href="{% url 'action_plan_list' %}{% if base_query %}?{{ base_query }}{% endif %}" aria-label="Ver todas as ações"><b>{{ progress_average|floatformat:"-1" }}%</b></a>
+        <div id="chart-actions" class="dx-chart" style="width:250px" aria-label="Situação das ações: clique em uma fatia para filtrar"></div>
         <ul class="dx-legend">
           {% for item in status_summary %}
-            <li><a href="{% url 'action_plan_list' %}?{{ item.query }}"><i style="background:{{ item.color }}"></i><span>{{ item.label }}</span><strong>{{ item.total }}</strong></a></li>
+            <li><a href="{% url 'pei_overview' %}?{{ item.query }}#objetivo-{{ item.id }}"><i style="background:{{ item.color }}"></i><span>{{ item.label }}</span><strong>{{ item.total }}</strong></a></li>
           {% endfor %}
         </ul>
       </div>
@@ -59,7 +59,7 @@
     </article>{% endif %}
 
     <article class="dx-card">
-      <div class="panel-heading"><div><p class="eyebrow">Atenção</p><h2>Riscos prioritários</h2></div>{% if can_view_risks %}<a class="chip chip-danger" href="{% url 'risk_overview' %}">{{ critical_risk_count }} críticos</a>{% endif %}</div>
+      <div class="panel-heading"><div><p class="eyebrow">Atenção</p><h2>Riscos prioritários</h2></div>{% if can_view_risks %}<a class="chip chip-danger" href="{% url 'risk_overview' %}?{{ risk_query }}">{{ critical_risk_count }} altos ou críticos</a>{% endif %}</div>
       {% if not can_view_risks %}
         <div class="empty-state"><strong>Sem permissão para visualizar riscos.</strong><span>Solicite acesso ao administrador do sistema.</span></div>
       {% elif risk_alerts %}
@@ -82,9 +82,9 @@
     <div class="panel-heading"><div><p class="eyebrow">Desempenho e resultados</p><h2>Indicadores</h2></div><a class="chip chip-neutral" href="{% url 'indicator_overview' %}{% if indicator_query %}?{{ indicator_query }}{% endif %}">{{ indicator_total }} indicador{{ indicator_total|pluralize:"es" }}</a></div>
     {% if indicator_total %}
       <div class="dx-stats">
-        <a class="dx-stat" href="{% url 'indicator_overview' %}{% if indicator_query %}?{{ indicator_query }}{% endif %}"><span>Aferidos</span><b>{{ indicator_measured_pct }}%</b><small>{{ indicator_measured }} de {{ indicator_total }} indicadores</small></a>
+        <a class="dx-stat" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=measured"><span>Aferidos</span><b>{{ indicator_measured_pct }}%</b><small>{{ indicator_measured }} de {{ indicator_total }} indicadores</small></a>
         <a class="dx-stat dx-stat-green" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=green"><span>De acordo com a meta</span><b>{{ indicator_green_pct }}%</b><small>{{ signal_counts.green }} de {{ indicator_measured }} aferidos</small></a>
-        <a class="dx-stat dx-stat-red" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=red"><span>Abaixo da meta</span><b>{{ indicator_attention }}</b><small>atenção, alerta ou crítico</small></a>
+        <a class="dx-stat dx-stat-red" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=attention"><span>Abaixo da meta</span><b>{{ indicator_attention }}</b><small>atenção, alerta ou crítico</small></a>
         <a class="dx-stat dx-stat-gray" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=gray"><span>Sem aferição</span><b>{{ signal_counts.gray }}</b><small>sem resultado ou dado insuficiente</small></a>
       </div>
       <div class="dx-charts">
@@ -101,14 +101,14 @@
 
   {% if can_targets %}
   <article class="dx-card dx-wide" id="metas">
-    <div class="panel-heading"><div><p class="eyebrow">Desempenho e resultados</p><h2>Metas</h2></div><a class="chip chip-neutral" href="{% url 'target_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}">{{ target_total }} meta{{ target_total|pluralize }}</a></div>
+    <div class="panel-heading"><div><p class="eyebrow">Desempenho e resultados</p><h2>Metas</h2></div><a class="chip chip-neutral" href="{% url 'target_overview' %}?{{ target_query }}">{{ target_total }} meta{{ target_total|pluralize }}</a></div>
     {% if target_total %}
       <div class="dx-stats">
-        <a class="dx-stat" href="{% url 'target_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}"><span>Metas cadastradas</span><b>{{ target_total }}</b><small>ver metas e valores esperados</small></a>
+        <a class="dx-stat" href="{% url 'target_overview' %}?{{ target_query }}"><span>Metas cadastradas</span><b>{{ target_total }}</b><small>ver metas e valores esperados</small></a>
         {% if can_indicators %}
-        <a class="dx-stat dx-stat-green" href="{% url 'target_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}"><span>De acordo com o esperado</span><b>{{ target_green_pct }}%</b><small>{{ target_counts.green }} de {{ target_measured }} metas aferidas</small></a>
-        <a class="dx-stat dx-stat-red" href="{% url 'target_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}"><span>Exigem atenção</span><b>{{ target_attention|length }}{% if target_attention|length == 5 %}+{% endif %}</b><small>atenção, alerta ou crítico</small></a>
-        <a class="dx-stat dx-stat-gray" href="{% url 'target_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}"><span>Sem aferição</span><b>{{ target_counts.gray|add:target_counts.none }}</b><small>sem indicador aferido</small></a>
+        <a class="dx-stat dx-stat-green" href="{% url 'target_overview' %}?{{ target_query }}&amp;status=green"><span>De acordo com o esperado</span><b>{{ target_green_pct }}%</b><small>{{ target_counts.green }} de {{ target_measured }} metas aferidas</small></a>
+        <a class="dx-stat dx-stat-red" href="{% url 'target_overview' %}?{{ target_query }}&amp;status=attention"><span>Exigem atenção</span><b>{{ target_attention_count }}</b><small>atenção, alerta ou crítico</small></a>
+        <a class="dx-stat dx-stat-gray" href="{% url 'target_overview' %}?{{ target_query }}&amp;status=unmeasured"><span>Sem aferição</span><b>{{ target_counts.gray|add:target_counts.none }}</b><small>sem indicador aferido</small></a>
         {% endif %}
       </div>
       {% if can_indicators %}
@@ -136,7 +136,7 @@
     <div class="panel-heading"><div><p class="eyebrow">Estratégia</p><h2>Progresso por objetivo estratégico</h2></div><span class="chip chip-neutral">{{ objective_progress|length }} objetivo{{ objective_progress|length|pluralize }}</span></div>
     <ul class="dx-bars">
       {% for item in objective_progress %}
-        <li><a href="{% url 'pei_overview' %}?plan={{ item.plan_id }}" title="{{ item.actions }} ação{{ item.actions|pluralize:"ões" }} · ver no plano"><span class="dx-bar-label">{{ item.code }} · {{ item.title }}</span><span class="dx-track"><span class="dx-fill" style="width:{{ item.average|stringformat:'.1f' }}%"></span></span><b>{{ item.average|floatformat:"-1" }}%</b></a></li>
+        <li><a href="{% url 'pei_overview' %}?{{ item.query }}#objetivo-{{ item.id }}" title="{{ item.actions }} ação{{ item.actions|pluralize:"ões" }} · ver ações do objetivo"><span class="dx-bar-label">{{ item.code }} · {{ item.title }}</span><span class="dx-track"><span class="dx-fill" style="width:{{ item.average|stringformat:'.1f' }}%"></span></span><b>{{ item.average|floatformat:"-1" }}%</b></a></li>
       {% endfor %}
     </ul>
   </article>
@@ -149,12 +149,12 @@
         <thead><tr><th>Ação</th><th>Unidade</th><th>Atividades</th><th>Prazo</th><th>Execução</th><th>Situação</th></tr></thead>
         <tbody>{% for action in recent_actions %}
           <tr class="row-link" data-href="{% url 'action_plan_detail' action.id %}">
-            <td><a href="{% url 'action_plan_detail' action.id %}"><strong>{{ action.code }}</strong></a><span>{{ action.title }}</span></td>
-            <td>{{ action.coordinating_unit.acronym|default:action.coordinating_unit.name }}</td>
+            <td><a href="{% url 'action_plan_detail' action.id %}"><strong>{{ action.code }}</strong><span>{{ action.title }}</span></a></td>
+            <td><a href="{% url 'action_plan_list' %}?{% if selected_plan %}plan={{ selected_plan }}&amp;{% endif %}{% if selected_status %}status={{ selected_status }}&amp;{% endif %}unit={{ action.coordinating_unit_id }}">{{ action.coordinating_unit.acronym|default:action.coordinating_unit.name }}</a></td>
             <td>{% if action.activity_count %}<a href="{% url 'action_plan_detail' action.id %}">{{ action.activity_count }} atividade{{ action.activity_count|pluralize:"s" }}</a>{% else %}<span class="financial-empty">Nenhuma</span>{% endif %}</td>
             <td class="{% if action.due_date and action.due_date < today and action.status != 'CONCLUIDA' and action.status != 'SUSPENSA' %}deadline-overdue{% endif %}">{{ action.due_date|date:"d/m/Y"|default:"A definir" }}</td>
             <td>{% progress_bar action.progress "table-progress" %}<small>{{ action.progress|floatformat:"-1" }}%</small></td>
-            <td><span class="chip chip-{{ action.status|lower }}">{{ action.get_status_display }}</span></td>
+            <td><a class="chip chip-{{ action.status|lower }}" href="{% url 'action_plan_list' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status={{ action.status }}">{{ action.get_status_display }}</a></td>
           </tr>
         {% endfor %}</tbody>
       </table></div>
@@ -175,14 +175,15 @@
   </section>{% endif %}
 {% endblock %}
 {% block extra_script %}
-  {% if can_indicators or can_targets %}
+  {% if can_indicators or can_targets or can_exec %}
   <script src="{% static 'vendor/highcharts.js' %}"></script>
   {{ performance_charts|json_script:"performance-charts-data" }}
+  {{ action_chart|json_script:"action-chart-data" }}
   <script>
     (function () {
       var data = JSON.parse(document.getElementById('performance-charts-data').textContent);
       Highcharts.setOptions({ lang: { decimalPoint: ',', thousandsSep: '.' } });
-      var go = { cursor: 'pointer', point: { events: { click: function () { if (this.options.url) { window.location.href = this.options.url; } } } } };
+      var go = { cursor: 'pointer', point: { events: { click: function () { if (this.options.url) { window.location.href = this.options.url; } }, legendItemClick: function () { if (this.options.url) { window.location.href = this.options.url; } return false; } } } };
       function donut(id, points, centerText) {
         var el = document.getElementById(id);
         if (!el) { return; }
@@ -210,6 +211,7 @@
           series: [{ name: 'Valor', data: points }]
         });
       }
+      donut('chart-actions', JSON.parse(document.getElementById('action-chart-data').textContent).filter(function(p) { return p.y > 0; }), '{{ action_count }}');
       var total = data.measured.reduce(function (sum, p) { return sum + p.y; }, 0);
       var measured = data.measured[0] ? data.measured[0].y : 0;
       donut('chart-measured', data.measured.filter(function (p) { return p.y > 0; }), total ? Math.round(measured / total * 100) + '%' : '0%');

@@ -1,0 +1,102 @@
+
+  {% load static %}
+  {% if can_view_measurements or inline_charts or focused_charts or progress_chart %}
+  <script src="{% static 'vendor/highcharts.js' %}"></script>
+  <script>
+    (function () {
+      Highcharts.setOptions({ lang: { decimalPoint: ',', thousandsSep: '.' } });
+      var font = { fontFamily: 'Inter, Arial, sans-serif' };
+      document.querySelectorAll('[id^="target-indicator-chart-"]').forEach(function (box) {
+        var source = document.getElementById(box.id.replace('target-indicator-chart-', 'target-chart-data-'));
+        if (!source) { box.outerHTML = '<div class="empty-state"><strong>Sem dados para o gráfico.</strong><span>Registre aferições com resultado numérico para acompanhar a evolução.</span></div>'; return; }
+        var data = JSON.parse(source.textContent);
+        var series = [{
+          name: 'Resultado aferido',
+          data: data.result.map(function (point) {
+            var item = { y: point.y, custom: point.tip };
+            if (point.baseline) { item.marker = { symbol: 'diamond', radius: 7, fillColor: '#ffffff', lineColor: '#0b7285', lineWidth: 3 }; }
+            return item;
+          })
+        }];
+        if (data.has_expected) { series.push({ name: 'Meta do período', data: data.expected, dashStyle: 'ShortDash', color: '#6b7280' }); }
+        Highcharts.chart(box, {
+          chart: { type: 'line', height: 300, style: font },
+          title: { text: null }, credits: { enabled: false },
+          legend: { enabled: series.length > 1 },
+          xAxis: { categories: data.categories, title: { text: 'Fim do período de aferição' } },
+          yAxis: { title: { text: 'Valor' } },
+          tooltip: { shared: true, formatter: function () {
+            var lines = ['<b>' + this.x + '</b>'];
+            this.points.forEach(function (item) {
+              var extra = item.point.custom ? ' (' + item.point.custom + ')' : '';
+              lines.push(item.series.name + ': <b>' + Highcharts.numberFormat(item.y, -1) + '</b>' + extra);
+            });
+            return lines.join('<br/>');
+          } },
+          plotOptions: { line: { dataLabels: { enabled: true } } },
+          series: series
+        });
+      });
+      document.querySelectorAll('[data-achievement-source]').forEach(function (box) {
+        var data = JSON.parse(document.getElementById(box.dataset.achievementSource).textContent);
+        var current = Number(box.dataset.currentIndicator);
+        Highcharts.chart(box, {
+          chart: { type: 'pie', height: 340, style: font },
+          title: { text: data.total === null ? 'Sem aferição' : Highcharts.numberFormat(data.total, 1) + '%', verticalAlign: 'middle', y: -6, style: { fontSize: '24px' } },
+          subtitle: { text: 'Total da meta', verticalAlign: 'middle', y: 20 },
+          credits: { enabled: false }, legend: { enabled: true },
+          tooltip: { formatter: function () {
+            var point = this.point;
+            if (point.achievement === null) { return point.name + (data.total === null ? '' : ': <b>' + Highcharts.numberFormat(point.y, 1) + '%</b>'); }
+            return point.name + '<br/>Atingimento do indicador: <b>' + Highcharts.numberFormat(point.achievement, 1) + '%</b><br/>Contribuição ao total: <b>' + Highcharts.numberFormat(point.y, 1) + ' pontos percentuais</b>';
+          } },
+          plotOptions: { pie: { innerSize: '58%', showInLegend: true, borderWidth: 2, dataLabels: { enabled: true, distance: 14, formatter: function () { return this.point.achievement === null ? this.point.name : this.point.name + ': ' + Highcharts.numberFormat(this.point.achievement, 1) + '%'; } } } },
+          series: [{ name: 'Composição da meta', data: data.pie_points.map(function (point) { return Object.assign({}, point, { name: point.name + (point.indicator_id === current ? ' (este indicador)' : ''), borderColor: point.indicator_id === current ? '#0b2a4a' : '#ffffff', borderWidth: point.indicator_id === current ? 3 : 2 }); }) }]
+        });
+      });
+      document.querySelectorAll('[data-current-result-source]').forEach(function (box) {
+        var data = JSON.parse(document.getElementById(box.dataset.currentResultSource).textContent);
+        var achievement = box.querySelector('[data-result-achievement]');
+        if (data.achievement === null) { achievement.textContent = 'Sem dados suficientes para calcular o atingimento.'; return; }
+        Highcharts.chart(achievement, {
+          chart: { type: 'bar', height: 170, style: font }, title: { style: { fontSize: '16px' }, text: 'Atingimento: ' + Highcharts.numberFormat(data.achievement, 1) + '%' },
+          credits: { enabled: false }, legend: { enabled: false }, xAxis: { categories: ['Atingimento'] },
+          yAxis: { min: Math.min(0, data.achievement), max: Math.max(100, data.achievement * 1.1), title: { text: 'Atingimento (%)' }, plotLines: [{ value: 100, color: '#16834a', width: 2, dashStyle: 'ShortDash', label: { text: 'Meta: 100%' } }] },
+          tooltip: { valueSuffix: '%' },
+          plotOptions: { bar: { dataLabels: { enabled: true, format: '{y:.1f}%' }, borderRadius: 4 } },
+          series: [{ name: 'Atingimento', data: [{ y: data.achievement, color: data.achievement >= 100 ? '#16834a' : '#e5a11b' }] }]
+        });
+      });
+      var progress = document.getElementById('target-progress-data');
+      if (progress) {
+        var data = JSON.parse(progress.textContent);
+        Highcharts.chart('target-progress-chart', {
+          chart: { type: 'bar', height: Math.max(220, data.categories.length * 34 + 80), style: font },
+          title: { text: null }, credits: { enabled: false }, legend: { enabled: false },
+          xAxis: { categories: data.categories, title: { text: null } },
+          yAxis: { min: 0, max: 100, title: { text: 'Progresso até a meta final (%)' }, gridLineColor: '#e8edf5' },
+          tooltip: { formatter: function () {
+            var i = this.point.index;
+            return '<b>' + this.x + '</b><br/>' + data.descriptions[i] + '<br/>Progresso: <b>' + Highcharts.numberFormat(data.raw[i], 1) + '%</b><br/>Situação: ' + data.labels[i];
+          } },
+          plotOptions: { bar: { borderRadius: 4, pointPadding: 0.1, groupPadding: 0.08, dataLabels: { enabled: true, format: '{y:.1f}%' } } },
+          series: [{ name: 'Progresso', data: data.values.map(function (value, i) { return { y: value, color: data.colors[i] }; }) }]
+        });
+      }
+    }());
+  </script>
+  {% endif %}
+
+<script>
+(function () {
+  document.querySelectorAll('[data-toggle-facts]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var content = button.closest('[data-collapsible-facts]').querySelector('[data-facts-content]');
+      var expanded = button.getAttribute('aria-expanded') === 'true';
+      content.hidden = expanded;
+      button.setAttribute('aria-expanded', String(!expanded));
+      button.textContent = expanded ? 'Expandir' : 'Recolher';
+    });
+  });
+}());
+</script>

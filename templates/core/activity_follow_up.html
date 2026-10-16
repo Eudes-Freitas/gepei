@@ -12,9 +12,9 @@
   </section>
 
   <section class="metrics follow-up-metrics">
-    <article class="metric-card"><span>Evidências</span><strong>{% if can_view.evidences %}{{ evidences|length }}{% else %}🔒{% endif %}</strong><small>registros de comprovação</small></article>
-    <article class="metric-card metric-warning"><span>Impedimentos</span><strong>{% if can_view.blockers %}{{ blockers|length }}{% else %}🔒{% endif %}</strong><small>ocorrências registradas</small></article>
-    <article class="metric-card metric-danger"><span>Riscos</span><strong>{% if can_view.risks %}{{ risks|length }}{% else %}🔒{% endif %}</strong><small>vinculados à atividade</small></article>
+    <article class="metric-card"><span>Evidências</span><strong>{% if can_view.evidences %}{{ evidences|length }}{% else %}🔒{% endif %}</strong></article>
+    <article class="metric-card metric-warning"><span>Impedimentos</span><strong>{% if can_view.blockers %}{{ blockers|length }}{% else %}🔒{% endif %}</strong></article>
+    <article class="metric-card metric-danger"><span>Riscos</span><strong>{% if can_view.risks %}{{ risks|length }}{% else %}🔒{% endif %}</strong></article>
   </section>
 
   <section class="follow-up-grid">
@@ -29,7 +29,7 @@
               {% if evidence.description %}<p>{{ evidence.description }}</p>{% endif %}
               {% if evidence.reference %}<small>Referência: {{ evidence.reference }}</small>{% endif %}
               {% if evidence.url %}<a href="{{ evidence.url }}" target="_blank" rel="noopener">Abrir link da evidência</a>{% endif %}
-              {% if evidence.attachment %}<a href="{{ evidence.attachment.url }}" target="_blank">Abrir arquivo</a>{% endif %}
+              {% if evidence.attachment_available %}<a href="{% url 'evidence_file' action.id activity.id evidence.id %}" target="_blank" rel="noopener">Abrir arquivo</a>{% elif evidence.attachment %}<small class="field-error">Arquivo indisponível no servidor. Restaure o original ou anexe-o novamente.</small>{% endif %}
             </div>
           {% endfor %}
         </div>
@@ -62,24 +62,68 @@
       </details>{% endif %}{% endif %}
     </article>
 
-    <article class="panel follow-up-panel">
+    <article class="panel follow-up-panel" id="riscos">
       <div class="panel-heading"><div><p class="eyebrow">Prevenção</p><h2>Riscos da atividade</h2></div></div>
       {% if not can_view.risks %}<div class="empty-state" role="alert"><strong>Sem permissão.</strong><span>Você não tem permissão para visualizar os riscos.</span></div>
-      {% else %}{% if risks %}
+      {% else %}
         <div class="record-list">
           {% for risk in risks %}
             <div class="record-card">
               <div class="record-card-heading"><strong>{{ risk.title }}</strong><span class="risk-score {% if risk.level >= 15 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }}</span></div>
               <small>{{ risk.get_status_display }} · Responsável: {{ risk.owner.get_full_name|default:risk.owner.username }}</small>
+              {% if risk.is_unforeseen %}<span class="chip chip-warning">Risco não previsto</span>{% endif %}
               <p><strong>Causa:</strong> {{ risk.cause }}</p>
               {% if risk.preventive_measure %}<p><strong>Controle:</strong> {{ risk.preventive_measure }}</p>{% endif %}
             </div>
-          {% endfor %}
+          {% empty %}<div class="empty-state"><span>Nenhum risco vinculado à atividade.</span></div>{% endfor %}
         </div>
-      {% else %}<div class="empty-state"><span>Nenhum risco específico registrado.</span></div>{% endif %}
-      {% if perms.core.add_risk %}<details class="entry-form">
-        <summary>Registrar risco</summary>
-        <form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_risk">{% for field in risk_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Registrar risco</button></form>
+      {% if perms.core.add_risk or perms.core.change_risk %}<details class="entry-form" {% if risk_report_form.is_bound %}open{% endif %}>
+        <summary>Informar risco</summary>
+        <form method="post" enctype="multipart/form-data" class="activity-form" data-risk-report>{% csrf_token %}<input type="hidden" name="operation" value="report_risk">
+          {% for field in risk_report_form %}{% if field.name != "edit_materialization" %}{% include "core/_form_field.html" with field=field %}{% endif %}{% endfor %}
+          <div data-edit-occurrence hidden>{{ risk_report_form.edit_materialization }} {{ risk_report_form.edit_materialization.label_tag }}</div>
+          <p class="form-hint" data-occurrence-notice hidden></p>
+          {% if risk_report_form.non_field_errors %}<div class="field-error">{{ risk_report_form.non_field_errors }}</div>{% endif %}
+          {% if perms.core.add_risk %}<fieldset data-unforeseen-risk hidden disabled><legend>Risco não previsto</legend><p class="form-hint">Preencha os dados somente se este risco ainda não estiver cadastrado para a ação.</p>{% for field in unforeseen_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}</fieldset>{% endif %}
+          <a data-occurrence-attachment hidden target="_blank" rel="noopener">Abrir anexo da evidência do risco</a>
+          <fieldset data-risk-occurrence hidden disabled><legend>Materialização do risco</legend>{% for field in occurrence_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}</fieldset>
+          <button class="button button-primary" type="submit">Salvar informação do risco</button>
+        </form>
+        {{ risk_prefill|json_script:"activity-risk-prefill" }}
+        <script>(function(){
+          var form=document.querySelector('[data-risk-report]');
+          var data=JSON.parse(document.getElementById('activity-risk-prefill').textContent);
+          var risk=form.querySelector('[name="risk-report-risk"]');
+          var materialized=form.querySelector('[name="risk-report-materialized"]');
+          var edit=form.querySelector('[name="risk-report-edit_materialization"]');
+          var editBox=form.querySelector('[data-edit-occurrence]');
+          var notice=form.querySelector('[data-occurrence-notice]');
+          var occurrence=form.querySelector('[data-risk-occurrence]');
+          function update(load){
+            var saved=data[risk.value];
+            if(load){
+              edit.checked=false;
+              materialized.value=saved?saved.materialized:'';
+              occurrence.querySelectorAll('input,textarea').forEach(function(field){var name=field.name.replace('occurrence-','');field.value=saved&&saved.occurrence[name]||'';});
+            }
+            var unforeseen=form.querySelector('[data-unforeseen-risk]');
+            if(unforeseen){unforeseen.hidden=!!risk.value;unforeseen.disabled=!!risk.value;}
+            var attachment=form.querySelector('[data-occurrence-attachment]');
+            attachment.hidden=!(saved&&saved.attachment_url);
+            if(saved&&saved.attachment_url){attachment.href=saved.attachment_url;}else{attachment.removeAttribute('href');}
+            var existing=saved&&saved.has_occurrence;
+            var show=materialized.value==='SIM';
+            editBox.hidden=!(show&&existing&&saved.can_edit);
+            occurrence.hidden=!show||(existing&&!saved.can_view);
+            occurrence.disabled=!show||(existing&&!edit.checked);
+            notice.hidden=!(show&&existing);
+            notice.textContent=existing&&!saved.can_view?'Materialização já registrada. Sem permissão para visualizar seus detalhes.':'Dados já cadastrados. Mantenha-os como estão ou marque a opção de editar.';
+          }
+          risk.addEventListener('change',function(){update(true);});
+          materialized.addEventListener('change',function(){update(false);});
+          edit.addEventListener('change',function(){update(false);});
+          update({% if risk_report_form.is_bound %}false{% else %}true{% endif %});
+        }());</script>
       </details>{% endif %}{% endif %}
     </article>
   </section>

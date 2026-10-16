@@ -5,6 +5,8 @@
   <section class="action-detail-heading">
     <div><p class="eyebrow">{{ action.code }} · Gestão preventiva</p><h1>Mapa de riscos</h1><p>{{ action.title }}</p></div>  </section>
 
+  {% include "core/_risk_legend.html" %}
+
   <section class="risk-map-layout">
     <article class="panel risk-map-panel">
       <div class="panel-heading"><div><p class="eyebrow">Visão consolidada</p><h2>Riscos identificados</h2></div><div class="panel-heading-actions"><span class="chip chip-neutral">{{ risks|length }} registros</span>{% if can_add_risk %}<button class="button button-primary" type="button" data-open-risk-form>Incluir risco</button>{% endif %}</div></div>
@@ -19,7 +21,7 @@
             <td class="col-center"><span class="risk-level {% if risk.level >= 20 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }} · {{ risk.level_label }}</span></td>
             <td>{% if not perms.core.view_risktreatment %}🔒{% else %}{% with treatment=risk.treatments.first %}{% if treatment %}{{ treatment.get_decision_display }}{% elif risk.treatment %}{{ risk.treatment|title }}{% else %}A definir{% endif %}{% endwith %}{% endif %}</td>
             <td><span class="chip chip-{{ risk.status|lower }}">{{ risk.get_status_display }}</span></td>
-            <td><div class="row-actions"><a class="text-button" href="{% url 'risk_detail' action.id risk.id %}">Abrir ciclo</a><a class="text-button" href="{% url 'risk_detail' action.id risk.id %}#alcada">Decidir aceite</a></div></td>
+            <td><div class="row-actions"><a class="text-button" href="{% url 'risk_detail' action.id risk.id %}">Visualizar</a></div></td>
           </tr>{% endfor %}
         </tbody></table></div>
       {% else %}<div class="empty-state"><strong>Nenhum risco identificado.</strong><span>Clique em “Incluir risco” para registrá-lo; depois o sistema disponibilizará a avaliação, o tratamento e a decisão de aceite.</span></div>{% endif %}
@@ -31,5 +33,4 @@
       <script>(function(){var form=document.currentScript.previousElementSibling;var dialog=form.closest('dialog');document.querySelector('[data-open-risk-form]').addEventListener('click',function(){dialog.showModal();});dialog.querySelector('[data-close-risk-form]').addEventListener('click',function(){dialog.close();});dialog.addEventListener('click',function(event){if(event.target===dialog){dialog.close();}});if(dialog.hasAttribute('data-open-on-load')){dialog.showModal();}var timing=form.querySelector('[data-occurrence-timing]');var windowFields=form.querySelectorAll('.timing-window-field');var dateFields=form.querySelectorAll('.timing-date-field');function update(){var value=timing.value;windowFields.forEach(function(field){field.hidden=value!=='PERIODO';});dateFields.forEach(function(field){field.hidden=value!=='DATA_MARCO';});}timing.addEventListener('change',update);update();}());</script>
     </dialog>{% endif %}
   </section>
-  {% include "core/_risk_legend.html" %}
 {% endblock %}

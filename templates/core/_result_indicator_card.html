@@ -1,0 +1,35 @@
+<article class="panel unified-indicator-card" id="indicador-{{ row.indicator.id }}">
+  <div class="panel-heading"><div><p class="eyebrow">{{ row.indicator.code|default:"Indicador" }}</p><h2>{{ row.indicator.name }}</h2></div><span class="signal signal-{{ row.signal.code }}"><i></i>{{ row.signal.label }}</span></div>
+  <p>{{ row.indicator.description|default:"Descrição ainda não informada." }}</p>
+
+  {% if can_view_measurements and not row.targets %}<section class="unified-result-section"><h3>Atingimento do indicador</h3>
+    {% if row.current_chart %}
+      <p class="form-hint">Período: {{ row.current_chart.period }}</p>
+      <div class="current-result-charts" data-current-result-source="{{ row.current_chart_data_id }}">
+        <div class="indicator-chart" data-result-achievement role="img" aria-label="Percentual de atingimento do indicador"></div>
+      </div>
+      {{ row.current_chart|json_script:row.current_chart_data_id }}
+    {% else %}<p class="form-hint">Sem aferição para comparar o resultado com a meta.</p>{% endif %}
+  </section>{% endif %}
+  <section class="unified-result-section" data-collapsible-facts><div class="panel-heading"><h3>Ficha do indicador</h3><div class="panel-heading-actions"><button type="button" class="button button-secondary" data-toggle-facts aria-expanded="false">Expandir</button>{% if perms.core.change_indicator and row.indicator.can_write %}<a class="button button-secondary" href="{% url 'indicator_detail' row.indicator.id %}">Editar indicador</a>{% endif %}</div></div>
+    <dl class="definition-grid" data-facts-content hidden>
+      <div><dt>Linha de base</dt><dd>{% if row.indicator.baseline %}{{ row.indicator.baseline }}{% elif can_view_measurements %}{{ row.signal.measurement.baseline_value|default:"A definir" }}{% else %}A definir{% endif %}</dd></div>
+      <div><dt>Tipo do indicador</dt><dd>{{ row.indicator.get_indicator_type_display|default:"A definir" }}</dd></div>
+      <div><dt>Fórmula</dt><dd>{{ row.indicator.formula|default:"A definir" }}</dd></div>
+      <div><dt>Fonte de dados</dt><dd>{{ row.indicator.data_source|default:"A definir" }}</dd></div>
+      <div><dt>Unidade de medida</dt><dd>{{ row.indicator.unit_of_measure|default:"A definir" }}</dd></div>
+      <div><dt>Periodicidade</dt><dd>{{ row.indicator.get_frequency_display }}</dd></div>
+      <div><dt>Sentido esperado</dt><dd>{{ row.indicator.get_direction_display }}</dd></div>
+      <div><dt>Setor responsável</dt><dd>{% if row.indicator.responsible_unit %}{{ row.indicator.responsible_unit.acronym|default:row.indicator.responsible_unit.name }}{% else %}A definir{% endif %}</dd></div>
+    </dl>
+  </section>
+  <section class="unified-result-section"><h3>Evolução do indicador</h3>
+    {% if not can_view_measurements %}<p>Sem permissão para visualizar as aferições.</p>{% elif row.chart %}<div class="indicator-chart" id="target-indicator-chart-{{ row.indicator.id }}" role="img" aria-label="Evolução de {{ row.indicator.code }}: resultado e meta por período"></div>{{ row.chart|json_script:row.chart_data_id }}{% else %}<p class="form-hint">Sem dados para o gráfico. Registre uma aferição numérica.</p>{% endif %}
+  </section>
+  {% if can_view_measurements %}<section class="unified-result-section"><div class="panel-heading"><h3>Aferições registradas</h3>{% if can_add_measurement and row.indicator.can_write %}<a class="button button-secondary" href="{% url 'indicator_detail' row.indicator.id %}">Registrar aferição</a>{% endif %}</div>
+    <div class="responsive-table"><table><thead><tr><th>Período</th><th>Linha de base</th><th>Resultado</th><th>Meta do período</th><th>Fonte/evidência</th><th>Responsável / registro</th><th>Ações</th></tr></thead><tbody>
+      {% for measurement in row.indicator.measurements.all %}<tr><td>{{ measurement.reference_period }}{% if measurement.period_start %}<small>{{ measurement.period_start|date:"d/m/Y" }} a {{ measurement.period_end|date:"d/m/Y" }}</small>{% endif %}{% if measurement.note %}<p>{{ measurement.note }}</p>{% endif %}</td><td>{{ measurement.baseline_value|default:"—" }}{% if measurement.baseline_date %}<small>{{ measurement.baseline_date|date:"d/m/Y" }}</small>{% endif %}</td><td>{{ measurement.measured_value }}</td><td>{{ measurement.expected_value|floatformat:"-1"|default:"—" }}</td><td>{{ measurement.source_reference|default:"Não informada" }}{% if measurement.evidence_attachment %}<a href="{{ measurement.evidence_attachment.url }}" target="_blank" rel="noopener">Abrir evidência</a>{% endif %}</td><td><strong>{{ measurement.responsible_name }}</strong><small>{{ measurement.responsible_unit_label }}</small><small>Registrado por {{ measurement.recorded_by.get_full_name|default:measurement.recorded_by.username }}</small><small>{{ measurement.recorded_at|date:"d/m/Y H:i" }}</small></td><td>{% include "core/_measurement_actions.html" with indicator=row.indicator %}</td></tr>{% empty %}<tr><td colspan="7">Nenhuma aferição registrada.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>{% endif %}
+  {% if perms.core.view_strategictarget %}<section class="unified-result-section"><h3>Meta vinculada</h3>{% for target in row.targets %}{% include "core/_result_target_facts.html" %}{% empty %}<p class="form-hint">Nenhuma meta vinculada neste recorte.</p>{% endfor %}</section>{% endif %}
+</article>

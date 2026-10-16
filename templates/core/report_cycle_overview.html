@@ -5,13 +5,14 @@
   <section class="page-heading dashboard-heading">
     <div><p class="eyebrow">Prestação de contas</p><h1>Ciclos de relatório</h1><p>Reúna as atualizações contínuas dos setores, valide as informações e preserve a fotografia de cada período.</p></div>
   </section>
+  {% include "core/_unit_filter.html" %}
   <section class="report-overview-grid">
     <div class="report-cycle-list">
       {% for row in cycle_rows %}
         <article class="panel report-cycle-card">
           <div class="panel-heading"><div><p class="eyebrow">{{ row.cycle.plan.acronym }} · {{ row.cycle.period_start|date:"d/m/Y" }} a {{ row.cycle.period_end|date:"d/m/Y" }}</p><h2>{{ row.cycle.name }}</h2></div><span class="chip chip-report-{{ row.cycle.status|lower }}">{{ row.cycle.get_status_display }}</span></div>
           <div class="report-cycle-progress"><span><strong>{{ row.submitted_count }}</strong> de {{ row.report_count }} enviados</span><span><strong>{{ row.approved_count }}</strong> aprovados</span><span>Prazo: <strong>{{ row.cycle.due_date|date:"d/m/Y" }}</strong></span></div>
-          <div class="card-footer"><span>{{ row.report_count }} unidade{{ row.report_count|pluralize:"s" }} participante{{ row.report_count|pluralize:"s" }}</span><a class="button button-secondary" href="{% url 'report_cycle_detail' row.cycle.id %}">Abrir ciclo</a></div>
+          <div class="card-footer"><span>{{ row.report_count }} unidade{{ row.report_count|pluralize:"s" }} participante{{ row.report_count|pluralize:"s" }}</span><a class="button button-secondary" href="{% url 'report_cycle_detail' row.cycle.id %}?unit={{ selected_unit }}">Abrir ciclo</a></div>
         </article>
       {% empty %}
         <div class="empty-state large-empty panel"><strong>Nenhum ciclo aberto.</strong><span>Crie o primeiro ciclo para preparar os relatórios das unidades participantes.</span></div>

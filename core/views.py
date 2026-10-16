@@ -11,7 +11,7 @@ from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Avg, Count, F, Max, ProtectedError, Q, Sum
-from django.http import Http404, JsonResponse
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -22,6 +22,8 @@ from .forms import (
     ActivityEvidenceForm,
     ActivityForm,
     ActivityRiskForm,
+    ActivityRiskReportForm,
+    UnforeseenActivityRiskForm,
     GroupForm,
     IndicatorDefinitionForm,
     IndicatorMeasurementForm,
@@ -44,8 +46,12 @@ from .forms import (
 from .permissions import (
     permission_modules,
     scope_actions,
+    view_scope_actions,
     scope_by_unit,
+    view_scope_by_unit,
     scope_units,
+    view_scope_units,
+    selected_unit_for_request,
     user_unit_ids,
 )
 from .models import (
@@ -96,10 +102,10 @@ def _plan_end_date(indicator):
     return max(ends) if ends else None
 
 
-def _period_target(indicator, baseline_value, baseline_date, period_end):
+def _period_target(indicator, baseline_value, baseline_date, period_end, target=None):
     """Meta do período: evolução linear da linha de base (na data da linha de base) até a meta final no fim do plano."""
-    final = _final_target_value(indicator)
-    plan_end = _plan_end_date(indicator)
+    final = _decimal_from_measurement(target.target_value) if target else _final_target_value(indicator)
+    plan_end = target.artifact.plan.end_date if target else _plan_end_date(indicator)
     basal = _decimal_from_measurement(baseline_value)
     if final is None or plan_end is None or basal is None or not baseline_date or not period_end:
         return None
@@ -111,11 +117,11 @@ def _period_target(indicator, baseline_value, baseline_date, period_end):
     return expected.quantize(Decimal("0.01"))
 
 
-def _final_progress(indicator, measurement):
+def _final_progress(indicator, measurement, target=None):
     """Percentual do caminho já percorrido da linha de base até a meta final do plano."""
     if measurement is None:
         return None
-    final = _final_target_value(indicator)
+    final = _decimal_from_measurement(target.target_value) if target else _final_target_value(indicator)
     basal = _decimal_from_measurement(measurement.baseline_value)
     measured = _decimal_from_measurement(measurement.measured_value)
     if final is None or basal is None or measured is None or final == basal:
@@ -123,13 +129,17 @@ def _final_progress(indicator, measurement):
     return round(float((measured - basal) / (final - basal) * 100), 1)
 
 
-def _indicator_signal(indicator):
+def _indicator_signal(indicator, target=None):
     measurements = list(indicator.measurements.all())
     latest = measurements[0] if measurements else None
     if not latest:
         return {"code": "gray", "label": "Sem aferição", "achievement": None, "measurement": None}
     measured = _decimal_from_measurement(latest.measured_value)
     expected = latest.expected_value
+    if target is not None:
+        target_expected = _period_target(indicator, latest.baseline_value, latest.baseline_date, latest.period_end, target=target)
+        if target_expected is not None or len(indicator.targets.all()) > 1:
+            expected = target_expected
     if measured is None or expected is None:
         return {"code": "gray", "label": "Dado insuficiente", "achievement": None, "measurement": latest}
     if indicator.direction == Indicator.Direction.RANGE:
@@ -174,13 +184,129 @@ def _percent(part, whole):
     return round(part / whole * 100) if whole else 0
 
 
+def _signal_matches(code, selected):
+    if selected == "measured":
+        return code not in ("gray", "none")
+    if selected == "attention":
+        return code in ("yellow", "orange", "red")
+    if selected == "unmeasured":
+        return code in ("gray", "none")
+    return code == selected
+
+
+def _target_signal(target, signals):
+    codes = [signals[item.id] for item in target.indicators.all() if item.id in signals]
+    measured = [code for code in codes if code != "gray"]
+    return max(measured, key=SIGNAL_SEVERITY.get) if measured else ("gray" if codes else "none")
+
+
+def _can_write_target(user, target):
+    ids = user_unit_ids(user)
+    if ids is None:
+        return True
+    if target.action_id:
+        return target.action.coordinating_unit_id in ids
+    units = {indicator.responsible_unit_id for indicator in target.indicators.all()}
+    return bool(units) and units.issubset(ids)
+
+
+def _scoped_targets(user, plans, unit_id=""):
+    targets = StrategicTarget.objects.filter(artifact__plan__in=plans).filter(
+        Q(action__isnull=True) | Q(action__in=view_scope_actions(StrategicAction.objects.all(), user))
+    )
+    visible_ids = user_unit_ids(user, for_view=True)
+    if visible_ids is not None:
+        targets = targets.filter(Q(action__coordinating_unit_id__in=visible_ids) | Q(action__isnull=True, indicators__responsible_unit_id__in=visible_ids))
+    if unit_id.isdigit():
+        targets = targets.filter(Q(action__coordinating_unit_id=unit_id) | Q(action__isnull=True, indicators__responsible_unit_id=unit_id))
+    return targets.select_related("artifact", "artifact__plan", "action").prefetch_related(
+        "indicators", "indicators__measurements", "indicators__targets", "indicators__artifacts__plan"
+    ).distinct()
+
+
+def _target_execution(target, user=None, unit_id=""):
+    """Execução da meta: situação, atingimento e progresso até a meta final a partir dos seus indicadores."""
+    indicators = []
+    visible_ids = user_unit_ids(user, for_view=True) if user else None
+    for indicator in target.indicators.all():
+        if visible_ids is not None and indicator.responsible_unit_id not in visible_ids:
+            continue
+        if unit_id.isdigit() and indicator.responsible_unit_id != int(unit_id):
+            continue
+        signal = _indicator_signal(indicator, target=target)
+        indicators.append(
+            {"indicator": indicator, "signal": signal, "progress": _final_progress(indicator, signal["measurement"], target=target)}
+        )
+    code = _target_signal(target, {item["indicator"].id: item["signal"]["code"] for item in indicators})
+    achievements = [item["signal"]["achievement"] for item in indicators if item["signal"]["achievement"] is not None]
+    progress = [item["progress"] for item in indicators if item["progress"] is not None]
+    measurements = [item["signal"]["measurement"] for item in indicators if item["signal"]["measurement"]]
+    return {
+        "target": target,
+        "indicators": indicators,
+        "code": code,
+        "label": "Sem indicador" if code == "none" else SIGNAL_STYLE[code][0],
+        "achievement": min(achievements) if achievements else None,
+        "progress": round(sum(progress) / len(progress), 1) if progress else None,
+        "measured_count": len(measurements),
+        "last_measurement": max(measurements, key=lambda item: item.recorded_at) if measurements else None,
+    }
+
+
+def _target_achievement_chart(execution):
+    """Equal weight average of normalized percentages; missing values stay unknown."""
+    points = []
+    values = []
+    for item in execution["indicators"]:
+        raw = item["signal"]["achievement"]
+        value = max(0, min(raw, 100)) if raw is not None else None
+        if value is not None:
+            values.append(value)
+        points.append({
+            "name": item["indicator"].code or item["indicator"].name,
+            "indicator_id": item["indicator"].id,
+            "y": value,
+            "raw": raw,
+            "color": SIGNAL_STYLE[item["signal"]["code"]][1],
+        })
+    total = round(sum(values) / len(values), 1) if values else None
+    palette = ["#1769aa", "#16834a", "#7357c9", "#e5a11b", "#0b8994", "#c55783"]
+    pie_points = [
+        {**point, "y": point["y"] / len(values), "achievement": point["raw"], "color": palette[index % len(palette)]}
+        for index, point in enumerate(points) if point["y"] is not None
+    ] if values else []
+    if values:
+        remaining = max(0, 100 - sum(point["y"] for point in pie_points))
+        if remaining > 0:
+            pie_points.append({"name": "Falta atingir", "y": remaining, "achievement": None, "indicator_id": None, "color": "#e1e7ef"})
+    else:
+        pie_points = [{"name": "Sem aferição suficiente", "y": 100, "achievement": None, "indicator_id": None, "color": "#e1e7ef"}]
+    return {
+        "pie_points": pie_points,
+        "total": total,
+        "measured_count": len(values),
+        "indicator_count": len(points),
+        "partial": len(values) != len(points),
+        "points": [{"name": "Total da meta", "y": total, "raw": total, "color": "#1769aa", "indicator_id": None}] + points,
+    }
+
+
+def _objective_artifact_ids(objective_id):
+    ids = {int(objective_id)}
+    pending = ids
+    while pending:
+        pending = set(PlanArtifact.objects.filter(parent_id__in=pending).values_list("id", flat=True)) - ids
+        ids.update(pending)
+    return ids
+
+
 def _performance_summary(user, dash_plans, base_filters, unit_id):
     """Indicadores (aferição e situação frente à meta) e metas (situação derivada dos indicadores) do painel."""
 
     def indicator_link(**extra):
         return f"{reverse('indicator_overview')}?{urlencode({**base_filters, **extra})}"
 
-    indicator_qs = scope_by_unit(
+    indicator_qs = view_scope_by_unit(
         Indicator.objects.filter(artifacts__plan__in=dash_plans),
         user,
         "responsible_unit_id",
@@ -217,33 +343,27 @@ def _performance_summary(user, dash_plans, base_filters, unit_id):
     )
 
     targets = list(
-        StrategicTarget.objects.filter(artifact__plan__in=dash_plans).select_related("artifact").prefetch_related("indicators")
+        _scoped_targets(user, dash_plans, unit_id)
     )
     target_counts = {"green": 0, "yellow": 0, "orange": 0, "red": 0, "gray": 0, "none": 0}
     attention = []
     for target in targets:
-        codes = [indicator_signal[item.id] for item in target.indicators.all() if item.id in indicator_signal]
-        measured_codes = [code for code in codes if code != "gray"]
-        if not codes:
-            key = "none"
-        elif not measured_codes:
-            key = "gray"
-        else:
-            key = max(measured_codes, key=SIGNAL_SEVERITY.get)  # a meta vale pelo pior indicador aferido
+        key = _target_signal(target, indicator_signal)
         target_counts[key] += 1
         if key in ("yellow", "orange", "red"):
             attention.append((SIGNAL_SEVERITY[key], target, key))
     attention.sort(key=lambda item: (-item[0], item[1].code))
 
-    def target_link(target=None):
-        plan_id = target.artifact.plan_id if target else (base_filters.get("plan") or "")
-        suffix = f"#meta-{target.id}" if target else ""
-        return f"{reverse('target_overview')}?{urlencode({'plan': plan_id} if plan_id else {})}{suffix}"
+    def target_link(target=None, **extra):
+        filters = {**base_filters, **extra}
+        if target:
+            filters.update(plan=target.artifact.plan_id, target=target.id)
+        return f"{reverse('target_overview')}?{urlencode(filters)}"
 
     target_measured = len(targets) - target_counts["gray"] - target_counts["none"]
     charts = {
         "measured": [
-            {"name": "Aferidos", "y": measured, "color": "#1769aa", "url": indicator_link()},
+            {"name": "Aferidos", "y": measured, "color": "#1769aa", "url": indicator_link(status="measured")},
             {"name": "Sem aferição", "y": signal_counts["gray"], "color": "#aebbc8", "url": indicator_link(status="gray")},
         ],
         "signal": [
@@ -252,12 +372,12 @@ def _performance_summary(user, dash_plans, base_filters, unit_id):
         ],
         "objectives": objective_bars,
         "targets": [
-            {"name": "Conforme", "y": target_counts["green"], "color": "#16834a", "url": target_link()},
-            {"name": "Atenção", "y": target_counts["yellow"], "color": "#e5a11b", "url": target_link()},
-            {"name": "Alerta", "y": target_counts["orange"], "color": "#e07b1a", "url": target_link()},
-            {"name": "Crítico", "y": target_counts["red"], "color": "#d84a4a", "url": target_link()},
-            {"name": "Sem aferição", "y": target_counts["gray"], "color": "#aebbc8", "url": target_link()},
-            {"name": "Sem indicador", "y": target_counts["none"], "color": "#d0d7de", "url": target_link()},
+            {"name": "Conforme", "y": target_counts["green"], "color": "#16834a", "url": target_link(status="green")},
+            {"name": "Atenção", "y": target_counts["yellow"], "color": "#e5a11b", "url": target_link(status="yellow")},
+            {"name": "Alerta", "y": target_counts["orange"], "color": "#e07b1a", "url": target_link(status="orange")},
+            {"name": "Crítico", "y": target_counts["red"], "color": "#d84a4a", "url": target_link(status="red")},
+            {"name": "Sem aferição", "y": target_counts["gray"], "color": "#aebbc8", "url": target_link(status="gray")},
+            {"name": "Sem indicador", "y": target_counts["none"], "color": "#d0d7de", "url": target_link(status="none")},
         ],
     }
     return {
@@ -268,6 +388,8 @@ def _performance_summary(user, dash_plans, base_filters, unit_id):
         "indicator_measured_pct": _percent(measured, indicator_total),
         "indicator_green_pct": _percent(signal_counts["green"], measured),
         "indicator_attention": signal_counts["yellow"] + signal_counts["orange"] + signal_counts["red"],
+        "target_query": urlencode(base_filters),
+        "target_attention_count": sum(target_counts[code] for code in ("yellow", "orange", "red")),
         "target_total": len(targets),
         "target_counts": target_counts,
         "target_measured": target_measured,
@@ -289,13 +411,13 @@ def _performance_summary(user, dash_plans, base_filters, unit_id):
 @login_required
 def dashboard(request):
     plans = Plan.objects.filter(active=True).order_by("acronym")
-    units = scope_units(OrganizationalUnit.objects.select_related("organization").order_by("name"), request.user)
-    actions = scope_actions(
+    units = view_scope_units(OrganizationalUnit.objects.select_related("organization").order_by("name"), request.user)
+    actions = view_scope_actions(
         StrategicAction.objects.select_related("artifact", "artifact__plan", "coordinating_unit"), request.user
     )
 
     selected_plan = request.GET.get("plan", "")
-    selected_unit = request.GET.get("unit", "")
+    selected_unit = selected_unit_for_request(request)
     selected_status = request.GET.get("status", "")
     if selected_plan.isdigit():
         actions = actions.filter(artifact__plan_id=selected_plan)
@@ -341,7 +463,7 @@ def dashboard(request):
     objective_query = PlanArtifact.objects.filter(artifact_type=PlanArtifact.ArtifactType.OBJECTIVE)
     if selected_plan.isdigit():
         objective_query = objective_query.filter(plan_id=selected_plan)
-    if unit_filter or user_unit_ids(request.user) is not None:
+    if unit_filter or user_unit_ids(request.user, for_view=True) is not None:
         objective_query = objective_query.filter(
             Q(actions__in=actions)
             | Q(planartifact__actions__in=actions)
@@ -350,7 +472,7 @@ def dashboard(request):
 
     # Riscos prioritários: apenas altos e críticos do recorte (setor selecionado ou todos os setores).
     risk_alerts = sorted(
-        [risk for risk in risks if risk.level >= 10],
+        [risk for risk in risks if risk.level >= 15],
         key=lambda risk: (-risk.level, risk.title),
     )[:5]
     can_view_risks = request.user.has_perm("core.view_risk")
@@ -364,7 +486,7 @@ def dashboard(request):
         "BLOQUEADA": "#d84a4a",
         "SUSPENSA": "#7357c9",
     }
-    base_filters = {key: value for key, value in (("plan", selected_plan), ("unit", selected_unit)) if value}
+    base_filters = {key: value for key, value in (("plan", selected_plan), ("unit", selected_unit if unit_filter else "")) if value}
     stops, cursor = [], 0.0
     for item in status_summary:
         item["color"] = status_colors.get(item["code"], "#aebbc8")
@@ -387,9 +509,11 @@ def dashboard(request):
             progress_by_objective.setdefault(node.id, []).append(float(progress or 0))
     objective_progress = [
         {
+            "id": objective_id,
             "code": artifacts[objective_id].code,
             "title": artifacts[objective_id].title,
             "plan_id": artifacts[objective_id].plan_id,
+            "query": urlencode({**base_filters, **({"status": selected_status} if selected_status else {}), "objective": objective_id, "plan": artifacts[objective_id].plan_id}),
             "average": round(sum(values) / len(values), 1),
             "actions": len(values),
         }
@@ -411,12 +535,16 @@ def dashboard(request):
         "can_exec": request.user.has_perm("core.view_actionplan"),
         "can_indicators": request.user.has_perm("core.view_indicator"),
         "can_targets": request.user.has_perm("core.view_strategictarget"),
-        "base_query": urlencode(base_filters),
+        "base_query": urlencode({**base_filters, **({"status": selected_status} if selected_status else {})}),
+        "risk_query": urlencode({**base_filters, **({"action_status": selected_status} if selected_status else {}), "level": "priority"}),
+        "delayed_query": urlencode({**base_filters, **({"status": selected_status} if selected_status else {}), "overdue": "1"}),
         "donut_gradient": donut_gradient,
         "objective_progress": objective_progress,
         "actions_status_choices": StrategicAction.Status.choices,
         "action_count": action_count,
         "objective_count": objective_query.count(),
+        "objective_query": urlencode({**base_filters, **({"status": selected_status} if selected_status else {}), "objectives": ",".join(str(pk) for pk in objective_query.values_list("pk", flat=True)), "dashboard": "1"}),
+        "action_chart": [{"name": item["label"], "y": item["total"], "color": item["color"], "url": f"{reverse('action_plan_list')}?{item['query']}"} for item in status_summary],
         "delayed_count": deadline_alert.count(),
         "blocked_count": actions.filter(status=StrategicAction.Status.BLOCKED).count(),
         "critical_risk_count": sum(1 for risk in risks if risk.level >= 15),
@@ -439,6 +567,8 @@ def dashboard(request):
 @permission_required("core.view_plan", raise_exception=True)
 def pei_overview(request):
     plans = Plan.objects.filter(active=True).order_by("start_date", "acronym")
+    units = view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
+    selected_unit = selected_unit_for_request(request)
     selected_plan = request.GET.get("plan", "")
     plan = plans.filter(pk=selected_plan).first() if selected_plan.isdigit() else plans.first()
 
@@ -446,21 +576,75 @@ def pei_overview(request):
         return render(
             request,
             "core/pei_overview.html",
-            {"plans": plans, "plan": None, "selected_plan": "", "dimension_groups": []},
+            {"plans": plans, "units": units, "selected_unit": selected_unit, "plan": None, "selected_plan": "", "dimension_groups": []},
         )
 
     artifacts = list(
-        PlanArtifact.objects.filter(plan=plan)
+        PlanArtifact.objects.filter(plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans)
         .select_related("parent", "parent__parent")
         .prefetch_related("targets", "indicators", "critical_success_factors")
         .order_by("id")
     )
     actions = list(
-        scope_actions(StrategicAction.objects.filter(artifact__plan=plan), request.user)
+        view_scope_actions(StrategicAction.objects.filter(artifact__plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans), request.user)
         .select_related("artifact", "coordinating_unit")
-        .prefetch_related("participating_units")
+        .prefetch_related("participating_units", "critical_success_factors")
         .order_by("artifact__id", "code")
     )
+    focused_objective = request.GET.get("objective", "")
+    focused_action = request.GET.get("action", "")
+    if focused_action.isdigit():
+        action = get_object_or_404(view_scope_actions(StrategicAction.objects.all(), request.user), pk=focused_action)
+        focused_objective = str(action.artifact_id)
+        by_id = {item.id: item for item in artifacts}
+        node = by_id.get(action.artifact_id)
+        while node and node.artifact_type != PlanArtifact.ArtifactType.OBJECTIVE:
+            node = by_id.get(node.parent_id)
+        focused_objective = str(node.id) if node else ""
+    if focused_objective.isdigit():
+        objective = get_object_or_404(PlanArtifact, pk=focused_objective, artifact_type=PlanArtifact.ArtifactType.OBJECTIVE, plan__in=plans)
+        keep = _objective_artifact_ids(objective.id)
+        node = objective
+        while node.parent_id:
+            keep.add(node.parent_id)
+            node = node.parent
+        artifacts = [item for item in artifacts if item.id in keep]
+        actions = [item for item in actions if item.artifact_id in keep]
+        if focused_action.isdigit():
+            actions = [item for item in actions if item.id == int(focused_action)]
+    unit = selected_unit_for_request(request)
+    status = request.GET.get("status", "")
+    if unit.isdigit():
+        actions = [item for item in actions if item.coordinating_unit_id == int(unit)]
+    if status in StrategicAction.Status.values:
+        actions = [item for item in actions if item.status == status]
+    if request.GET.get("dashboard") == "1":
+        selected_ids = {int(value) for value in request.GET.get("objectives", "").split(",") if value.isdigit()}
+        keep = set(selected_ids)
+        by_id = {item.id: item for item in artifacts}
+        for artifact_id in list(selected_ids):
+            node = by_id.get(artifact_id)
+            while node and node.parent_id:
+                keep.add(node.parent_id)
+                node = by_id.get(node.parent_id)
+            keep.update(_objective_artifact_ids(artifact_id))
+        artifacts = [item for item in artifacts if item.id in keep]
+        actions = [item for item in actions if item.artifact_id in keep]
+        unit = selected_unit_for_request(request)
+        status = request.GET.get("status", "")
+        if unit.isdigit():
+            actions = [item for item in actions if item.coordinating_unit_id == int(unit)]
+        if status in StrategicAction.Status.values:
+            actions = [item for item in actions if item.status == status]
+    if user_unit_ids(request.user, for_view=True) is not None or unit.isdigit():
+        by_id = {item.id: item for item in artifacts}
+        keep = set()
+        for action in actions:
+            node = by_id.get(action.artifact_id)
+            while node and node.id not in keep:
+                keep.add(node.id)
+                node = by_id.get(node.parent_id)
+        artifacts = [item for item in artifacts if item.id in keep]
     children = {}
     for artifact in artifacts:
         children.setdefault(artifact.parent_id, []).append(artifact)
@@ -480,10 +664,17 @@ def pei_overview(request):
         ]
         direct_actions = actions_by_artifact.get(objective.id, [])
         action_count = len(direct_actions) + sum(len(item["actions"]) for item in projects)
+        # Fatores críticos de sucesso do PEI (Apêndice B): do próprio objetivo e dos seus projetos.
+        factors = sorted(
+            [*objective.critical_success_factors.all(), *(f for item in projects for f in item["artifact"].critical_success_factors.all())],
+            key=lambda factor: factor.id,
+        )
         return {
             "artifact": objective,
+            "expanded": str(objective.id) == focused_objective or request.GET.get("dashboard") == "1",
             "projects": projects,
             "direct_actions": direct_actions,
+            "factors": factors,
             "target_count": len(objective.targets.all()),
             "indicator_count": len(objective.indicators.all()),
             "action_count": action_count,
@@ -514,6 +705,8 @@ def pei_overview(request):
     progress_average = sum(float(action.progress) for action in actions) / len(actions) if actions else 0
     context = {
         "plans": plans,
+        "units": units,
+        "selected_unit": selected_unit,
         "plan": plan,
         "selected_plan": str(plan.id),
         "dimension_groups": dimension_groups,
@@ -529,10 +722,59 @@ def pei_overview(request):
 @login_required
 @permission_required("core.view_indicator", raise_exception=True)
 def indicator_overview(request):
+    return _results_overview(request)
+
+
+@login_required
+@permission_required("core.view_strategictarget", raise_exception=True)
+def target_overview(request):
+    return _results_overview(request)
+
+
+def _results_overview(request):
+    context = {"units": view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user)}
+    if request.user.has_perm("core.view_strategictarget"):
+        target_context = _target_overview_context(request)
+        if not isinstance(target_context, dict):
+            return target_context
+        context.update(target_context)
+    if request.user.has_perm("core.view_indicator"):
+        context.update(_indicator_overview_context(request))
+    can_measure = request.user.has_perm("core.view_indicatormeasurement")
+    context["can_view_measurements"] = can_measure
+    context["can_add_measurement"] = request.user.has_perm("core.add_indicatormeasurement")
+    visible_targets = {row["target"].id: row["target"] for row in context.get("target_rows", [])}
+    for execution in context.get("target_rows", []):
+        execution["target"].can_write = _can_write_target(request.user, execution["target"])
+        execution["target"].achievement_summary = _target_achievement_chart(execution) if can_measure else None
+    linked_ids = set()
+    writable_indicators = set(scope_by_unit(Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True).values_list("pk", flat=True))
+    for row in context.get("indicator_rows", []):
+        row["indicator"].can_write = row["indicator"].id in writable_indicators
+        row["targets"] = [visible_targets[item.id] for item in row["indicator"].targets.all() if item.id in visible_targets]
+        linked_ids.update(item.id for item in row["targets"])
+        row["chart"] = _measurement_chart(row["indicator"]) if can_measure else None
+        row["chart_data_id"] = f"target-chart-data-{row['indicator'].id}"
+        measurement = row["signal"]["measurement"]
+        measured = _decimal_from_measurement(measurement.measured_value) if measurement and can_measure else None
+        row["current_chart_data_id"] = f"current-result-data-{row['indicator'].id}"
+        row["current_chart"] = {
+            "result": float(measured) if measured is not None else None,
+            "expected": float(measurement.expected_value) if measurement and measurement.expected_value is not None else None,
+            "achievement": row["signal"]["achievement"],
+            "unit": row["indicator"].unit_of_measure,
+            "period": measurement.reference_period if measurement else "",
+        } if can_measure and measurement else None
+    context["standalone_targets"] = [item for pk, item in visible_targets.items() if pk not in linked_ids]
+    context["inline_charts"] = bool(context.get("indicator_rows")) and can_measure
+    return render(request, "core/indicator_overview.html", context)
+
+
+def _indicator_overview_context(request):
     plans = Plan.objects.filter(active=True).order_by("start_date", "acronym")
-    units = scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
+    units = view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
     selected_plan = request.GET.get("plan", "")
-    selected_unit = request.GET.get("unit", "")
+    selected_unit = selected_unit_for_request(request)
     selected_objective = request.GET.get("objective", "")
     selected_status = request.GET.get("status", "")
     plan = plans.filter(pk=selected_plan).first() if selected_plan.isdigit() else plans.first()
@@ -541,13 +783,13 @@ def indicator_overview(request):
     objectives = PlanArtifact.objects.none()
     if plan:
         objectives = PlanArtifact.objects.filter(
-            plan=plan,
+            plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans,
             artifact_type=PlanArtifact.ArtifactType.OBJECTIVE,
         ).order_by("code", "title")
         indicators = (
-            scope_by_unit(Indicator.objects.filter(artifacts__plan=plan), request.user, "responsible_unit_id", include_unassigned=True)
+            view_scope_by_unit(Indicator.objects.filter(artifacts__plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans), request.user, "responsible_unit_id", include_unassigned=True)
             .select_related("responsible_unit")
-            .prefetch_related("artifacts", "artifacts__plan", "targets", "targets__artifact", "measurements")
+            .prefetch_related("artifacts", "artifacts__plan", "targets", "targets__artifact__plan", "targets__action", "measurements", "measurements__recorded_by", "measurements__measured_by", "measurements__measured_unit")
             .distinct()
             .order_by("code", "name")
         )
@@ -556,24 +798,27 @@ def indicator_overview(request):
         if selected_objective.isdigit():
             indicators = indicators.filter(artifacts__id=selected_objective)
 
+    if request.GET.get("target", "").isdigit():
+        indicators = indicators.filter(targets__id=request.GET["target"])
     indicator_rows = []
     signal_counts = {"green": 0, "yellow": 0, "orange": 0, "red": 0, "gray": 0}
     for indicator in indicators:
         signal = _indicator_signal(indicator)
         signal_counts[signal["code"]] += 1
         indicator_rows.append({"indicator": indicator, "signal": signal})
-    if selected_status in signal_counts:
-        indicator_rows = [row for row in indicator_rows if row["signal"]["code"] == selected_status]
+    if selected_status == "none":
+        indicator_rows = []
+    if selected_status in (*SIGNAL_STYLE, "measured", "attention", "unmeasured"):
+        indicator_rows = [row for row in indicator_rows if _signal_matches(row["signal"]["code"], selected_status)]
 
-    return render(
-        request,
-        "core/indicator_overview.html",
-        {
+    signal_counts = {code: sum(row["signal"]["code"] == code for row in indicator_rows) for code in SIGNAL_STYLE}
+
+    return {
             "plans": plans,
             "units": units,
             "objectives": objectives,
             "plan": plan,
-            "selected_plan": str(plan.id) if plan else "",
+            "selected_plan": selected_plan,
             "selected_unit": selected_unit,
             "selected_objective": selected_objective,
             "selected_status": selected_status,
@@ -582,13 +827,10 @@ def indicator_overview(request):
             "updated_count": sum(value for key, value in signal_counts.items() if key != "gray"),
             "attention_count": signal_counts["yellow"] + signal_counts["orange"] + signal_counts["red"],
             "signal_counts": signal_counts,
-        },
-    )
+    }
 
 
-@login_required
-@permission_required("core.view_strategictarget", raise_exception=True)
-def target_overview(request):
+def _target_overview_context(request):
     plans = Plan.objects.filter(active=True).order_by("start_date", "acronym")
     selected_plan = request.GET.get("plan", "")
     selected_objective = request.GET.get("objective", "")
@@ -598,22 +840,45 @@ def target_overview(request):
     objectives = PlanArtifact.objects.none()
     if plan:
         objectives = PlanArtifact.objects.filter(
-            plan=plan,
+            plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans,
             artifact_type=PlanArtifact.ArtifactType.OBJECTIVE,
         ).order_by("code", "title")
-        targets = (
-            StrategicTarget.objects.filter(artifact__plan=plan)
-            .filter(
-                Q(action__isnull=True) | Q(action__in=scope_actions(StrategicAction.objects.all(), request.user))
-            )
-            .select_related("artifact", "action")
-            .prefetch_related("indicators")
-            .order_by("code", "description")
-        )
+        targets = _scoped_targets(request.user, plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans, selected_unit_for_request(request)).order_by("code", "description")
         if selected_objective.isdigit():
             targets = targets.filter(artifact_id=selected_objective)
 
-    can_add_target = request.user.has_perm("core.add_strategictarget")
+    editable_targets = targets.filter(pk__in=[target.pk for target in targets if _can_write_target(request.user, target)])
+    if request.GET.get("target", "").isdigit():
+        targets = targets.filter(pk=request.GET["target"])
+    selected_status = request.GET.get("status", "")
+    if selected_status in (*SIGNAL_STYLE, "none", "unmeasured", "attention", "measured"):
+        indicators = view_scope_by_unit(Indicator.objects.filter(artifacts__plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans).distinct(), request.user, "responsible_unit_id", include_unassigned=True)
+        if selected_unit_for_request(request).isdigit():
+            indicators = indicators.filter(responsible_unit_id=selected_unit_for_request(request))
+        signals = {item.id: _indicator_signal(item)["code"] for item in indicators.prefetch_related("measurements")}
+        targets = [target for target in targets if _signal_matches(_target_signal(target, signals), selected_status)]
+
+    target_rows = [_target_execution(target, request.user, selected_unit_for_request(request)) for target in targets]
+    status_counts = {code: sum(1 for row in target_rows if row["code"] == code) for code in (*SIGNAL_STYLE, "none")}
+    progress_rows = [row for row in target_rows if row["progress"] is not None]
+    progress_chart = {
+        "categories": [row["target"].code or "Meta" for row in progress_rows],
+        "descriptions": [row["target"].description for row in progress_rows],
+        "values": [max(min(row["progress"], 100), 0) for row in progress_rows],
+        "raw": [row["progress"] for row in progress_rows],
+        "colors": [SIGNAL_STYLE.get(row["code"], SIGNAL_STYLE["gray"])[1] for row in progress_rows],
+        "labels": [row["label"] for row in progress_rows],
+    } if progress_rows else None
+    focused_charts = []
+    if request.GET.get("target", "").isdigit() and len(target_rows) == 1:
+        for item in target_rows[0]["indicators"]:
+            chart = _measurement_chart(item["indicator"]) if request.user.has_perm("core.view_indicatormeasurement") else None
+            focused_charts.append({"element_id": f"target-chart-data-{item['indicator'].id}", "chart": chart})
+
+    write_ids = user_unit_ids(request.user)
+    selected_unit = selected_unit_for_request(request)
+    own_selection = write_ids is None or (selected_unit.isdigit() and int(selected_unit) in write_ids)
+    can_add_target = own_selection and request.user.has_perm("core.add_strategictarget")
     can_edit_target = request.user.has_perm("core.change_strategictarget")
     target_form = None
     editing_target = None
@@ -624,29 +889,41 @@ def target_overview(request):
         )
     if plan and (can_add_target or can_edit_target):
         form_actions = scope_actions(StrategicAction.objects.all(), request.user)
+        form_indicators = scope_by_unit(Indicator.objects.all(), request.user, "responsible_unit_id")
+        unit_id = selected_unit_for_request(request)
+        if unit_id.isdigit():
+            form_indicators = form_indicators.filter(responsible_unit_id=unit_id)
+            form_actions = form_actions.filter(coordinating_unit_id=unit_id)
         if request.method == "POST":
             target_id = request.POST.get("target_id", "")
             if target_id.isdigit():
                 _require_permission(request.user, "change_strategictarget")
-                editing_target = get_object_or_404(targets, pk=target_id)
+                editing_target = get_object_or_404(editable_targets, pk=target_id)
             else:
                 _require_permission(request.user, "add_strategictarget")
-            target_form = StrategicTargetForm(request.POST, instance=editing_target, plan=plan, actions=form_actions)
+            target_form = StrategicTargetForm(request.POST, instance=editing_target, plan=plan, actions=form_actions, visible_indicators=form_indicators)
             if target_form.is_valid():
+                candidate = target_form.instance
+                if write_ids is not None:
+                    action = target_form.cleaned_data.get("action")
+                    indicators = target_form.cleaned_data.get("indicators")
+                    if action is None and not indicators:
+                        raise PermissionDenied
+                    if action and action.coordinating_unit_id not in write_ids:
+                        raise PermissionDenied
+                    if any(item.responsible_unit_id not in write_ids for item in indicators):
+                        raise PermissionDenied
                 target = target_form.save()
                 messages.success(request, "Meta atualizada." if editing_target else "Meta cadastrada.")
                 return redirect(f"{reverse('target_overview')}?{urlencode({'plan': plan.id})}#meta-{target.id}")
         elif request.GET.get("editar", "").isdigit() and can_edit_target:
-            editing_target = get_object_or_404(targets, pk=request.GET["editar"])
-            target_form = StrategicTargetForm(instance=editing_target, plan=plan, actions=form_actions)
+            editing_target = get_object_or_404(editable_targets, pk=request.GET["editar"])
+            target_form = StrategicTargetForm(instance=editing_target, plan=plan, actions=form_actions, visible_indicators=form_indicators)
         elif can_add_target:
             initial = {"artifact": selected_objective} if selected_objective.isdigit() else {}
-            target_form = StrategicTargetForm(initial=initial, plan=plan, actions=form_actions)
+            target_form = StrategicTargetForm(initial=initial, plan=plan, actions=form_actions, visible_indicators=form_indicators)
 
-    return render(
-        request,
-        "core/target_overview.html",
-        {
+    return {
             "can_add_target": can_add_target,
             "can_edit_target": can_edit_target,
             "target_form": target_form,
@@ -654,11 +931,18 @@ def target_overview(request):
             "plans": plans,
             "objectives": objectives,
             "plan": plan,
-            "selected_plan": str(plan.id) if plan else "",
+            "selected_plan": selected_plan,
             "selected_objective": selected_objective,
             "targets": targets,
-        },
-    )
+            "target_rows": target_rows,
+            "status_counts": status_counts,
+            "target_attention_count": status_counts["yellow"] + status_counts["orange"] + status_counts["red"],
+            "progress_chart": progress_chart,
+            "focused_charts": focused_charts,
+            "selected_status": selected_status,
+            "selected_unit": selected_unit_for_request(request),
+            "selected_target": request.GET.get("target", ""),
+    }
 
 
 def _measurement_chart(indicator):
@@ -724,20 +1008,40 @@ def _measurement_chart(indicator):
     }
 
 @login_required
+@permission_required("core.delete_indicatormeasurement", raise_exception=True)
+def measurement_delete(request, indicator_id, measurement_id):
+    if request.method != "POST":
+        from django.http import HttpResponseNotAllowed
+        return HttpResponseNotAllowed(["POST"])
+    indicator = get_object_or_404(
+        scope_by_unit(Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True), pk=indicator_id
+    )
+    measurement = get_object_or_404(indicator.measurements, pk=measurement_id)
+    measurement.delete()
+    messages.success(request, "Aferição removida. O gráfico e a situação foram atualizados.")
+    return redirect(reverse("indicator_overview") + f"#indicador-{indicator.id}")
+
+
+@login_required
 @permission_required("core.view_indicator", raise_exception=True)
 def indicator_detail(request, indicator_id):
     indicator = get_object_or_404(
-        scope_by_unit(Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True).select_related("responsible_unit").prefetch_related(
+        (view_scope_by_unit if request.method == "GET" else scope_by_unit)(Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True).select_related("responsible_unit").prefetch_related(
             "artifacts",
             "artifacts__plan",
             "targets",
+            "targets__artifact__plan",
+            "targets__action",
             "measurements",
             "measurements__recorded_by",
         ),
         pk=indicator_id,
     )
-    can_edit_definition = request.user.has_perm("core.change_indicator")
-    can_edit_measurement = request.user.has_perm("core.change_indicatormeasurement")
+    writable = scope_by_unit(Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True).filter(pk=indicator.id).exists()
+    request.read_only_other_unit = not writable
+    indicator.can_write = writable
+    can_edit_definition = writable and request.user.has_perm("core.change_indicator")
+    can_edit_measurement = writable and request.user.has_perm("core.change_indicatormeasurement")
     editing_measurement = None
     definition_form = IndicatorDefinitionForm(instance=indicator) if can_edit_definition else None
     form = None
@@ -785,17 +1089,24 @@ def indicator_detail(request, indicator_id):
         )
     signal = _indicator_signal(indicator)
     can_view_measurements = request.user.has_perm("core.view_indicatormeasurement")
+    baseline = indicator.baseline
+    if not baseline:
+        dated = [item for item in indicator.measurements.all() if item.baseline_value]
+        if dated:
+            first = min(dated, key=lambda item: (item.baseline_date is None, item.baseline_date, item.recorded_at))
+            baseline = first.baseline_value + (f" (em {first.baseline_date:%d/%m/%Y})" if first.baseline_date else "")
     return render(
         request,
         "core/indicator_detail.html",
         {
             "indicator": indicator,
+            "baseline": baseline,
             "signal": signal,
             "measurement_form": form,
             "editing_measurement": editing_measurement,
             "can_edit_measurement": can_edit_measurement,
             "can_view_measurements": can_view_measurements,
-            "can_add_measurement": request.user.has_perm("core.add_indicatormeasurement"),
+            "can_add_measurement": writable and request.user.has_perm("core.add_indicatormeasurement"),
             "definition_form": definition_form,
             "final_target": _final_target_value(indicator),
             "final_progress": _final_progress(indicator, signal["measurement"]) if can_view_measurements else None,
@@ -866,6 +1177,9 @@ def report_cycle_overview(request):
         _require_permission(request.user, "add_reportcycle")
         form = ReportCycleForm(request.POST)
         if form.is_valid():
+            own_ids = user_unit_ids(request.user)
+            if own_ids is not None and request.user.has_perm("core.view_other_units") and any(unit.pk not in own_ids for unit in form.cleaned_data["participating_units"]):
+                raise PermissionDenied
             with transaction.atomic():
                 cycle = form.save(commit=False)
                 cycle.created_by = request.user
@@ -878,7 +1192,8 @@ def report_cycle_overview(request):
     else:
         form = ReportCycleForm()
     cycles = ReportCycle.objects.select_related("plan", "created_by").prefetch_related("sector_reports", "participating_units")
-    visible_units = user_unit_ids(request.user)
+    selected_unit = selected_unit_for_request(request)
+    visible_units = {int(selected_unit)} if selected_unit.isdigit() else user_unit_ids(request.user, for_view=True)
     if visible_units is not None:
         cycles = cycles.filter(sector_reports__unit_id__in=visible_units).distinct()
     cycle_rows = []
@@ -897,7 +1212,7 @@ def report_cycle_overview(request):
     return render(
         request,
         "core/report_cycle_overview.html",
-        {"cycle_rows": cycle_rows, "cycle_form": form, "can_add_cycle": request.user.has_perm("core.add_reportcycle")},
+        {"units": view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user), "selected_unit": selected_unit, "cycle_rows": cycle_rows, "cycle_form": form, "can_add_cycle": request.user.has_perm("core.add_reportcycle")},
     )
 
 
@@ -909,10 +1224,16 @@ def report_cycle_detail(request, cycle_id):
         pk=cycle_id,
     )
     all_reports = list(cycle.sector_reports.all())
-    visible_units = user_unit_ids(request.user)
+    selected_unit = selected_unit_for_request(request)
+    visible_units = {int(selected_unit)} if selected_unit.isdigit() else user_unit_ids(request.user, for_view=True)
     reports = [item for item in all_reports if visible_units is None or item.unit_id in visible_units]
     if visible_units is not None and not reports:
         raise Http404
+    own_ids = user_unit_ids(request.user)
+    readonly_cycle = own_ids is not None and request.user.has_perm("core.view_other_units") and any(item.unit_id not in own_ids for item in all_reports)
+    request.read_only_other_unit = readonly_cycle
+    if request.method == "POST" and readonly_cycle:
+        raise PermissionDenied
     if request.method == "POST":
         _require_permission(request.user, "change_reportcycle")
         operation = request.POST.get("operation")
@@ -934,6 +1255,8 @@ def report_cycle_detail(request, cycle_id):
         request,
         "core/report_cycle_detail.html",
         {
+            "units": view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user),
+            "selected_unit": selected_unit,
             "cycle": cycle,
             "reports": reports,
             "approved_count": sum(item.status in [SectorReport.Status.APPROVED, SectorReport.Status.CONSOLIDATED] for item in reports),
@@ -947,12 +1270,14 @@ def report_cycle_detail(request, cycle_id):
 @permission_required("core.view_sectorreport", raise_exception=True)
 def sector_report_detail(request, cycle_id, report_id):
     report = get_object_or_404(
-        scope_by_unit(SectorReport.objects.all(), request.user, "unit_id").select_related(
+        (view_scope_by_unit if request.method == "GET" else scope_by_unit)(SectorReport.objects.all(), request.user, "unit_id").select_related(
             "cycle", "cycle__plan", "unit", "prepared_by", "validator"
         ),
         pk=report_id,
         cycle_id=cycle_id,
     )
+    own_ids = user_unit_ids(request.user)
+    request.read_only_other_unit = own_ids is not None and report.unit_id not in own_ids
     content = _sector_report_content(report)
     report_form = SectorReportForm(instance=report, current_user=request.user)
     validation_form = ReportValidationForm()
@@ -1010,8 +1335,8 @@ def sector_report_detail(request, cycle_id, report_id):
 @permission_required("core.view_actionplan", raise_exception=True)
 def action_plan_list(request):
     plans = Plan.objects.filter(active=True).order_by("acronym")
-    units = scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
-    actions = scope_actions(
+    units = view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
+    actions = view_scope_actions(
         StrategicAction.objects.select_related("artifact", "artifact__plan", "coordinating_unit"), request.user
     ).annotate(
         activity_count=Count("action_plan__activities"),
@@ -1019,7 +1344,7 @@ def action_plan_list(request):
         activity_progress=Avg("action_plan__activities__progress"),
     )
     selected_plan = request.GET.get("plan", "")
-    selected_unit = request.GET.get("unit", "")
+    selected_unit = selected_unit_for_request(request)
     selected_status = request.GET.get("status", "")
     if selected_plan.isdigit():
         actions = actions.filter(artifact__plan_id=selected_plan)
@@ -1028,10 +1353,28 @@ def action_plan_list(request):
     if selected_status in StrategicAction.Status.values:
         actions = actions.filter(status=selected_status)
 
+    if request.GET.get("objective", "").isdigit():
+        actions = actions.filter(artifact_id__in=_objective_artifact_ids(request.GET["objective"]))
+    if request.GET.get("overdue") == "1":
+        actions = actions.filter(due_date__lt=timezone.localdate()).exclude(
+            status__in=[StrategicAction.Status.COMPLETED, StrategicAction.Status.SUSPENDED]
+        )
+
+    display_mode = "list" if request.GET.get("view") == "list" else "columns"
+    display_query = request.GET.copy()
+    display_query["unit"] = selected_unit
+    display_query["view"] = "columns"
+    columns_url = "?" + display_query.urlencode()
+    display_query["view"] = "list"
+    list_url = "?" + display_query.urlencode()
+
     return render(
         request,
         "core/action_plan_list.html",
         {
+            "display_mode": display_mode,
+            "columns_url": columns_url,
+            "list_url": list_url,
             "actions": actions.order_by("artifact__code", "code"),
             "plans": plans,
             "units": units,
@@ -1048,7 +1391,11 @@ RISK_OPERATION_PERMISSIONS = {
     "update_identity": "change_risk",
     "update_timing": "change_risk",
     "add_assessment": "add_riskassessment",
+    "delete_assessment": "delete_riskassessment",
+    "edit_assessment": "change_riskassessment",
     "add_treatment": "add_risktreatment",
+    "delete_treatment": "delete_risktreatment",
+    "delete_acceptance": "delete_riskacceptance",
     "materialize": "add_riskmaterialization",
     "accept": "add_riskacceptance",
     "submit_remediation": "add_riskremediationsubmission",
@@ -1095,7 +1442,7 @@ def _save_new_risk(user, form, action):
 def risk_overview(request):
     _require_permission(request.user, "view_risk")
     plans = Plan.objects.filter(active=True).order_by("acronym")
-    units = scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
+    units = view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
     can_add_risk = request.user.has_perm("core.add_risk")
     creatable_actions = scope_actions(
         StrategicAction.objects.filter(action_plan__isnull=False).select_related("artifact"), request.user
@@ -1112,7 +1459,7 @@ def risk_overview(request):
     activities_by_action = {}
     for activity in create_form.fields["activity"].queryset.select_related("action_plan"):
         activities_by_action.setdefault(activity.action_plan.action_id, []).append([activity.id, activity.title])
-    risks = Risk.objects.filter(action__in=scope_actions(StrategicAction.objects.all(), request.user)).select_related(
+    risks = Risk.objects.filter(action__in=view_scope_actions(StrategicAction.objects.all(), request.user)).select_related(
         "action",
         "action__artifact",
         "action__artifact__plan",
@@ -1122,7 +1469,7 @@ def risk_overview(request):
     ).prefetch_related("treatments")
 
     selected_plan = request.GET.get("plan", "")
-    selected_unit = request.GET.get("unit", "")
+    selected_unit = selected_unit_for_request(request)
     selected_status = request.GET.get("status", "")
     if selected_plan.isdigit():
         risks = risks.filter(action__artifact__plan_id=selected_plan)
@@ -1131,7 +1478,14 @@ def risk_overview(request):
     if selected_status in Risk.Status.values:
         risks = risks.filter(status=selected_status)
 
-    risks = list(risks.order_by("action__artifact__code", "action__code", "title"))
+    if request.GET.get("action_status") in StrategicAction.Status.values:
+        risks = risks.filter(action__status=request.GET["action_status"])
+    if request.GET.get("level") == "priority":
+        risks = [risk for risk in risks if risk.level >= 15]
+    else:
+        risks = list(risks)
+
+    risks.sort(key=lambda risk: (risk.action.artifact.code, risk.action.code, risk.title))
     return render(
         request,
         "core/risk_overview.html",
@@ -1192,11 +1546,12 @@ def _rebalance_activity_weights(action_plan, new_weight):
 @permission_required("core.view_actionplan", raise_exception=True)
 def action_plan_detail(request, action_id):
     action = get_object_or_404(
-        scope_actions(
+        (view_scope_actions if request.method == "GET" else scope_actions)(
             StrategicAction.objects.select_related("artifact", "artifact__plan", "coordinating_unit"), request.user
         ),
         pk=action_id,
     )
+    request.read_only_other_unit = not scope_actions(StrategicAction.objects.all(), request.user).filter(pk=action.id).exists()
     try:
         action_plan = action.action_plan
     except ActionPlan.DoesNotExist:
@@ -1255,14 +1610,14 @@ def _action_indicators_summary(action):
     objective = action.artifact
     while objective and objective.artifact_type != PlanArtifact.ArtifactType.OBJECTIVE:
         objective = objective.parent
-    query = f"?plan={action.artifact.plan_id}"
+    query = f"?plan={action.artifact.plan_id}&unit={action.coordinating_unit_id}"
     if objective:
         query += f"&objective={objective.id}"
     return {
         "targets_url": f"{reverse('target_overview')}{query}",
         "indicators_url": f"{reverse('indicator_overview')}{query}",
-        "objective_target_count": objective.targets.count() if objective else 0,
-        "objective_indicator_count": objective.indicators.count() if objective else 0,
+        "objective_target_count": objective.targets.filter(Q(action__coordinating_unit_id=action.coordinating_unit_id) | Q(action__isnull=True, indicators__responsible_unit_id=action.coordinating_unit_id)).distinct().count() if objective else 0,
+        "objective_indicator_count": objective.indicators.filter(responsible_unit_id=action.coordinating_unit_id).count() if objective else 0,
     }
 
 
@@ -1419,10 +1774,10 @@ def group_delete(request, group_id):
     return render(request, "core/group_confirm_delete.html", {"group": group})
 
 
-def _get_activity_for_action(user, action_id, activity_id):
+def _get_activity_for_action(user, action_id, activity_id, for_view=False):
     return get_object_or_404(
         Activity.objects.filter(
-            action_plan__action__in=scope_actions(StrategicAction.objects.all(), user)
+            action_plan__action__in=scope_actions(StrategicAction.objects.all(), user, for_view=for_view)
         ).select_related("action_plan", "action_plan__action"),
         pk=activity_id,
         action_plan__action_id=action_id,
@@ -1447,10 +1802,27 @@ def activity_edit(request, action_id, activity_id):
 
 
 @login_required
+@permission_required("core.view_activityevidence", raise_exception=True)
+def evidence_file(request, action_id, activity_id, evidence_id):
+    activity = _get_activity_for_action(request.user, action_id, activity_id, for_view=True)
+    evidence = get_object_or_404(activity.evidences, pk=evidence_id)
+    try:
+        if not evidence.attachment:
+            raise FileNotFoundError
+        file = evidence.attachment.storage.open(evidence.attachment.name, "rb")
+    except FileNotFoundError:
+        messages.error(request, "O arquivo desta evidência não está disponível no servidor. Restaure o arquivo original ou anexe-o novamente.")
+        return redirect(reverse("activity_follow_up", args=[action_id, activity_id]) + "#evidencias")
+    return FileResponse(file, filename=evidence.attachment.name.rsplit("/", 1)[-1])
+
+
+@login_required
 @permission_required("core.view_activity", raise_exception=True)
+@transaction.atomic
 def activity_follow_up(request, action_id, activity_id):
-    activity = _get_activity_for_action(request.user, action_id, activity_id)
+    activity = _get_activity_for_action(request.user, action_id, activity_id, for_view=request.method == "GET")
     action = activity.action_plan.action
+    request.read_only_other_unit = not scope_actions(StrategicAction.objects.all(), request.user).filter(pk=action.id).exists()
     operation = request.POST.get("operation") if request.method == "POST" else ""
     follow_up_permissions = {
         "add_evidence": "add_activityevidence",
@@ -1468,6 +1840,57 @@ def activity_follow_up(request, action_id, activity_id):
     evidence_form = ActivityEvidenceForm(prefix="evidence")
     blocker_form = ActivityBlockerForm(prefix="blocker")
     risk_form = ActivityRiskForm(prefix="risk")
+    selectable_risks = action.risks.filter(activity=activity).order_by("title") if can_view["risks"] else Risk.objects.none()
+    risk_report_form = ActivityRiskReportForm(risks=selectable_risks, can_create=request.user.has_perm("core.add_risk"), prefix="risk-report")
+    unforeseen_form = UnforeseenActivityRiskForm(prefix="unforeseen")
+    occurrence_form = RiskMaterializationForm(prefix="occurrence")
+
+    if operation == "report_risk":
+        _require_permission(request.user, "view_risk")
+        risk_report_form = ActivityRiskReportForm(request.POST, risks=selectable_risks, can_create=request.user.has_perm("core.add_risk"), prefix="risk-report")
+        if risk_report_form.is_valid():
+            selected_risk = risk_report_form.cleaned_data["risk"]
+            materialized = risk_report_form.cleaned_data["materialized"] == "SIM"
+            _require_permission(request.user, "change_risk" if selected_risk else "add_risk")
+            valid = True
+            current_occurrence = selected_risk.materializations.first() if selected_risk else None
+            save_occurrence = materialized and (current_occurrence is None or risk_report_form.cleaned_data["edit_materialization"])
+            if selected_risk is None:
+                unforeseen_form = UnforeseenActivityRiskForm(request.POST, prefix="unforeseen")
+                valid = unforeseen_form.is_valid()
+            if save_occurrence:
+                _require_permission(request.user, "change_riskmaterialization" if current_occurrence else "add_riskmaterialization")
+                if current_occurrence:
+                    _require_permission(request.user, "view_riskmaterialization")
+                occurrence_form = RiskMaterializationForm(request.POST, request.FILES, instance=current_occurrence, prefix="occurrence")
+                valid = occurrence_form.is_valid() and valid
+            if valid:
+                if selected_risk is None:
+                    selected_risk = unforeseen_form.save(commit=False)
+                    selected_risk.action = action
+                    selected_risk.activity = activity
+                    selected_risk.is_unforeseen = True
+                    selected_risk.save()
+                    RiskAssessment.objects.create(risk=selected_risk, probability=selected_risk.probability, impact=selected_risk.impact, author=request.user)
+                    if selected_risk.treatment:
+                        decisions = {"Aceitar": "ACEITAR", "Mitigar": "MITIGAR", "Evitar": "EVITAR", "Transferir": "TRANSFERIR"}
+                        RiskTreatment.objects.create(risk=selected_risk, decision=decisions[selected_risk.treatment], responsible=selected_risk.owner, preventive_measure=selected_risk.preventive_measure, contingency_measure=selected_risk.contingency_measure, created_by=request.user)
+                        selected_risk.status = Risk.Status.IN_TREATMENT
+                else:
+                    selected_risk = Risk.objects.select_for_update().get(pk=selected_risk.pk)
+                    selected_risk.activity = activity
+                if save_occurrence:
+                    occurrence = occurrence_form.save(commit=False)
+                    occurrence.risk = selected_risk
+                    if not occurrence.pk:
+                        occurrence.recorded_by = request.user
+                    occurrence.save()
+                if materialized:
+                    selected_risk.status = Risk.Status.MATERIALIZED
+                selected_risk.save()
+                messages.success(request, "Risco registrado no acompanhamento da atividade.")
+                return redirect(reverse("activity_follow_up", args=[action.id, activity.id]) + "#riscos")
+
 
     if operation == "add_evidence":
         evidence_form = ActivityEvidenceForm(request.POST, request.FILES, prefix="evidence")
@@ -1519,6 +1942,30 @@ def activity_follow_up(request, action_id, activity_id):
             messages.success(request, "Risco registrado na atividade.")
             return redirect("activity_follow_up", action_id=action.id, activity_id=activity.id)
 
+    risk_prefill = {}
+    can_view_occurrence = request.user.has_perm("core.view_riskmaterialization")
+    can_edit_occurrence = can_view_occurrence and request.user.has_perm("core.change_riskmaterialization") and not request.read_only_other_unit
+    for item in selectable_risks.prefetch_related("materializations"):
+        latest = next(iter(item.materializations.all()), None)
+        risk_prefill[str(item.id)] = {
+            "materialized": "SIM" if latest or item.status == Risk.Status.MATERIALIZED else "NAO",
+            "has_occurrence": latest is not None,
+            "can_view": can_view_occurrence,
+            "can_edit": can_edit_occurrence,
+            "attachment_url": reverse("risk_materialization_file", args=[action.id, item.id, latest.id]) if latest and can_view_occurrence and latest.evidence_attachment else "",
+            "occurrence": {
+                "occurred_on": latest.occurred_on.isoformat(),
+                "description": latest.description,
+                "actual_impact": latest.actual_impact,
+                "actions_taken": latest.actions_taken,
+                "evidence_reference": latest.evidence_reference,
+            } if latest and can_view_occurrence else {},
+        }
+
+    evidences = list(activity.evidences.select_related("created_by")) if can_view["evidences"] else []
+    for evidence in evidences:
+        evidence.attachment_available = bool(evidence.attachment and evidence.attachment.storage.exists(evidence.attachment.name))
+
     return render(
         request,
         "core/activity_follow_up.html",
@@ -1526,12 +1973,16 @@ def activity_follow_up(request, action_id, activity_id):
             "action": action,
             "activity": activity,
             "can_view": can_view,
-            "evidences": activity.evidences.select_related("created_by") if can_view["evidences"] else [],
+            "evidences": evidences,
             "blockers": activity.blockers.select_related("resolution_owner", "created_by") if can_view["blockers"] else [],
             "risks": activity.risks.select_related("owner") if can_view["risks"] else [],
             "evidence_form": evidence_form,
             "blocker_form": blocker_form,
             "risk_form": risk_form,
+            "risk_report_form": risk_report_form,
+            "risk_prefill": risk_prefill,
+            "unforeseen_form": unforeseen_form,
+            "occurrence_form": occurrence_form,
         },
     )
 
@@ -1540,11 +1991,12 @@ def activity_follow_up(request, action_id, activity_id):
 def risk_map(request, action_id):
     _require_permission(request.user, "view_risk")
     action = get_object_or_404(
-        scope_actions(
+        (view_scope_actions if request.method == "GET" else scope_actions)(
             StrategicAction.objects.select_related("artifact", "artifact__plan", "coordinating_unit"), request.user
         ),
         pk=action_id,
     )
+    request.read_only_other_unit = not scope_actions(StrategicAction.objects.all(), request.user).filter(pk=action.id).exists()
     action_plan = get_object_or_404(ActionPlan, action=action)
     if request.method == "POST":
         _require_permission(request.user, "add_risk")
@@ -1567,14 +2019,14 @@ def risk_map(request, action_id):
             "action_plan": action_plan,
             "risks": risks,
             "form": form,
-            "can_add_risk": request.user.has_perm("core.add_risk"),
+            "can_add_risk": not request.read_only_other_unit and request.user.has_perm("core.add_risk"),
         },
     )
 
 
-def _get_risk_for_action(user, action_id, risk_id):
+def _get_risk_for_action(user, action_id, risk_id, for_view=False):
     return get_object_or_404(
-        Risk.objects.filter(action__in=scope_actions(StrategicAction.objects.all(), user)).select_related(
+        Risk.objects.filter(action__in=scope_actions(StrategicAction.objects.all(), user, for_view=for_view)).select_related(
             "action", "activity", "owner"
         ),
         pk=risk_id,
@@ -1582,21 +2034,92 @@ def _get_risk_for_action(user, action_id, risk_id):
     )
 
 
+def _refresh_risk_status(risk):
+    if risk.status in (Risk.Status.MATERIALIZED, Risk.Status.CLOSED):
+        return
+    acceptance = risk.acceptances.first()
+    if acceptance:
+        risk.status = (Risk.Status.MONITORING if acceptance.decision == RiskAcceptance.Decision.ACCEPTED
+                       else Risk.Status.IN_TREATMENT)
+    elif risk.treatments.exists():
+        risk.status = Risk.Status.IN_TREATMENT
+    else:
+        risk.status = Risk.Status.IDENTIFIED
+
+
 @login_required
+@permission_required("core.view_riskmaterialization", raise_exception=True)
+def risk_materialization_file(request, action_id, risk_id, materialization_id):
+    _require_permission(request.user, "view_risk")
+    risk = _get_risk_for_action(request.user, action_id, risk_id, for_view=True)
+    occurrence = get_object_or_404(risk.materializations, pk=materialization_id)
+    try:
+        if not occurrence.evidence_attachment:
+            raise FileNotFoundError
+        file = occurrence.evidence_attachment.storage.open(occurrence.evidence_attachment.name, "rb")
+    except FileNotFoundError:
+        messages.error(request, "O anexo da evidência do risco não está disponível no servidor.")
+        return redirect(reverse("risk_detail", args=[action_id, risk_id]) + "#ocorrencia")
+    return FileResponse(file, filename=occurrence.evidence_attachment.name.rsplit("/", 1)[-1])
+
+
+@login_required
+@transaction.atomic
 def risk_detail(request, action_id, risk_id):
     _require_permission(request.user, "view_risk")
-    risk = _get_risk_for_action(request.user, action_id, risk_id)
+    risk = _get_risk_for_action(request.user, action_id, risk_id, for_view=request.method == "GET")
     action = risk.action
+    request.read_only_other_unit = not scope_actions(StrategicAction.objects.all(), request.user).filter(pk=action.id).exists()
     action_plan = ActionPlan.objects.filter(action=action).first()  # a AE pode ter risco sem plano de ação iniciado
+    # Serialize changes to the single acceptance/response for this risk.
+    Risk.objects.select_for_update().get(pk=risk.pk)
+    current_treatment = risk.treatments.first()
+    current_acceptance = risk.acceptances.first()
     operation = request.POST.get("operation") if request.method == "POST" else ""
     if operation in RISK_OPERATION_PERMISSIONS:
-        _require_permission(request.user, RISK_OPERATION_PERMISSIONS[operation])
+        permission = RISK_OPERATION_PERMISSIONS[operation]
+        if operation == "add_treatment" and current_treatment:
+            permission = "change_risktreatment"
+        elif operation == "accept" and current_acceptance:
+            permission = "change_riskacceptance"
+        _require_permission(request.user, permission)
+    if operation == "delete_assessment":
+        assessment = get_object_or_404(risk.assessments, pk=request.POST.get("assessment_id"))
+        is_latest = risk.assessments.first().pk == assessment.pk
+        assessment.delete()
+        remaining = risk.assessments.first()
+        if is_latest and remaining:
+            risk.probability = remaining.probability
+            risk.impact = remaining.impact
+            risk.save(update_fields=["probability", "impact"])
+        messages.success(request, "Avaliação excluída." if remaining else
+                         "Avaliação excluída. Sem histórico, a classificação atual foi mantida.")
+        return redirect(reverse("risk_detail", args=[action.id, risk.id]) + "#analise")
+    if operation in ("delete_treatment", "delete_acceptance"):
+        if operation == "delete_treatment":
+            if current_treatment:
+                current_treatment.delete()
+            risk.treatment = ""
+            risk.preventive_measure = ""
+            risk.contingency_measure = ""
+        elif current_acceptance:
+            current_acceptance.delete()
+        _refresh_risk_status(risk)
+        risk.save()
+        messages.success(request, "Resposta excluída." if operation == "delete_treatment" else "Aceite excluído.")
+        section = "tratamento" if operation == "delete_treatment" else "alcada"
+        return redirect(reverse("risk_detail", args=[action.id, risk.id]) + "#" + section)
     identity_form = RiskIdentityForm(instance=risk, action_plan=action_plan, prefix="identity")
-    assessment_form = RiskAssessmentForm(prefix="assessment")
+    editing_assessment = None
+    assessment_id = request.POST.get("assessment_id") if operation == "edit_assessment" else request.GET.get("editar_avaliacao")
+    if assessment_id:
+        _require_permission(request.user, "change_riskassessment")
+        editing_assessment = get_object_or_404(risk.assessments, pk=assessment_id)
+    assessment_form = RiskAssessmentForm(instance=editing_assessment, prefix="assessment")
     timing_form = RiskTimingForm(instance=risk, prefix="timing")
-    treatment_form = RiskTreatmentForm(prefix="treatment")
+    treatment_form = RiskTreatmentForm(instance=current_treatment, prefix="treatment")
     materialization_form = RiskMaterializationForm(prefix="materialization")
-    acceptance_form = RiskAcceptanceForm(prefix="acceptance")
+    acceptance_form = RiskAcceptanceForm(instance=current_acceptance, prefix="acceptance")
     remediation_form = RiskRemediationSubmissionForm(prefix="remediation")
 
     if operation == "update_identity":
@@ -1616,9 +2139,15 @@ def risk_detail(request, action_id, risk_id):
             timing_form.save()
             messages.success(request, "Momento de possível ocorrência atualizado.")
             return redirect("risk_detail", action_id=action.id, risk_id=risk.id)
-    elif operation == "add_assessment":
-        assessment_form = RiskAssessmentForm(request.POST, prefix="assessment")
-        if assessment_form.is_valid():
+    elif operation in ("add_assessment", "edit_assessment"):
+        if operation == "edit_assessment" and editing_assessment is None:
+            raise Http404
+        assessment_form = RiskAssessmentForm(request.POST, instance=editing_assessment, prefix="assessment")
+        valid = assessment_form.is_valid()
+        if operation == "add_assessment" and risk.assessments.exists():
+            assessment_form.add_error(None, "Este risco já possui avaliação. Use o botão Editar avaliação.")
+            valid = False
+        if valid:
             assessment = assessment_form.save(commit=False)
             assessment.risk = risk
             assessment.author = request.user
@@ -1626,25 +2155,25 @@ def risk_detail(request, action_id, risk_id):
             risk.probability = assessment.probability
             risk.impact = assessment.impact
             risk.save(update_fields=["probability", "impact"])
-            messages.success(request, "Nova avaliação registrada.")
+            messages.success(request, "Avaliação atualizada." if editing_assessment else "Avaliação registrada.")
             return redirect("risk_detail", action_id=action.id, risk_id=risk.id)
     elif operation == "add_treatment":
-        treatment_form = RiskTreatmentForm(request.POST, prefix="treatment")
+        treatment_form = RiskTreatmentForm(request.POST, instance=current_treatment, prefix="treatment")
         if treatment_form.is_valid():
             treatment = treatment_form.save(commit=False)
             treatment.risk = risk
-            treatment.created_by = request.user
+            if not treatment.pk:
+                treatment.created_by = request.user
             treatment.save()
             risk.treatment = treatment.decision
             risk.preventive_measure = treatment.preventive_measure
             risk.contingency_measure = treatment.contingency_measure
-            if risk.status not in [Risk.Status.MATERIALIZED, Risk.Status.CLOSED]:
-                risk.status = Risk.Status.IN_TREATMENT
+            _refresh_risk_status(risk)
             risk.save(update_fields=["treatment", "preventive_measure", "contingency_measure", "status"])
             messages.success(request, "Tratamento registrado.")
             return redirect("risk_detail", action_id=action.id, risk_id=risk.id)
     elif operation == "materialize":
-        materialization_form = RiskMaterializationForm(request.POST, prefix="materialization")
+        materialization_form = RiskMaterializationForm(request.POST, request.FILES, prefix="materialization")
         if materialization_form.is_valid():
             materialization = materialization_form.save(commit=False)
             materialization.risk = risk
@@ -1655,7 +2184,7 @@ def risk_detail(request, action_id, risk_id):
             messages.success(request, "Materialização do risco registrada.")
             return redirect("risk_detail", action_id=action.id, risk_id=risk.id)
     elif operation == "accept":
-        acceptance_form = RiskAcceptanceForm(request.POST, prefix="acceptance")
+        acceptance_form = RiskAcceptanceForm(request.POST, instance=current_acceptance, prefix="acceptance")
         if acceptance_form.is_valid():
             acceptance = acceptance_form.save(commit=False)
             acceptance.risk = risk
@@ -1719,12 +2248,16 @@ def risk_detail(request, action_id, risk_id):
             "can_view_remediation": user.has_perm("core.view_riskremediationsubmission"),
             "assessments": risk.assessments.select_related("author") if can_view["assessments"] else [],
             "treatments": risk.treatments.select_related("responsible", "created_by") if can_view["treatments"] else [],
-            "current_treatment": risk.treatments.first() if can_view["treatments"] else None,
+            "current_treatment": current_treatment if can_view["treatments"] else None,
+            "has_treatment": current_treatment is not None,
+            "has_acceptance": current_acceptance is not None,
             "materializations": risk.materializations.select_related("recorded_by") if can_view["materializations"] else [],
             "acceptances": acceptances,
             "pending_acceptance": pending_acceptance,
             "identity_form": identity_form,
             "assessment_form": assessment_form,
+            "editing_assessment": editing_assessment,
+            "has_assessment": risk.assessments.exists(),
             "timing_form": timing_form,
             "treatment_form": treatment_form,
             "materialization_form": materialization_form,

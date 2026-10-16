@@ -1,5 +1,6 @@
 <section class="panel risk-legend" aria-labelledby="risk-legend-title">
-  <div class="panel-heading"><div><p class="eyebrow">Legenda</p><h2 id="risk-legend-title">Categorias de risco e como são calculadas</h2></div></div>
+  <div class="panel-heading"><div><p class="eyebrow">Legenda</p><h2 id="risk-legend-title">Categorias de risco e como são calculadas</h2></div><button type="button" class="button button-secondary" aria-expanded="true" aria-controls="risk-legend-content" data-toggle-risk-legend>Recolher legenda</button></div>
+  <div id="risk-legend-content">
   <p class="risk-legend-formula"><strong>Nível do risco = Probabilidade (1 a 5) × Impacto (1 a 5)</strong> &nbsp;·&nbsp; resultado de 1 a 25, classificado na faixa correspondente.</p>
   <div class="responsive-table"><table class="risk-legend-table">
     <thead><tr><th>Categoria</th><th class="col-center">Faixa (P × I)</th><th>O que significa</th><th>Tratamento esperado</th><th>Quem aceita</th></tr></thead>
@@ -16,4 +17,6 @@
     <div><h3>Impacto</h3><ol><li><b>1 · Insignificante</b> — efeito pontual.</li><li><b>2 · Menor</b> — exige ajuste simples.</li><li><b>3 · Moderado</b> — compromete parcialmente prazo, custo ou meta.</li><li><b>4 · Maior</b> — compromete entregas, metas ou recursos.</li><li><b>5 · Crítico</b> — pode inviabilizar objetivo ou projeto.</li></ol></div>
     <div><h3>Resposta ao risco</h3><ul><li><b>Aceitar</b> — conviver com o risco e monitorar.</li><li><b>Mitigar</b> — reduzir probabilidade ou impacto.</li><li><b>Evitar</b> — eliminar a causa ou a atividade.</li><li><b>Transferir</b> — dividir com terceiros.</li></ul><p class="form-hint">Exemplo: probabilidade 4 × impacto 4 = 16 → Muito alto.</p></div>
   </div>
+  </div>
+  <script>(function(){var section=document.currentScript.closest('.risk-legend');var button=section.querySelector('[data-toggle-risk-legend]');var content=section.querySelector('#risk-legend-content');button.addEventListener('click',function(){var expanded=button.getAttribute('aria-expanded')==='true';content.hidden=expanded;button.setAttribute('aria-expanded',String(!expanded));button.textContent=expanded?'Expandir legenda':'Recolher legenda';});}());</script>
 </section>

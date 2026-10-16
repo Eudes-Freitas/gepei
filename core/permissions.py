@@ -42,6 +42,7 @@ MODULES = [
         [
             ("reportcycle", "Ciclos de relatório"),
             ("sectorreport", "Relatórios setoriais"),
+            ("quarterlysectorreport", "Relatórios trimestrais por setor"),
         ],
     ),
     (
@@ -49,7 +50,7 @@ MODULES = [
         [
             ("organization", "Órgãos"),
             ("organizationalunit", "Setores e unidades"),
-            ("userprofile", "Perfis de usuário"),
+            ("userprofile", "Perfis de usuário e consulta a outras unidades"),
             ("user", "Usuários"),
             ("group", "Perfis"),
         ],
@@ -84,7 +85,7 @@ def permission_modules():
                     {
                         "label": label,
                         "permissions": [
-                            {"id": p.id, "label": ACTION_LABELS.get(_action(p), p.name)} for p in ordered
+                            {"id": p.id, "label": p.name if p.codename == "view_other_units" else ACTION_LABELS.get(_action(p), p.name)} for p in ordered
                         ],
                     }
                 )
@@ -103,9 +104,9 @@ def is_administrator(user):
     return user.groups.filter(name__iexact=ADMINISTRATOR_GROUP_NAME).exists()
 
 
-def user_unit_ids(user):
+def user_unit_ids(user, for_view=False):
     """IDs do setor do usuário e dos setores abaixo dele; `None` quando não há restrição."""
-    if is_administrator(user):
+    if is_administrator(user) or (for_view and user.has_perm("core.view_other_units")):
         return None
     cached = getattr(user, "_unit_scope_ids", None)
     if cached is not None:
@@ -127,33 +128,63 @@ def user_unit_ids(user):
     return ids
 
 
-def scope_units(queryset, user):
-    ids = user_unit_ids(user)
+def scope_units(queryset, user, for_view=False):
+    ids = user_unit_ids(user, for_view=for_view)
     return queryset if ids is None else queryset.filter(pk__in=ids)
 
 
-def scope_actions(queryset, user):
+def scope_actions(queryset, user, for_view=False):
     """Ações coordenadas ou com participação do setor do usuário."""
-    ids = user_unit_ids(user)
+    ids = user_unit_ids(user, for_view=for_view)
     if ids is None:
         return queryset
     from .models import StrategicAction
 
+    if not for_view and user.has_perm("core.view_other_units"):
+        return queryset.filter(coordinating_unit_id__in=ids)
     visible = StrategicAction.objects.filter(
         Q(coordinating_unit_id__in=ids) | Q(participating_units__in=ids)
     ).values("pk")
     return queryset.filter(pk__in=visible)
 
 
-def scope_by_unit(queryset, user, field, include_unassigned=False):
+def scope_by_unit(queryset, user, field, include_unassigned=False, for_view=False):
     """Restringe `queryset` a registros cujo campo de setor (`field`) esteja no escopo do usuário.
 
     Com `include_unassigned`, registros sem setor (institucionais) continuam visíveis.
     """
-    ids = user_unit_ids(user)
+    ids = user_unit_ids(user, for_view=for_view)
     if ids is None:
         return queryset
+    if not for_view and user.has_perm("core.view_other_units"):
+        include_unassigned = False
     condition = Q(**{f"{field}__in": ids})
     if include_unassigned:
         condition |= Q(**{f"{field}__isnull": True})
     return queryset.filter(condition)
+
+
+def selected_unit_for_request(request):
+    """Default sector accounts to their own unit, including after clearing filters."""
+    ids = user_unit_ids(request.user)
+    requested = request.GET.get("unit", "")
+    if ids is None:
+        return requested
+    if request.user.has_perm("core.view_other_units") and "unit" in request.GET:
+        return requested
+    if requested.isdigit() and int(requested) in ids:
+        return requested
+    profile = getattr(request.user, "profile", None)
+    return str(profile.unit_id) if profile and profile.unit_id else ""
+
+
+def view_scope_actions(queryset, user):
+    return scope_actions(queryset, user, for_view=True)
+
+
+def view_scope_units(queryset, user):
+    return scope_units(queryset, user, for_view=True)
+
+
+def view_scope_by_unit(queryset, user, field, include_unassigned=False):
+    return scope_by_unit(queryset, user, field, include_unassigned=include_unassigned, for_view=True)

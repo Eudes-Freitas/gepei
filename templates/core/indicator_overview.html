@@ -1,22 +1,22 @@
 {% extends "base.html" %}
-{% block title %}Indicadores | GEPEI{% endblock %}
+{% block title %}Metas e indicadores | GEPEI{% endblock %}
 {% block content %}
   <a class="back-link" href="{% url 'dashboard' %}">← Voltar</a>
   <section class="page-heading dashboard-heading">
     <div>
       <p class="eyebrow">Monitoramento de resultados</p>
-      <h1>Indicadores</h1>
-      <p>Acompanhe o resultado aferido de cada indicador, a meta do período, a fonte da informação e a situação calculada.</p>
+      <h1>Metas e indicadores</h1>
+      <p>Consulte a meta, a ficha do indicador, o gráfico e o histórico de aferições juntos, abaixo.</p>
     </div>
     {% if plan %}<span class="chip chip-neutral">{{ plan.acronym }} · {{ plan.start_date|date:"Y" }}–{{ plan.end_date|date:"Y" }}</span>{% endif %}
   </section>
 
-  <form class="dashboard-filters" method="get" aria-label="Filtros dos indicadores">
+  <form class="dashboard-filters" method="get" action="{% if perms.core.view_indicator %}{% url 'indicator_overview' %}{% else %}{% url 'target_overview' %}{% endif %}" aria-label="Filtros dos indicadores">
     <label>Plano
-      <select name="plan">{% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}</select>
+      <select name="plan"><option value="">Todos os planos</option>{% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}</select>
     </label>
     <label>Unidade responsável
-      <select name="unit"><option value="">Todas as unidades</option>{% for unit in units %}<option value="{{ unit.id }}" {% if selected_unit == unit.id|stringformat:"s" %}selected{% endif %}>{{ unit.acronym|default:unit.name }}</option>{% endfor %}</select>
+      <select name="unit" onchange="this.form.requestSubmit()"><option value="">Todas as unidades</option>{% for unit in units %}<option value="{{ unit.id }}" {% if selected_unit == unit.id|stringformat:"s" %}selected{% endif %}>{{ unit.acronym|default:unit.name }}</option>{% endfor %}</select>
     </label>
     <label class="filter-wide">Objetivo estratégico
       <select name="objective"><option value="">Todos os objetivos</option>{% for objective in objectives %}<option value="{{ objective.id }}" {% if selected_objective == objective.id|stringformat:"s" %}selected{% endif %}>{{ objective.code }} · {{ objective.title }}</option>{% endfor %}</select>
@@ -24,17 +24,21 @@
     <label>Situação
       <select name="status">
         <option value="">Todas as situações</option>
+        <option value="measured" {% if selected_status == "measured" %}selected{% endif %}>Aferidos</option><option value="attention" {% if selected_status == "attention" %}selected{% endif %}>Atenção, alerta ou crítico</option>
         <option value="green" {% if selected_status == "green" %}selected{% endif %}>Conforme</option>
         <option value="yellow" {% if selected_status == "yellow" %}selected{% endif %}>Atenção</option>
         <option value="orange" {% if selected_status == "orange" %}selected{% endif %}>Alerta</option>
         <option value="red" {% if selected_status == "red" %}selected{% endif %}>Crítico</option>
+        <option value="none" {% if selected_status == "none" %}selected{% endif %}>Metas sem indicador</option><option value="unmeasured" {% if selected_status == "unmeasured" %}selected{% endif %}>Sem aferição ou indicador</option>
         <option value="gray" {% if selected_status == "gray" %}selected{% endif %}>Sem aferição ou dado insuficiente</option>
       </select>
     </label>
+    {% if selected_target %}<input type="hidden" name="target" value="{{ selected_target }}">{% endif %}
     <button class="button button-primary" type="submit">Aplicar filtros</button>
-    <a class="clear-filter" href="{% url 'indicator_overview' %}">Limpar</a>
+    <a class="clear-filter" href="{% if perms.core.view_indicator %}{% url 'indicator_overview' %}{% else %}{% url 'target_overview' %}{% endif %}">Limpar</a>
   </form>
 
+  {% if perms.core.view_indicator %}
   <section class="metrics metrics-centered indicator-metrics" aria-label="Resumo dos indicadores">
     <article class="metric-card"><span>Indicadores</span><strong>{{ indicator_count }}</strong></article>
     <article class="metric-card metric-blue"><span>Com situação calculada</span><strong>{{ updated_count }}</strong></article>
@@ -42,28 +46,16 @@
     <article class="metric-card"><span>Sem aferição completa</span><strong>{{ signal_counts.gray }}</strong></article>
   </section>
 
-  <section class="panel indicator-list-panel">
-    <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Indicadores do plano</h2></div><span class="chip chip-neutral">{{ indicator_rows|length }} exibido{{ indicator_rows|length|pluralize:"s" }}</span></div>
-    {% if indicator_rows %}
-      <div class="responsive-table"><table class="indicator-table">
-        <thead><tr><th>Indicador</th><th>Meta</th><th>Responsável</th><th>Última aferição</th><th>Situação</th><th></th></tr></thead>
-        <tbody>
-          {% for row in indicator_rows %}
-            <tr>
-              <td class="indicator-name-cell"><a class="cell-link" href="{% url 'indicator_detail' row.indicator.id %}"><strong>{{ row.indicator.code|default:"Indicador" }}</strong><span>{{ row.indicator.name }}</span></a></td>
-              <td class="indicator-name-cell">
-                {% for target in row.indicator.targets.all %}<a class="cell-link" href="{% url 'target_overview' %}?plan={{ target.artifact.plan_id }}&amp;objective={{ target.artifact_id }}#meta-{{ target.id }}"><strong>{{ target.code|default:"Meta" }}</strong><span>{{ target.description }}</span></a>{% empty %}<span class="muted-text">Meta não vinculada</span>{% endfor %}
-              </td>
-              <td>{{ row.indicator.responsible_unit.acronym|default:row.indicator.responsible_unit.name|default:"A definir" }}</td>
-              <td>{% if row.signal.measurement %}<strong>{{ row.signal.measurement.measured_value }}</strong><span>{{ row.signal.measurement.reference_period }}</span>{% if row.signal.measurement.expected_value != None %}<small>Meta do período: {{ row.signal.measurement.expected_value|floatformat:"-1" }}</small>{% endif %}{% else %}<span class="muted-text">Ainda não informada</span>{% endif %}</td>
-              <td><span class="signal signal-{{ row.signal.code }}"><i></i>{{ row.signal.label }}</span>{% if row.signal.achievement != None %}<small>{{ row.signal.achievement|floatformat:"-1" }}% da meta</small>{% endif %}</td>
-              <td><a class="button button-secondary" href="{% url 'indicator_detail' row.indicator.id %}">{% if row.signal.measurement %}Ver histórico{% else %}Registrar aferição{% endif %}</a></td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table></div>
-    {% else %}
-      <div class="empty-state large-empty"><strong>Nenhum indicador encontrado.</strong><span>Altere os filtros ou vincule indicadores ao plano selecionado.</span></div>
-    {% endif %}
+  <section aria-label="Metas e indicadores detalhados">
+    <div class="panel-heading"><h2>Metas e indicadores</h2>{% if can_add_target and target_form %}<button class="button button-primary" type="button" data-open-target-form>Nova meta</button>{% endif %}</div>
+    {% for row in indicator_rows %}{% include "core/_result_indicator_card.html" %}{% empty %}<div class="panel empty-state"><strong>Nenhum indicador encontrado.</strong><span>Altere os filtros para consultar outros registros.</span></div>{% endfor %}
   </section>
+  {% endif %}
+  {% if perms.core.view_strategictarget %}
+    {% if not perms.core.view_indicator and can_add_target and target_form %}<button class="button button-primary" type="button" data-open-target-form>Nova meta</button>{% endif %}
+    {% for target in standalone_targets %}<article class="panel"><h2>{{ target.code|default:"Meta" }}</h2>{% include "core/_result_target_facts.html" %}<p class="form-hint">Sem indicador exibido neste recorte.</p></article>{% endfor %}
+    {% include "core/_result_target_form.html" %}
+  {% endif %}
 {% endblock %}
+
+{% block extra_script %}{% include "core/_results_charts.html" %}{% endblock %}

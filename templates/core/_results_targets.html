@@ -1,0 +1,71 @@
+  <section class="metrics metrics-centered indicator-metrics" aria-label="Resumo da execução das metas">
+    <article class="metric-card"><span>Metas exibidas</span><strong>{{ target_rows|length }}</strong></article>
+    <article class="metric-card metric-blue"><span>Conformes</span><strong>{{ status_counts.green }}</strong></article>
+    <article class="metric-card metric-warning"><span>Exigem atenção</span><strong>{{ target_attention_count }}</strong></article>
+    <article class="metric-card"><span>Sem aferição ou indicador</span><strong>{{ status_counts.gray|add:status_counts.none }}</strong></article>
+  </section>
+
+  {% if focused_charts %}
+  <section class="target-focus-grid">
+    {% for row in target_rows %}{% for item in row.indicators %}
+      <article class="panel indicator-chart-panel">
+        <div class="panel-heading"><div><p class="eyebrow">Evolução · {{ row.target.code|default:"Meta" }}</p><h2><a href="{% url 'indicator_detail' item.indicator.id %}">{{ item.indicator.code|default:"Indicador" }}</a> · {{ item.indicator.name }}</h2></div><span class="signal signal-{{ item.signal.code }}"><i></i>{{ item.signal.label }}</span></div>
+        <dl class="target-execution-facts">
+          <div><dt>Linha de base</dt><dd>{{ item.signal.measurement.baseline_value|default:item.indicator.baseline|default:"A definir" }}</dd></div>
+          <div><dt>Último resultado</dt><dd>{% if item.signal.measurement %}{{ item.signal.measurement.measured_value }}{% else %}—{% endif %}</dd></div>
+          <div><dt>Meta do período</dt><dd>{% if item.signal.measurement.expected_value != None %}{{ item.signal.measurement.expected_value|floatformat:"-1" }}{% else %}—{% endif %}</dd></div>
+          <div><dt>Meta final</dt><dd>{{ row.target.target_value|default:"A definir" }}</dd></div>
+          <div><dt>Atingimento</dt><dd>{% if item.signal.achievement != None %}{{ item.signal.achievement|floatformat:"-1" }}%{% else %}—{% endif %}</dd></div>
+          <div><dt>Progresso até a meta final</dt><dd>{% if item.progress != None %}{{ item.progress|floatformat:"-1" }}%{% else %}—{% endif %}</dd></div>
+        </dl>
+        <div class="indicator-chart" id="target-indicator-chart-{{ item.indicator.id }}" role="img" aria-label="Gráfico de linha com a linha de base, o resultado aferido e a meta de cada período de {{ item.indicator.code }}"></div>
+      </article>
+    {% endfor %}{% endfor %}
+    {% for item in focused_charts %}{% if item.chart %}{{ item.chart|json_script:item.element_id }}{% endif %}{% endfor %}
+  </section>
+  {% elif progress_chart %}
+  <section class="panel">
+    <div class="panel-heading"><div><p class="eyebrow">Execução</p><h2>Progresso das metas até a meta final</h2></div><span class="chip chip-neutral">{{ progress_chart.values|length }} meta{{ progress_chart.values|length|pluralize:"s" }} com aferição</span></div>
+    <p class="form-hint">Percentual do caminho percorrido da linha de base até a meta final do plano, pela média dos indicadores da meta. A cor indica a situação no período.</p>
+    <div id="target-progress-chart" class="indicator-chart" role="img" aria-label="Gráfico de barras com o progresso de cada meta até a meta final"></div>
+    {{ progress_chart|json_script:"target-progress-data" }}
+  </section>
+  {% endif %}
+
+  <section class="panel indicator-list-panel">
+    <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Execução das metas</h2></div><div class="panel-heading-actions"><span class="chip chip-neutral">{{ target_rows|length }} exibida{{ target_rows|length|pluralize:"s" }}</span>{% if can_add_target and target_form %}<button class="button button-primary" type="button" data-open-target-form>Nova meta</button>{% endif %}</div></div>
+    {% if target_rows %}
+      <div class="responsive-table"><table class="indicator-table">
+        <thead><tr><th>Meta</th><th>Meta final</th><th>Situação</th><th>Execução</th><th>Vinculada a</th><th>Indicadores</th>{% if can_edit_target %}<th>Ações</th>{% endif %}</tr></thead>
+        <tbody>
+          {% for row in target_rows %}{% with target=row.target %}
+            <tr id="meta-{{ target.id }}">
+              <td class="indicator-name-cell"><a class="cell-link" href="{% url 'target_overview' %}?plan={{ target.artifact.plan_id }}&amp;objective={{ target.artifact_id }}&amp;target={{ target.id }}"><strong>{{ target.code|default:"Meta" }}</strong><span>{{ target.description }}</span></a></td>
+              <td>{{ target.target_value|default:"A definir" }}{% if target.unit_of_measure %} <small>{{ target.unit_of_measure }}</small>{% endif %}<small>{{ target.reference_period|default:"" }}</small></td>
+              <td><span class="signal signal-{% if row.code == 'none' %}gray{% else %}{{ row.code }}{% endif %}"><i></i>{{ row.label }}</span>{% if row.achievement != None %}<small>{{ row.achievement|floatformat:"-1" }}% da meta do período</small>{% endif %}</td>
+              <td class="target-execution-cell">{% if row.progress != None %}<strong>{{ row.progress|floatformat:"-1" }}%</strong><span class="table-progress" aria-hidden="true"><i style="width:{% if row.progress > 100 %}100{% elif row.progress < 0 %}0{% else %}{{ row.progress|stringformat:".1f" }}{% endif %}%"></i></span><small>até a meta final</small>{% else %}<span class="muted-text">Sem progresso calculado</span>{% endif %}{% if row.last_measurement %}<small>Última aferição: {{ row.last_measurement.reference_period }}</small>{% endif %}<small>{{ row.measured_count }} de {{ row.indicators|length }} indicador{{ row.indicators|length|pluralize:"es" }} aferido{{ row.indicators|length|pluralize:"s" }}</small></td>
+              <td>{% if target.action %}<a href="{% url 'action_plan_detail' target.action.id %}">{{ target.action.code }}</a>{% else %}{{ target.artifact.code|default:target.artifact.title }}{% endif %}</td>
+              <td class="indicator-links-cell">
+                {% for item in row.indicators %}<span><a href="{% url 'indicator_detail' item.indicator.id %}"><strong>{{ item.indicator.code|default:"Indicador" }}</strong></a> {{ item.indicator.name }} <span class="signal signal-{{ item.signal.code }}"><i></i>{{ item.signal.label }}</span></span>{% empty %}<span class="muted-text">Nenhum indicador vinculado</span>{% endfor %}
+              </td>
+              {% if can_edit_target %}<td><a class="text-button" href="?{% if selected_plan %}plan={{ selected_plan }}&amp;{% endif %}{% if selected_objective %}objective={{ selected_objective }}&amp;{% endif %}editar={{ target.id }}">Editar</a></td>{% endif %}
+            </tr>
+          {% endwith %}{% endfor %}
+        </tbody>
+      </table></div>
+    {% else %}
+      <div class="empty-state large-empty"><strong>Nenhuma meta encontrada.</strong><span>Altere os filtros{% if can_add_target %} ou use “Nova meta”{% endif %}.</span></div>
+    {% endif %}
+  </section>
+  {% if target_form %}
+  <dialog class="panel activity-form-panel" id="target-form" aria-labelledby="target-form-title" {% if target_form.errors or editing_target %}data-open-on-load{% endif %}>
+    <div class="dialog-heading"><div><p class="eyebrow">{% if editing_target %}Editar meta{% else %}Nova meta{% endif %}</p><h2 id="target-form-title">{% if editing_target %}Alterar {{ editing_target.code|default:"meta" }}{% else %}Cadastrar meta{% endif %}</h2></div><button class="icon-button dialog-close" type="button" data-close-target-form aria-label="Fechar">×</button></div>
+    <p class="form-hint">A meta fica vinculada a um objetivo do plano e pode ser medida por um ou mais indicadores.</p>
+    <form method="post" class="activity-form">{% csrf_token %}
+      {% if editing_target %}<input type="hidden" name="target_id" value="{{ editing_target.id }}">{% endif %}
+      {% for field in target_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}
+      <div class="form-buttons"><button class="button button-primary" type="submit">{% if editing_target %}Salvar alterações{% else %}Cadastrar meta{% endif %}</button><button class="button button-secondary" type="button" data-close-target-form>Cancelar</button></div>
+    </form>
+    <script>(function(){var dialog=document.getElementById('target-form');var open=document.querySelector('[data-open-target-form]');if(open){open.addEventListener('click',function(){dialog.showModal();});}dialog.querySelectorAll('[data-close-target-form]').forEach(function(b){b.addEventListener('click',function(){dialog.close();});});dialog.addEventListener('click',function(e){if(e.target===dialog){dialog.close();}});if(dialog.hasAttribute('data-open-on-load')){dialog.showModal();}}());</script>
+  </dialog>
+  {% endif %}

@@ -1,9 +1,9 @@
 {% load progress %}
-<article class="strategy-action-row">
+<article class="strategy-action-row" id="acao-{{ action.id }}" tabindex="-1">
   <div class="strategy-action-copy">
     <div><strong>{{ action.code }}</strong><span class="chip chip-{{ action.status|lower }}">{{ action.get_status_display }}</span></div>
     <p>{{ action.title }}</p>
-    <small>{{ action.coordinating_unit.acronym|default:action.coordinating_unit.name }} · prazo {{ action.due_date|date:"d/m/Y"|default:"a definir" }}</small>
+    <small>{{ action.coordinating_unit.acronym|default:action.coordinating_unit.name }} · prazo {{ action.due_date|date:"d/m/Y"|default:"a definir" }} · {{ action.critical_success_factors.all|length }} fator{{ action.critical_success_factors.all|length|pluralize:"es" }} crítico{{ action.critical_success_factors.all|length|pluralize:"s" }}</small>
   </div>
   <div class="strategy-action-progress"><strong>{{ action.progress|floatformat:"-1" }}%</strong>{% progress_bar action.progress %}</div>
   <a class="button button-secondary" href="{% url 'action_plan_detail' action.id %}">Abrir plano de ação</a>

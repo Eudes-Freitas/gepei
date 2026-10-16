@@ -1,16 +1,15 @@
-<details class="strategy-objective" id="objetivo-{{ objective.artifact.id }}">
+<details class="strategy-objective" id="objetivo-{{ objective.artifact.id }}" tabindex="-1" {% if objective.expanded %}open{% endif %}>
   <summary>
     <span class="objective-code">{{ objective.artifact.code|default:"Objetivo" }}</span>
     <strong>{{ objective.artifact.title }}</strong>
-    <span class="objective-counts">{{ objective.target_count }} meta{{ objective.target_count|pluralize:"s" }} · {{ objective.indicator_count }} indicador{{ objective.indicator_count|pluralize:"es" }} · {{ objective.action_count }} {% if objective.action_count == 1 %}ação{% else %}ações{% endif %}</span>
+    <span class="objective-counts">{{ objective.target_count }} meta{{ objective.target_count|pluralize:"s" }} · {{ objective.indicator_count }} indicador{{ objective.indicator_count|pluralize:"es" }} · {{ objective.action_count }} {% if objective.action_count == 1 %}ação{% else %}ações{% endif %} · {{ objective.factors|length }} fator{{ objective.factors|length|pluralize:"es" }} crítico{{ objective.factors|length|pluralize:"s" }}</span>
   </summary>
   <div class="objective-content">
-    <div class="objective-toolbar"><a href="{% url 'indicator_overview' %}?plan={{ objective.artifact.plan_id }}&amp;objective={{ objective.artifact.id }}">Ver metas e indicadores deste objetivo →</a></div>
+    <div class="objective-toolbar"><a href="{% url 'indicator_overview' %}?plan={{ objective.artifact.plan_id }}&amp;objective={{ objective.artifact.id }}{% if selected_unit %}&amp;unit={{ selected_unit }}{% endif %}">Ver metas e indicadores deste objetivo →</a></div>
     {% for project in objective.projects %}
       <section class="strategy-project">
         <div class="strategy-project-heading">
           <div><span>Projeto Estratégico</span><h4>{{ project.artifact.title }}</h4></div>
-          {% if project.factor_count %}<small>{{ project.factor_count }} fator{{ project.factor_count|pluralize:"es" }} crítico{{ project.factor_count|pluralize:"s" }}</small>{% endif %}
         </div>
         <div class="strategy-actions">
           {% for action in project.actions %}
@@ -28,5 +27,11 @@
       </section>
     {% endif %}
     {% if not objective.projects and not objective.direct_actions %}<p class="strategy-empty">Este objetivo ainda não possui projetos ou ações.</p>{% endif %}
+    {% if objective.factors %}
+      <section class="strategy-factors" aria-label="Fatores críticos de sucesso de {{ objective.artifact.code }}">
+        <div class="strategy-project-heading"><div><span>Fatores críticos de sucesso</span><h4>Condições para o êxito do objetivo</h4></div><small>Informativo · PEI</small></div>
+        <ul>{% for factor in objective.factors %}<li>{{ factor.description }}</li>{% endfor %}</ul>
+      </section>
+    {% endif %}
   </div>
 </details>

@@ -1,0 +1,4 @@
+<nav class="results-tabs" aria-label="Metas e indicadores">
+  {% if perms.core.view_strategictarget %}<a href="{% url 'target_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}" {% if '/metas/' in request.path %}aria-current="page"{% endif %}>Metas</a>{% endif %}
+  {% if perms.core.view_indicator %}<a href="{% url 'indicator_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}" {% if '/indicadores/' in request.path %}aria-current="page"{% endif %}>Indicadores</a>{% endif %}
+</nav>

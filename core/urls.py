@@ -1,23 +1,28 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
 
-from . import views
+from . import views, quarterly_reports
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("pei/", views.pei_overview, name="pei_overview"),
     path("metas/", views.target_overview, name="target_overview"),
     path("indicadores/", views.indicator_overview, name="indicator_overview"),
+    path("indicadores/<int:indicator_id>/afericoes/<int:measurement_id>/excluir/", views.measurement_delete, name="measurement_delete"),
     path("indicadores/<int:indicator_id>/", views.indicator_detail, name="indicator_detail"),
-    path("relatorios/", views.report_cycle_overview, name="report_cycle_overview"),
+    path("relatorios/", quarterly_reports.overview, name="report_cycle_overview"),
+    path("relatorios/trimestrais/<int:report_id>/", quarterly_reports.detail, name="quarterly_report_detail"),
+    path("relatorios/ciclos/", views.report_cycle_overview, name="legacy_report_cycles"),
     path("relatorios/<int:cycle_id>/", views.report_cycle_detail, name="report_cycle_detail"),
     path("relatorios/<int:cycle_id>/setores/<int:report_id>/", views.sector_report_detail, name="sector_report_detail"),
     path("planos-de-acao/", views.action_plan_list, name="action_plan_list"),
     path("riscos/", views.risk_overview, name="risk_overview"),
     path("planos-de-acao/<int:action_id>/", views.action_plan_detail, name="action_plan_detail"),
     path("planos-de-acao/<int:action_id>/riscos/", views.risk_map, name="risk_map"),
+    path("planos-de-acao/<int:action_id>/riscos/<int:risk_id>/ocorrencias/<int:materialization_id>/arquivo/", views.risk_materialization_file, name="risk_materialization_file"),
     path("planos-de-acao/<int:action_id>/riscos/<int:risk_id>/", views.risk_detail, name="risk_detail"),
     path("planos-de-acao/<int:action_id>/atividades/<int:activity_id>/editar/", views.activity_edit, name="activity_edit"),
+    path("planos-de-acao/<int:action_id>/atividades/<int:activity_id>/evidencias/<int:evidence_id>/arquivo/", views.evidence_file, name="evidence_file"),
     path("planos-de-acao/<int:action_id>/atividades/<int:activity_id>/acompanhar/", views.activity_follow_up, name="activity_follow_up"),
     path("planos-de-acao/<int:action_id>/atividades/<int:activity_id>/excluir/", views.activity_delete, name="activity_delete"),
     path("planos-de-acao/<int:action_id>/atividades/<int:activity_id>/mover/<str:direction>/", views.activity_move, name="activity_move"),

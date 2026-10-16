@@ -11,7 +11,11 @@
     <div class="heading-actions">{% if has_creatable_actions %}<button class="button button-primary" type="button" data-open-risk-form>Cadastrar risco</button>{% else %}<span class="form-hint">Para cadastrar riscos, inicie o plano de ação de uma AE.</span>{% endif %}</div>
   </section>
 
+  {% include "core/_risk_legend.html" %}
+
+{% if request.GET.level %}<p class="form-hint">Somente riscos altos ou críticos (nível a partir de 15).</p>{% endif %}
   <form class="dashboard-filters" method="get" aria-label="Filtros dos riscos">
+{% if request.GET.level %}<input type="hidden" name="level" value="{{ request.GET.level }}">{% endif %}{% if request.GET.action_status %}<input type="hidden" name="action_status" value="{{ request.GET.action_status }}">{% endif %}
     <label>Plano
       <select name="plan"><option value="">Todos os planos</option>{% for plan in plans %}<option value="{{ plan.id }}" {% if selected_plan == plan.id|stringformat:"s" %}selected{% endif %}>{{ plan.acronym }} · {{ plan.name }}</option>{% endfor %}</select>
     </label>
@@ -27,7 +31,7 @@
 
   <section class="metrics metrics-centered action-detail-metrics">
     <article class="metric-card"><span>Riscos</span><strong>{{ risks|length }}</strong></article>
-    <article class="metric-card metric-warning"><span>Muito altos ou críticos</span><strong>{{ critical_count }}</strong></article>
+    <article class="metric-card metric-warning"><span>Muito alto ou crítico</span><strong>{{ critical_count }}</strong></article>
     <article class="metric-card metric-danger"><span>Materializados</span><strong>{{ materialized_count }}</strong></article>
     <article class="metric-card"><span>Em monitoramento</span><strong>{{ monitoring_count }}</strong></article>
   </section>
@@ -44,13 +48,12 @@
           <td class="col-center"><span class="risk-level {% if risk.level >= 20 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }} · {{ risk.level_label }}</span></td>
           <td>{% if not perms.core.view_risktreatment %}🔒{% else %}{% with treatment=risk.treatments.first %}{% if treatment %}{{ treatment.get_decision_display }}{% elif risk.treatment %}{{ risk.treatment|title }}{% else %}A definir{% endif %}{% endwith %}{% endif %}</td>
           <td><span class="chip chip-{{ risk.status|lower }}">{{ risk.get_status_display }}</span></td>
-          <td><div class="row-actions"><a class="text-button" href="{% url 'risk_detail' risk.action.id risk.id %}">Abrir ciclo</a><a class="text-button" href="{% url 'risk_detail' risk.action.id risk.id %}#alcada">Decidir aceite</a></div></td>
+          <td><div class="row-actions"><a class="text-button" href="{% url 'risk_detail' risk.action.id risk.id %}">Visualizar</a></div></td>
         </tr>{% endfor %}
       </tbody></table></div>
     {% else %}<div class="empty-state large-empty"><strong>Nenhum risco encontrado.</strong><span>Altere os filtros ou use “Cadastrar risco”.</span></div>{% endif %}
   </section>
 
-  {% include "core/_risk_legend.html" %}
 
   {% if has_creatable_actions %}
   <dialog class="panel activity-form-panel" aria-labelledby="risk-form-title" {% if create_form.errors %}data-open-on-load{% endif %}>

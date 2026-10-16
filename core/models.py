@@ -39,6 +39,9 @@ class UserProfile(models.Model):
         related_name="members",
     )
 
+    class Meta:
+        permissions = [("view_other_units", "Consultar outras unidades (somente leitura)")]
+
     def __str__(self):
         return f"{self.user} · {self.unit or 'sem setor'}"
 
@@ -431,6 +434,7 @@ class Risk(models.Model):
 
     action = models.ForeignKey(StrategicAction, on_delete=models.CASCADE, related_name="risks")
     activity = models.ForeignKey(Activity, null=True, blank=True, on_delete=models.SET_NULL, related_name="risks")
+    is_unforeseen = models.BooleanField("Risco não previsto", default=False)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     title = models.CharField(max_length=255)
     cause = models.TextField()
@@ -533,6 +537,7 @@ class RiskTreatment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        constraints = [models.UniqueConstraint(fields=["risk"], name="one_treatment_per_risk")]
         ordering = ["-created_at", "-id"]
 
 
@@ -543,6 +548,7 @@ class RiskMaterialization(models.Model):
     actual_impact = models.TextField()
     actions_taken = models.TextField()
     evidence_reference = models.CharField(max_length=255, blank=True)
+    evidence_attachment = models.FileField("Anexo da evidência", upload_to="risk_evidences/%Y/%m/", blank=True)
     recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     recorded_at = models.DateTimeField(auto_now_add=True)
 
@@ -581,6 +587,7 @@ class RiskAcceptance(models.Model):
     recorded_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        constraints = [models.UniqueConstraint(fields=["risk"], name="one_acceptance_per_risk")]
         ordering = ["-recorded_at", "-id"]
 
 
@@ -601,3 +608,19 @@ class RiskRemediationSubmission(models.Model):
 
     class Meta:
         ordering = ["-submitted_at", "-id"]
+
+
+class QuarterlySectorReport(models.Model):
+    unit = models.ForeignKey(OrganizationalUnit, on_delete=models.PROTECT)
+    plan = models.ForeignKey(Plan, on_delete=models.PROTECT)
+    year = models.PositiveSmallIntegerField()
+    quarter = models.PositiveSmallIntegerField(choices=[(n, f"{n}º trimestre") for n in range(1, 5)])
+    snapshot = models.JSONField(default=dict)
+    consolidated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    consolidated_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-year", "-quarter", "unit__name"]
+        default_permissions = ("view",)
+        permissions = [("consolidate_quarterlysectorreport", "Consolidar relatório trimestral do próprio setor")]
+        constraints = [models.UniqueConstraint(fields=["plan", "unit", "year", "quarter"], name="unique_quarterly_sector_report"), models.CheckConstraint(condition=models.Q(quarter__gte=1, quarter__lte=4), name="valid_report_quarter")]

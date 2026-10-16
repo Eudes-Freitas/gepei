@@ -10,7 +10,11 @@
     </div>
   </section>
 
+{% if request.GET.overdue %}<p class="form-hint">Somente ações com prazo vencido, não concluídas e não suspensas.</p>{% endif %}
+{% if request.GET.objective %}<p class="form-hint">Somente ações do objetivo selecionado no painel.</p>{% endif %}
   <form class="dashboard-filters" method="get" aria-label="Filtros dos planos de ação">
+    <input type="hidden" name="view" value="{{ display_mode }}">
+{% if request.GET.objective %}<input type="hidden" name="objective" value="{{ request.GET.objective }}">{% endif %}{% if request.GET.overdue %}<input type="hidden" name="overdue" value="{{ request.GET.overdue }}">{% endif %}
     <label>Plano
       <select name="plan"><option value="">Todos os planos</option>{% for plan in plans %}<option value="{{ plan.id }}" {% if selected_plan == plan.id|stringformat:"s" %}selected{% endif %}>{{ plan.acronym }} · {{ plan.name }}</option>{% endfor %}</select>
     </label>
@@ -24,6 +28,26 @@
     <a class="clear-filter" href="{% url 'action_plan_list' %}">Limpar</a>
   </form>
 
+  <nav class="execution-view-switch" aria-label="Visualização da execução">
+    <a class="button {% if display_mode == 'columns' %}button-primary{% else %}button-secondary{% endif %}" href="{{ columns_url }}" {% if display_mode == 'columns' %}aria-current="true"{% endif %}>Colunas</a>
+    <a class="button {% if display_mode == 'list' %}button-primary{% else %}button-secondary{% endif %}" href="{{ list_url }}" {% if display_mode == 'list' %}aria-current="true"{% endif %}>Listagem</a>
+  </nav>
+  {% if display_mode == "list" %}
+    <section class="panel execution-list" aria-label="Listagem de planos de ação">
+      <div class="responsive-table"><table>
+        <thead><tr><th>Plano / Ação</th><th>Unidade</th><th>Atividades</th><th>Prazo</th><th>Peso distribuído</th><th>Execução</th><th>Situação</th><th></th></tr></thead>
+        <tbody>{% for action in actions %}<tr>
+          <td><a href="{% url 'action_plan_detail' action.id %}"><strong>{{ action.artifact.plan.acronym }} · {{ action.code }}</strong><span>{{ action.title }}</span></a></td>
+          <td>{{ action.coordinating_unit.acronym|default:action.coordinating_unit.name }}</td>
+          <td>{{ action.activity_count }}</td><td>{{ action.due_date|date:"d/m/Y"|default:"A definir" }}</td>
+          <td>{{ action.allocated_weight|default:0|floatformat:"-1" }}%</td>
+          <td>{% progress_bar action.progress "table-progress" %}<small>{{ action.progress|floatformat:"-1" }}%</small></td>
+          <td><span class="chip chip-{{ action.status|lower }}">{{ action.get_status_display }}</span></td>
+          <td><a class="button button-secondary" href="{% url 'action_plan_detail' action.id %}">Abrir plano</a></td>
+        </tr>{% empty %}<tr><td colspan="8">Nenhuma ação encontrada. Altere os filtros.</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </section>
+  {% else %}
   <section class="action-cards">
     {% for action in actions %}
       <article class="action-card">
@@ -38,4 +62,5 @@
       <div class="empty-state large-empty"><strong>Nenhuma ação encontrada.</strong><span>Altere os filtros ou carregue ações estratégicas no PEI.</span></div>
     {% endfor %}
   </section>
+  {% endif %}
 {% endblock %}

@@ -5,41 +5,80 @@
   <section class="page-heading dashboard-heading">
     <div>
       <p class="eyebrow">Monitoramento de resultados</p>
-      <h1>Metas</h1>
-      <p>Consulte as metas de cada objetivo estratégico, o valor esperado, o período de referência e os indicadores que as medem.</p>
+      <h1>Metas e indicadores</h1>
+      <p>Acompanhe a execução de cada meta: situação, atingimento, progresso até a meta final e os indicadores que a medem.</p>
     </div>
     {% if plan %}<span class="chip chip-neutral">{{ plan.acronym }} · {{ plan.start_date|date:"Y" }}–{{ plan.end_date|date:"Y" }}</span>{% endif %}
   </section>
 
+  {% include "core/_results_tabs.html" %}
+{% if selected_target %}<p class="form-hint">Exibindo somente a meta selecionada. <a href="{% url 'target_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}">Ver todas as metas</a></p>{% endif %}
   <form class="dashboard-filters" method="get" aria-label="Filtros das metas">
     <label>Plano
-      <select name="plan">{% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}</select>
+      <select name="plan"><option value="">Todos os planos</option>{% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}</select>
     </label>
     <label class="filter-wide">Objetivo estratégico
       <select name="objective"><option value="">Todos os objetivos</option>{% for objective in objectives %}<option value="{{ objective.id }}" {% if selected_objective == objective.id|stringformat:"s" %}selected{% endif %}>{{ objective.code }} · {{ objective.title }}</option>{% endfor %}</select>
     </label>
+<label>Situação<select name="status"><option value="">Todas as situações</option><option value="green" {% if selected_status == "green" %}selected{% endif %}>Conforme</option><option value="yellow" {% if selected_status == "yellow" %}selected{% endif %}>Atenção</option><option value="orange" {% if selected_status == "orange" %}selected{% endif %}>Alerta</option><option value="red" {% if selected_status == "red" %}selected{% endif %}>Crítico</option><option value="attention" {% if selected_status == "attention" %}selected{% endif %}>Exigem atenção</option><option value="gray" {% if selected_status == "gray" %}selected{% endif %}>Sem aferição</option><option value="none" {% if selected_status == "none" %}selected{% endif %}>Sem indicador</option><option value="unmeasured" {% if selected_status == "unmeasured" %}selected{% endif %}>Sem aferição ou indicador</option></select></label>
+    {% if selected_unit %}<input type="hidden" name="unit" value="{{ selected_unit }}">{% endif %}{% if selected_target %}<input type="hidden" name="target" value="{{ selected_target }}">{% endif %}
     <button class="button button-primary" type="submit">Aplicar filtros</button>
     <a class="clear-filter" href="{% url 'target_overview' %}">Limpar</a>
   </form>
 
+  <section class="metrics metrics-centered indicator-metrics" aria-label="Resumo da execução das metas">
+    <article class="metric-card"><span>Metas exibidas</span><strong>{{ target_rows|length }}</strong></article>
+    <article class="metric-card metric-blue"><span>Conformes</span><strong>{{ status_counts.green }}</strong></article>
+    <article class="metric-card metric-warning"><span>Exigem atenção</span><strong>{{ attention_count }}</strong></article>
+    <article class="metric-card"><span>Sem aferição ou indicador</span><strong>{{ status_counts.gray|add:status_counts.none }}</strong></article>
+  </section>
+
+  {% if focused_charts %}
+  <section class="target-focus-grid">
+    {% for row in target_rows %}{% for item in row.indicators %}
+      <article class="panel indicator-chart-panel">
+        <div class="panel-heading"><div><p class="eyebrow">Evolução · {{ row.target.code|default:"Meta" }}</p><h2><a href="{% url 'indicator_detail' item.indicator.id %}">{{ item.indicator.code|default:"Indicador" }}</a> · {{ item.indicator.name }}</h2></div><span class="signal signal-{{ item.signal.code }}"><i></i>{{ item.signal.label }}</span></div>
+        <dl class="target-execution-facts">
+          <div><dt>Linha de base</dt><dd>{{ item.signal.measurement.baseline_value|default:item.indicator.baseline|default:"A definir" }}</dd></div>
+          <div><dt>Último resultado</dt><dd>{% if item.signal.measurement %}{{ item.signal.measurement.measured_value }}{% else %}—{% endif %}</dd></div>
+          <div><dt>Meta do período</dt><dd>{% if item.signal.measurement.expected_value != None %}{{ item.signal.measurement.expected_value|floatformat:"-1" }}{% else %}—{% endif %}</dd></div>
+          <div><dt>Meta final</dt><dd>{{ row.target.target_value|default:"A definir" }}</dd></div>
+          <div><dt>Atingimento</dt><dd>{% if item.signal.achievement != None %}{{ item.signal.achievement|floatformat:"-1" }}%{% else %}—{% endif %}</dd></div>
+          <div><dt>Progresso até a meta final</dt><dd>{% if item.progress != None %}{{ item.progress|floatformat:"-1" }}%{% else %}—{% endif %}</dd></div>
+        </dl>
+        <div class="indicator-chart" id="target-indicator-chart-{{ item.indicator.id }}" role="img" aria-label="Gráfico de linha com a linha de base, o resultado aferido e a meta de cada período de {{ item.indicator.code }}"></div>
+      </article>
+    {% endfor %}{% endfor %}
+    {% for item in focused_charts %}{% if item.chart %}{{ item.chart|json_script:item.element_id }}{% endif %}{% endfor %}
+  </section>
+  {% elif progress_chart %}
+  <section class="panel">
+    <div class="panel-heading"><div><p class="eyebrow">Execução</p><h2>Progresso das metas até a meta final</h2></div><span class="chip chip-neutral">{{ progress_chart.values|length }} meta{{ progress_chart.values|length|pluralize:"s" }} com aferição</span></div>
+    <p class="form-hint">Percentual do caminho percorrido da linha de base até a meta final do plano, pela média dos indicadores da meta. A cor indica a situação no período.</p>
+    <div id="target-progress-chart" class="indicator-chart" role="img" aria-label="Gráfico de barras com o progresso de cada meta até a meta final"></div>
+    {{ progress_chart|json_script:"target-progress-data" }}
+  </section>
+  {% endif %}
+
   <section class="panel indicator-list-panel">
-    <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Metas do plano</h2></div><div class="panel-heading-actions"><span class="chip chip-neutral">{{ targets|length }} exibida{{ targets|length|pluralize:"s" }}</span>{% if can_add_target and target_form %}<button class="button button-primary" type="button" data-open-target-form>Nova meta</button>{% endif %}</div></div>
-    {% if targets %}
+    <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Execução das metas</h2></div><div class="panel-heading-actions"><span class="chip chip-neutral">{{ target_rows|length }} exibida{{ target_rows|length|pluralize:"s" }}</span>{% if can_add_target and target_form %}<button class="button button-primary" type="button" data-open-target-form>Nova meta</button>{% endif %}</div></div>
+    {% if target_rows %}
       <div class="responsive-table"><table class="indicator-table">
-        <thead><tr><th>Meta</th><th>Valor esperado</th><th>Período</th><th>Vinculada a</th><th>Indicadores</th>{% if can_edit_target %}<th>Ações</th>{% endif %}</tr></thead>
+        <thead><tr><th>Meta</th><th>Meta final</th><th>Situação</th><th>Execução</th><th>Vinculada a</th><th>Indicadores</th>{% if can_edit_target %}<th>Ações</th>{% endif %}</tr></thead>
         <tbody>
-          {% for target in targets %}
+          {% for row in target_rows %}{% with target=row.target %}
             <tr id="meta-{{ target.id }}">
-              <td class="indicator-name-cell"><strong>{{ target.code|default:"Meta" }}</strong><span>{{ target.description }}</span></td>
-              <td>{{ target.target_value|default:"A definir" }}{% if target.unit_of_measure %} <small>{{ target.unit_of_measure }}</small>{% endif %}</td>
-              <td>{{ target.reference_period|default:"A definir" }}</td>
+              <td class="indicator-name-cell"><a class="cell-link" href="{% url 'target_overview' %}?plan={{ target.artifact.plan_id }}&amp;objective={{ target.artifact_id }}&amp;target={{ target.id }}"><strong>{{ target.code|default:"Meta" }}</strong><span>{{ target.description }}</span></a></td>
+              <td>{{ target.target_value|default:"A definir" }}{% if target.unit_of_measure %} <small>{{ target.unit_of_measure }}</small>{% endif %}<small>{{ target.reference_period|default:"" }}</small></td>
+              <td><span class="signal signal-{% if row.code == 'none' %}gray{% else %}{{ row.code }}{% endif %}"><i></i>{{ row.label }}</span>{% if row.achievement != None %}<small>{{ row.achievement|floatformat:"-1" }}% da meta do período</small>{% endif %}</td>
+              <td class="target-execution-cell">{% if row.progress != None %}<strong>{{ row.progress|floatformat:"-1" }}%</strong><span class="table-progress" aria-hidden="true"><i style="width:{% if row.progress > 100 %}100{% elif row.progress < 0 %}0{% else %}{{ row.progress|stringformat:".1f" }}{% endif %}%"></i></span><small>até a meta final</small>{% else %}<span class="muted-text">Sem progresso calculado</span>{% endif %}{% if row.last_measurement %}<small>Última aferição: {{ row.last_measurement.reference_period }}</small>{% endif %}<small>{{ row.measured_count }} de {{ row.indicators|length }} indicador{{ row.indicators|length|pluralize:"es" }} aferido{{ row.indicators|length|pluralize:"s" }}</small></td>
               <td>{% if target.action %}<a href="{% url 'action_plan_detail' target.action.id %}">{{ target.action.code }}</a>{% else %}{{ target.artifact.code|default:target.artifact.title }}{% endif %}</td>
               <td class="indicator-links-cell">
-                {% for indicator in target.indicators.all %}<span><a href="{% url 'indicator_detail' indicator.id %}"><strong>{{ indicator.code|default:"Indicador" }}</strong></a> {{ indicator.name }}</span>{% empty %}<span class="muted-text">Nenhum indicador vinculado</span>{% endfor %}
+                {% for item in row.indicators %}<span><a href="{% url 'indicator_detail' item.indicator.id %}"><strong>{{ item.indicator.code|default:"Indicador" }}</strong></a> {{ item.indicator.name }} <span class="signal signal-{{ item.signal.code }}"><i></i>{{ item.signal.label }}</span></span>{% empty %}<span class="muted-text">Nenhum indicador vinculado</span>{% endfor %}
               </td>
               {% if can_edit_target %}<td><a class="text-button" href="?{% if selected_plan %}plan={{ selected_plan }}&amp;{% endif %}{% if selected_objective %}objective={{ selected_objective }}&amp;{% endif %}editar={{ target.id }}">Editar</a></td>{% endif %}
             </tr>
-          {% endfor %}
+          {% endwith %}{% endfor %}
         </tbody>
       </table></div>
     {% else %}
@@ -57,5 +96,64 @@
     </form>
     <script>(function(){var dialog=document.getElementById('target-form');var open=document.querySelector('[data-open-target-form]');if(open){open.addEventListener('click',function(){dialog.showModal();});}dialog.querySelectorAll('[data-close-target-form]').forEach(function(b){b.addEventListener('click',function(){dialog.close();});});dialog.addEventListener('click',function(e){if(e.target===dialog){dialog.close();}});if(dialog.hasAttribute('data-open-on-load')){dialog.showModal();}}());</script>
   </dialog>
+  {% endif %}
+{% endblock %}
+{% block extra_script %}
+  {% load static %}
+  {% if focused_charts or progress_chart %}
+  <script src="{% static 'vendor/highcharts.js' %}"></script>
+  <script>
+    (function () {
+      Highcharts.setOptions({ lang: { decimalPoint: ',', thousandsSep: '.' } });
+      var font = { fontFamily: 'Inter, Arial, sans-serif' };
+      document.querySelectorAll('[id^="target-indicator-chart-"]').forEach(function (box) {
+        var source = document.getElementById(box.id.replace('target-indicator-chart-', 'target-chart-data-'));
+        if (!source) { box.outerHTML = '<div class="empty-state"><strong>Sem dados para o gráfico.</strong><span>Registre aferições com resultado numérico para acompanhar a evolução.</span></div>'; return; }
+        var data = JSON.parse(source.textContent);
+        var series = [{
+          name: 'Resultado aferido',
+          data: data.result.map(function (point) {
+            var item = { y: point.y, custom: point.tip };
+            if (point.baseline) { item.marker = { symbol: 'diamond', radius: 7, fillColor: '#ffffff', lineColor: '#0b7285', lineWidth: 3 }; }
+            return item;
+          })
+        }];
+        if (data.has_expected) { series.push({ name: 'Meta do período', data: data.expected, dashStyle: 'ShortDash', color: '#6b7280' }); }
+        Highcharts.chart(box, {
+          chart: { type: 'line', height: 300, style: font },
+          title: { text: null }, credits: { enabled: false },
+          legend: { enabled: series.length > 1 },
+          xAxis: { categories: data.categories, title: { text: 'Fim do período de aferição' } },
+          yAxis: { title: { text: 'Valor' } },
+          tooltip: { shared: true, formatter: function () {
+            var lines = ['<b>' + this.x + '</b>'];
+            this.points.forEach(function (item) {
+              var extra = item.point.custom ? ' (' + item.point.custom + ')' : '';
+              lines.push(item.series.name + ': <b>' + Highcharts.numberFormat(item.y, -1) + '</b>' + extra);
+            });
+            return lines.join('<br/>');
+          } },
+          plotOptions: { line: { dataLabels: { enabled: true } } },
+          series: series
+        });
+      });
+      var progress = document.getElementById('target-progress-data');
+      if (progress) {
+        var data = JSON.parse(progress.textContent);
+        Highcharts.chart('target-progress-chart', {
+          chart: { type: 'bar', height: Math.max(220, data.categories.length * 34 + 80), style: font },
+          title: { text: null }, credits: { enabled: false }, legend: { enabled: false },
+          xAxis: { categories: data.categories, title: { text: null } },
+          yAxis: { min: 0, max: 100, title: { text: 'Progresso até a meta final (%)' }, gridLineColor: '#e8edf5' },
+          tooltip: { formatter: function () {
+            var i = this.point.index;
+            return '<b>' + this.x + '</b><br/>' + data.descriptions[i] + '<br/>Progresso: <b>' + Highcharts.numberFormat(data.raw[i], 1) + '%</b><br/>Situação: ' + data.labels[i];
+          } },
+          plotOptions: { bar: { borderRadius: 4, pointPadding: 0.1, groupPadding: 0.08, dataLabels: { enabled: true, format: '{y:.1f}%' } } },
+          series: [{ name: 'Progresso', data: data.values.map(function (value, i) { return { y: value, color: data.colors[i] }; }) }]
+        });
+      }
+    }());
+  </script>
   {% endif %}
 {% endblock %}
