@@ -43,7 +43,7 @@
           <td>{{ action.allocated_weight|default:0|floatformat:"-1" }}%</td>
           <td>{% progress_bar action.progress "table-progress" %}<small>{{ action.progress|floatformat:"-1" }}%</small></td>
           <td><span class="chip chip-{{ action.status|lower }}">{{ action.get_status_display }}</span></td>
-          <td><a class="button button-secondary" href="{% url 'action_plan_detail' action.id %}">Abrir plano</a></td>
+          <td><a class="button button-secondary" href="{% url 'action_plan_detail' action.id %}">{% if action.can_write %}Abrir plano{% else %}Visualizar plano{% endif %}</a></td>
         </tr>{% empty %}<tr><td colspan="8">Nenhuma ação encontrada. Altere os filtros.</td></tr>{% endfor %}</tbody>
       </table></div>
     </section>
@@ -56,7 +56,7 @@
         <p class="action-card-unit">{{ action.coordinating_unit.acronym|default:action.coordinating_unit.name }}</p>
         <div class="card-meta"><span><strong>{{ action.activity_count }}</strong> atividade{{ action.activity_count|pluralize:"s" }}</span><span><strong>{{ action.allocated_weight|default:0|floatformat:"-1" }}%</strong> distribuído</span></div>
         {% progress_bar action.progress %}
-        <div class="card-footer"><span>{{ action.progress|floatformat:"-1" }}% executado</span><a class="button button-secondary" href="{% url 'action_plan_detail' action.id %}">{% if action.activity_count %}Gerenciar plano{% else %}Iniciar plano{% endif %}</a></div>
+        <div class="card-footer"><span>{{ action.progress|floatformat:"-1" }}% executado</span><a class="button button-secondary" href="{% url 'action_plan_detail' action.id %}">{% if not action.can_write %}Visualizar plano{% elif action.activity_count %}Gerenciar plano{% else %}Iniciar plano{% endif %}</a></div>
       </article>
     {% empty %}
       <div class="empty-state large-empty"><strong>Nenhuma ação encontrada.</strong><span>Altere os filtros ou carregue ações estratégicas no PEI.</span></div>

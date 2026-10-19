@@ -1,0 +1,13 @@
+<nav class="panel report-section-map" aria-label="Mapa do relatório">
+  <h2>Mapa do relatório</h2>
+  <ol class="report-map-list">
+    <li><a href="#report-objectives">Objetivos estratégicos (OE)</a><ul class="report-map-items">{% for objective in content.objectives %}<li><a href="#report-objective-{{ forloop.counter }}"><strong>{{ objective.code|default:"OE" }}</strong><span>{{ objective.title }}</span></a></li>{% empty %}<li class="report-map-empty">Nenhum objetivo vinculado</li>{% endfor %}</ul></li>
+    <li><a href="#report-targets">Metas</a><ul class="report-map-items">{% for row in content.target_rows %}<li><a href="#report-target-{{ forloop.counter }}"><strong>{{ row.target.code|default:"Meta" }}</strong><span>{{ row.target.description }}</span>{% if row.target.reference_period %}<small>Referência: {{ row.target.reference_period }}</small>{% endif %}</a></li>{% empty %}<li class="report-map-empty">Nenhuma meta vinculada</li>{% endfor %}</ul></li>
+    <li><a href="#report-indicators">Indicadores</a><ul class="report-map-items">{% for row in content.indicator_rows %}<li><a href="#report-indicator-{{ forloop.counter }}"><strong>{{ row.indicator.code|default:"Indicador" }}</strong><span>{{ row.indicator.name }}</span>{% if row.signal.measurement %}<small>Última aferição: {{ row.signal.measurement.reference_period }}</small>{% endif %}</a></li>{% empty %}<li class="report-map-empty">Nenhum indicador vinculado</li>{% endfor %}</ul></li>
+    <li><a href="#report-actions">Ações e atividades</a><ul class="report-map-items">{% for action in content.actions %}<li><a href="#report-action-{{ forloop.counter }}"><strong>{{ action.code|default:"Ação" }}</strong><span>{{ action.title }}</span></a></li>{% empty %}<li class="report-map-empty">Nenhuma ação vinculada</li>{% endfor %}</ul></li>
+    <li><a href="#report-risks">Riscos e impedimentos</a></li>
+    <li><a href="#report-evidences">Evidências</a></li>
+    <li><a href="#report-financial">Execução financeira</a></li>
+    {% if perms.core.change_sectorreport %}<li><a href="#report-statement">Manifestação setorial</a></li>{% endif %}
+  </ol>
+</nav>

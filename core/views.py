@@ -1,5 +1,5 @@
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from difflib import SequenceMatcher
 
@@ -21,7 +21,9 @@ from .forms import (
     ActivityBlockerForm,
     ActivityEvidenceForm,
     ActivityForm,
+    ActivityProgressForm,
     ActivityRiskForm,
+    InitialActivityRiskForm,
     ActivityRiskReportForm,
     UnforeseenActivityRiskForm,
     GroupForm,
@@ -194,6 +196,14 @@ def _signal_matches(code, selected):
     return code == selected
 
 
+def _selected_result_status(request, kind):
+    selected = request.GET.get(f"{kind}_status")
+    if selected is not None:
+        return selected
+    legacy_page = "target_overview" if kind == "target" else "indicator_overview"
+    return request.GET.get("status", "") if request.resolver_match.url_name == legacy_page else ""
+
+
 def _target_signal(target, signals):
     codes = [signals[item.id] for item in target.indicators.all() if item.id in signals]
     measured = [code for code in codes if code != "gray"]
@@ -216,9 +226,17 @@ def _scoped_targets(user, plans, unit_id=""):
     )
     visible_ids = user_unit_ids(user, for_view=True)
     if visible_ids is not None:
-        targets = targets.filter(Q(action__coordinating_unit_id__in=visible_ids) | Q(action__isnull=True, indicators__responsible_unit_id__in=visible_ids))
+        targets = targets.filter(
+            Q(action__coordinating_unit_id__in=visible_ids)
+            | Q(action__participating_units__id__in=visible_ids, indicators__responsible_unit_id__in=visible_ids)
+            | Q(action__isnull=True, indicators__responsible_unit_id__in=visible_ids)
+        )
     if unit_id.isdigit():
-        targets = targets.filter(Q(action__coordinating_unit_id=unit_id) | Q(action__isnull=True, indicators__responsible_unit_id=unit_id))
+        targets = targets.filter(
+            Q(action__coordinating_unit_id=unit_id)
+            | Q(action__participating_units__id=unit_id, indicators__responsible_unit_id=unit_id)
+            | Q(action__isnull=True, indicators__responsible_unit_id=unit_id)
+        )
     return targets.select_related("artifact", "artifact__plan", "action").prefetch_related(
         "indicators", "indicators__measurements", "indicators__targets", "indicators__artifacts__plan"
     ).distinct()
@@ -776,7 +794,7 @@ def _indicator_overview_context(request):
     selected_plan = request.GET.get("plan", "")
     selected_unit = selected_unit_for_request(request)
     selected_objective = request.GET.get("objective", "")
-    selected_status = request.GET.get("status", "")
+    selected_status = _selected_result_status(request, "indicator")
     plan = plans.filter(pk=selected_plan).first() if selected_plan.isdigit() else plans.first()
 
     indicators = Indicator.objects.none()
@@ -821,7 +839,7 @@ def _indicator_overview_context(request):
             "selected_plan": selected_plan,
             "selected_unit": selected_unit,
             "selected_objective": selected_objective,
-            "selected_status": selected_status,
+            "selected_indicator_status": selected_status,
             "indicator_rows": indicator_rows,
             "indicator_count": sum(signal_counts.values()),
             "updated_count": sum(value for key, value in signal_counts.items() if key != "gray"),
@@ -850,7 +868,7 @@ def _target_overview_context(request):
     editable_targets = targets.filter(pk__in=[target.pk for target in targets if _can_write_target(request.user, target)])
     if request.GET.get("target", "").isdigit():
         targets = targets.filter(pk=request.GET["target"])
-    selected_status = request.GET.get("status", "")
+    selected_status = _selected_result_status(request, "target")
     if selected_status in (*SIGNAL_STYLE, "none", "unmeasured", "attention", "measured"):
         indicators = view_scope_by_unit(Indicator.objects.filter(artifacts__plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans).distinct(), request.user, "responsible_unit_id", include_unassigned=True)
         if selected_unit_for_request(request).isdigit():
@@ -939,7 +957,7 @@ def _target_overview_context(request):
             "target_attention_count": status_counts["yellow"] + status_counts["orange"] + status_counts["red"],
             "progress_chart": progress_chart,
             "focused_charts": focused_charts,
-            "selected_status": selected_status,
+            "selected_target_status": selected_status,
             "selected_unit": selected_unit_for_request(request),
             "selected_target": request.GET.get("target", ""),
     }
@@ -1136,6 +1154,28 @@ def _sector_report_content(report):
         .order_by("code")
     )
     indicator_rows = [{"indicator": item, "signal": _indicator_signal(item)} for item in indicators]
+    targets = list(
+        StrategicTarget.objects.filter(artifact__plan=report.cycle.plan)
+        .filter(Q(action__coordinating_unit=report.unit) | Q(action__isnull=True, indicators__responsible_unit=report.unit))
+        .select_related("artifact", "artifact__plan")
+        .prefetch_related("indicators", "indicators__measurements", "indicators__targets")
+        .distinct()
+        .order_by("code")
+    )
+    target_rows = [_target_execution(target, unit_id=str(report.unit_id)) for target in targets]
+    artifacts = PlanArtifact.objects.filter(plan=report.cycle.plan).in_bulk()
+    linked_artifact_ids = {action.artifact_id for action in actions} | {target.artifact_id for target in targets}
+    for indicator in indicators:
+        linked_artifact_ids.update(indicator.artifacts.filter(plan=report.cycle.plan).values_list("pk", flat=True))
+    objective_ids = set()
+    for artifact_id in linked_artifact_ids:
+        artifact = artifacts.get(artifact_id)
+        while artifact:
+            if artifact.artifact_type == PlanArtifact.ArtifactType.OBJECTIVE:
+                objective_ids.add(artifact.pk)
+                break
+            artifact = artifacts.get(artifact.parent_id)
+    objectives = sorted((artifacts[pk] for pk in objective_ids), key=lambda item: item.code)
     financial = Activity.objects.filter(pk__in=[item.id for item in activities]).aggregate(
         planned=Sum("planned_cost"), disbursed=Sum("disbursed_cost")
     )
@@ -1146,6 +1186,8 @@ def _sector_report_content(report):
         "risks": risks,
         "evidences": evidences,
         "indicator_rows": indicator_rows,
+        "target_rows": target_rows,
+        "objectives": objectives,
         "planned_cost": financial["planned"] or 0,
         "disbursed_cost": financial["disbursed"] or 0,
     }
@@ -1193,9 +1235,16 @@ def report_cycle_overview(request):
         form = ReportCycleForm()
     cycles = ReportCycle.objects.select_related("plan", "created_by").prefetch_related("sector_reports", "participating_units")
     selected_unit = selected_unit_for_request(request)
+    selected_year = request.GET.get("year", "")
     visible_units = {int(selected_unit)} if selected_unit.isdigit() else user_unit_ids(request.user, for_view=True)
     if visible_units is not None:
         cycles = cycles.filter(sector_reports__unit_id__in=visible_units).distinct()
+    years = {timezone.localdate().year}
+    for start, end in cycles.values_list("period_start", "period_end"):
+        years.update(range(start.year, end.year + 1))
+    if selected_year.isdigit() and 1 <= int(selected_year) <= 9999:
+        year = int(selected_year)
+        cycles = cycles.filter(period_start__lte=date(year, 12, 31), period_end__gte=date(year, 1, 1))
     cycle_rows = []
     for cycle in cycles:
         reports = [
@@ -1212,7 +1261,7 @@ def report_cycle_overview(request):
     return render(
         request,
         "core/report_cycle_overview.html",
-        {"units": view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user), "selected_unit": selected_unit, "cycle_rows": cycle_rows, "cycle_form": form, "can_add_cycle": request.user.has_perm("core.add_reportcycle")},
+        {"units": view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user), "selected_unit": selected_unit, "years": sorted(years, reverse=True), "selected_year": selected_year, "cycle_rows": cycle_rows, "cycle_form": form, "can_add_cycle": request.user.has_perm("core.add_reportcycle")},
     )
 
 
@@ -1324,10 +1373,15 @@ def sector_report_detail(request, cycle_id, report_id):
                 report.save(update_fields=["status", "validator_comment", "validated_at", "resubmission_due_date", "updated_at"])
                 messages.success(request, message)
                 return redirect("sector_report_detail", cycle_id=report.cycle_id, report_id=report.id)
+    if request.user.has_perm("core.view_indicatormeasurement"):
+        for row in content["indicator_rows"]:
+            row["chart"] = _measurement_chart(row["indicator"])
+            row["chart_data_id"] = f"sector-report-chart-{row['indicator'].pk}"
     return render(
         request,
         "core/sector_report_detail.html",
-        {"report": report, "content": content, "report_form": report_form, "validation_form": validation_form},
+        {"report": report, "content": content, "report_form": report_form, "validation_form": validation_form,
+         "has_indicator_charts": any(row.get("chart") for row in content["indicator_rows"])},
     )
 
 
@@ -1368,6 +1422,16 @@ def action_plan_list(request):
     display_query["view"] = "list"
     list_url = "?" + display_query.urlencode()
 
+    actions = list(actions.order_by("artifact__code", "code"))
+    writable_ids = set(scope_actions(
+        StrategicAction.objects.filter(pk__in=[action.pk for action in actions]), request.user
+    ).values_list("pk", flat=True))
+    can_manage_plans = any(request.user.has_perm(f"core.{codename}") for codename in (
+        "add_actionplan", "add_activity", "change_activity", "delete_activity",
+    ))
+    for action in actions:
+        action.can_write = action.pk in writable_ids and can_manage_plans
+
     return render(
         request,
         "core/action_plan_list.html",
@@ -1375,7 +1439,7 @@ def action_plan_list(request):
             "display_mode": display_mode,
             "columns_url": columns_url,
             "list_url": list_url,
-            "actions": actions.order_by("artifact__code", "code"),
+            "actions": actions,
             "plans": plans,
             "units": units,
             "actions_status_choices": StrategicAction.Status.choices,
@@ -1524,6 +1588,20 @@ def _sync_action_progress(action, action_plan):
     action.save(update_fields=["progress", "status"])
 
 
+def _sync_activity_status(activity):
+    if activity.progress == 100 and activity.evidences.exclude(attachment="").exists():
+        status = StrategicAction.Status.COMPLETED
+    elif activity.end_date and activity.end_date < timezone.localdate():
+        status = StrategicAction.Status.DELAYED
+    elif activity.progress > 0:
+        status = StrategicAction.Status.IN_PROGRESS
+    else:
+        status = StrategicAction.Status.NOT_STARTED
+    if activity.status != status:
+        activity.status = status
+        activity.save(update_fields=["status"])
+
+
 def _rebalance_activity_weights(action_plan, new_weight):
     activities = list(action_plan.activities.exclude(weight__isnull=True).order_by("position", "pk"))
     previous = [activity for activity in activities if activity.pk != new_weight.pk]
@@ -1540,6 +1618,36 @@ def _rebalance_activity_weights(action_plan, new_weight):
             assigned += activity.weight
         activity.save(update_fields=["weight"])
     return True
+
+
+def _create_activity_risk(form, action, activity, user):
+    risk = form.save(commit=False)
+    risk.action = action
+    risk.activity = activity
+    risk.save()
+    RiskAssessment.objects.create(
+        risk=risk,
+        assessment_type=RiskAssessment.AssessmentType.CURRENT,
+        probability=risk.probability,
+        impact=risk.impact,
+        author=user,
+    )
+    if risk.treatment:
+        treatment_codes = {
+            "Aceitar": RiskTreatment.Decision.ACCEPT,
+            "Mitigar": RiskTreatment.Decision.MITIGATE,
+            "Evitar": RiskTreatment.Decision.AVOID,
+            "Transferir": RiskTreatment.Decision.TRANSFER,
+        }
+        RiskTreatment.objects.create(
+            risk=risk,
+            decision=treatment_codes[risk.treatment],
+            responsible=risk.owner,
+            preventive_measure=risk.preventive_measure,
+            contingency_measure=risk.contingency_measure,
+            created_by=user,
+        )
+    return risk
 
 
 @login_required
@@ -1564,23 +1672,31 @@ def action_plan_detail(request, action_id):
         return redirect("action_plan_detail", action_id=action.id)
 
     form = None
+    initial_risk_form = InitialActivityRiskForm(prefix="initial-risk")
     if action_plan:
         if request.method == "POST" and request.POST.get("operation") == "add_activity":
             _require_permission(request.user, "add_activity")
+            _require_permission(request.user, "add_risk")
             form = ActivityForm(request.POST, action_plan=action_plan)
-            if form.is_valid():
+            initial_risk_form = InitialActivityRiskForm(request.POST, prefix="initial-risk")
+            activity_valid = form.is_valid()
+            risk_valid = initial_risk_form.is_valid()
+            if activity_valid:
                 current_total = action_plan.activities.aggregate(total=Sum("weight"))["total"] or Decimal("0")
                 if current_total + form.cleaned_data["weight"] > Decimal("100") and request.POST.get("confirm_rebalance") != "1":
                     form.add_error(
                         "weight",
                         "O total ultrapassaria 100%. Confirme a redistribuição dos pesos ou informe um peso menor.",
                     )
-            if form.is_valid():
+            if activity_valid and not form.errors and risk_valid:
                 with transaction.atomic():
                     activity = form.save(commit=False)
                     activity.action_plan = action_plan
                     activity.position = (action_plan.activities.aggregate(last_position=Max("position"))["last_position"] or 0) + 1
+                    activity.progress = 0
+                    activity.status = StrategicAction.Status.NOT_STARTED
                     activity.save()
+                    _create_activity_risk(initial_risk_form, action, activity, request.user)
                     rebalanced = _rebalance_activity_weights(action_plan, activity)
                     _sync_action_progress(action, action_plan)
                 if rebalanced:
@@ -1598,6 +1714,7 @@ def action_plan_detail(request, action_id):
         "action_plan": action_plan,
         "activities": activities,
         "form": form,
+        "initial_risk_form": initial_risk_form,
         "allocated_weight": allocated_weight,
         "remaining_weight": 100 - allocated_weight,
         "today": timezone.localdate(),
@@ -1793,6 +1910,7 @@ def activity_edit(request, action_id, activity_id):
         form = ActivityForm(request.POST, instance=activity, action_plan=activity.action_plan)
         if form.is_valid():
             form.save()
+            _sync_activity_status(activity)
             _sync_action_progress(action, activity.action_plan)
             messages.success(request, "Atividade atualizada.")
             return redirect("action_plan_detail", action_id=action.id)
@@ -1825,6 +1943,7 @@ def activity_follow_up(request, action_id, activity_id):
     request.read_only_other_unit = not scope_actions(StrategicAction.objects.all(), request.user).filter(pk=action.id).exists()
     operation = request.POST.get("operation") if request.method == "POST" else ""
     follow_up_permissions = {
+        "update_progress": "change_activity",
         "add_evidence": "add_activityevidence",
         "add_blocker": "add_activityblocker",
         "add_risk": "add_risk",
@@ -1837,6 +1956,7 @@ def activity_follow_up(request, action_id, activity_id):
         "risks": request.user.has_perm("core.view_risk"),
     }
 
+    progress_form = ActivityProgressForm(instance=activity, prefix="progress")
     evidence_form = ActivityEvidenceForm(prefix="evidence")
     blocker_form = ActivityBlockerForm(prefix="blocker")
     risk_form = ActivityRiskForm(prefix="risk")
@@ -1892,13 +2012,24 @@ def activity_follow_up(request, action_id, activity_id):
                 return redirect(reverse("activity_follow_up", args=[action.id, activity.id]) + "#riscos")
 
 
-    if operation == "add_evidence":
+    if operation == "update_progress":
+        progress_form = ActivityProgressForm(request.POST, instance=activity, prefix="progress")
+        if progress_form.is_valid():
+            progress_form.save()
+            _sync_activity_status(activity)
+            _sync_action_progress(action, activity.action_plan)
+            messages.success(request, "Execução da atividade atualizada.")
+            return redirect("activity_follow_up", action_id=action.id, activity_id=activity.id)
+    elif operation == "add_evidence":
         evidence_form = ActivityEvidenceForm(request.POST, request.FILES, prefix="evidence")
         if evidence_form.is_valid():
             evidence = evidence_form.save(commit=False)
             evidence.activity = activity
             evidence.created_by = request.user
             evidence.save()
+            if activity.progress == 100:
+                _sync_activity_status(activity)
+                _sync_action_progress(action, activity.action_plan)
             messages.success(request, "Evidência registrada na atividade.")
             return redirect("activity_follow_up", action_id=action.id, activity_id=activity.id)
     elif operation == "add_blocker":
@@ -1913,32 +2044,7 @@ def activity_follow_up(request, action_id, activity_id):
     elif operation == "add_risk":
         risk_form = ActivityRiskForm(request.POST, prefix="risk")
         if risk_form.is_valid():
-            risk = risk_form.save(commit=False)
-            risk.action = action
-            risk.activity = activity
-            risk.save()
-            RiskAssessment.objects.create(
-                risk=risk,
-                assessment_type=RiskAssessment.AssessmentType.CURRENT,
-                probability=risk.probability,
-                impact=risk.impact,
-                author=request.user,
-            )
-            if risk.treatment:
-                treatment_codes = {
-                    "Aceitar": RiskTreatment.Decision.ACCEPT,
-                    "Mitigar": RiskTreatment.Decision.MITIGATE,
-                    "Evitar": RiskTreatment.Decision.AVOID,
-                    "Transferir": RiskTreatment.Decision.TRANSFER,
-                }
-                RiskTreatment.objects.create(
-                    risk=risk,
-                    decision=treatment_codes[risk.treatment],
-                    responsible=risk.owner,
-                    preventive_measure=risk.preventive_measure,
-                    contingency_measure=risk.contingency_measure,
-                    created_by=request.user,
-                )
+            _create_activity_risk(risk_form, action, activity, request.user)
             messages.success(request, "Risco registrado na atividade.")
             return redirect("activity_follow_up", action_id=action.id, activity_id=activity.id)
 
@@ -1972,6 +2078,7 @@ def activity_follow_up(request, action_id, activity_id):
         {
             "action": action,
             "activity": activity,
+            "progress_form": progress_form,
             "can_view": can_view,
             "evidences": evidences,
             "blockers": activity.blockers.select_related("resolution_owner", "created_by") if can_view["blockers"] else [],

@@ -11,6 +11,7 @@ urlpatterns = [
     path("indicadores/<int:indicator_id>/afericoes/<int:measurement_id>/excluir/", views.measurement_delete, name="measurement_delete"),
     path("indicadores/<int:indicator_id>/", views.indicator_detail, name="indicator_detail"),
     path("relatorios/", quarterly_reports.overview, name="report_cycle_overview"),
+    path("relatorios/trimestrais/<int:report_id>/excluir/", quarterly_reports.delete, name="quarterly_report_delete"),
     path("relatorios/trimestrais/<int:report_id>/", quarterly_reports.detail, name="quarterly_report_detail"),
     path("relatorios/ciclos/", views.report_cycle_overview, name="legacy_report_cycles"),
     path("relatorios/<int:cycle_id>/", views.report_cycle_detail, name="report_cycle_detail"),

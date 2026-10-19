@@ -105,6 +105,7 @@ class IndicatorMeasurementForm(forms.ModelForm):
     class Meta:
         model = IndicatorMeasurement
         fields = [
+            "description",
             "measured_by",
             "baseline_value",
             "baseline_date",
@@ -116,6 +117,7 @@ class IndicatorMeasurementForm(forms.ModelForm):
             "note",
         ]
         labels = {
+            "description": "Descrição da aferição",
             "measured_by": "Responsável pela aferição",
             "baseline_value": "Linha de base",
             "baseline_date": "Data da linha de base",
@@ -143,6 +145,7 @@ class IndicatorMeasurementForm(forms.ModelForm):
         measured_by.empty_label = "Selecione quem realizou a aferição"
         measured_by.help_text = "O setor da pessoa selecionada será registrado como setor responsável pela aferição."
         self.fields["baseline_value"].help_text = "Valor de partida (linha de base) usado como comparação para este resultado."
+        self.fields["description"].help_text = "Nome curto para identificar esta aferição na lista."
         self.fields["baseline_date"].help_text = "Data em que a linha de base foi apurada."
         self.fields["measured_value"].help_text = "Informe o valor apurado. Use apenas o número para calcular o semáforo."
         self.fields["period_start"].help_text = "Primeiro dia do período a que o resultado se refere."
@@ -258,8 +261,6 @@ class ActivityForm(forms.ModelForm):
             "weight",
             "start_date",
             "end_date",
-            "progress",
-            "status",
             "expected_delivery",
             "requires_financial_resource",
             "planned_cost",
@@ -276,8 +277,6 @@ class ActivityForm(forms.ModelForm):
             "weight": "Peso na Ação Estratégica",
             "start_date": "Data de início",
             "end_date": "Data de conclusão",
-            "progress": "Percentual executado (%)",
-            "status": "Situação",
             "expected_delivery": "Entrega ou produto previsto",
             "planned_cost": "Recurso financeiro previsto (R$)",
             "disbursed_cost": "Valor desembolsado (R$)",
@@ -291,7 +290,6 @@ class ActivityForm(forms.ModelForm):
             "start_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "end_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "weight": forms.NumberInput(attrs={"min": "0.01", "max": "100", "step": "0.01"}),
-            "progress": forms.NumberInput(attrs={"min": "0", "max": "100", "step": "0.01"}),
             "planned_cost": forms.NumberInput(attrs={"min": "0", "step": "0.01"}),
             "disbursed_cost": forms.NumberInput(attrs={"min": "0", "step": "0.01"}),
         }
@@ -341,14 +339,6 @@ class ActivityForm(forms.ModelForm):
         if start_date and end_date and start_date > end_date:
             self.add_error("end_date", "A data de conclusão não pode ser anterior à data de início.")
 
-        if cleaned_data.get("status") == StrategicAction.Status.COMPLETED:
-            has_evidence = self.instance.pk and self.instance.evidences.exclude(attachment="").exists()
-            if not has_evidence:
-                self.add_error(
-                    "status",
-                    "Para concluir a atividade, registre ao menos uma evidência com anexo (ícone de documento na lista de atividades).",
-                )
-
         requires_financial_resource = cleaned_data.get("requires_financial_resource")
         planned_cost = cleaned_data.get("planned_cost")
         disbursed_cost = cleaned_data.get("disbursed_cost")
@@ -366,6 +356,22 @@ class ActivityForm(forms.ModelForm):
             cleaned_data["financial_responsible_unit"] = None
             cleaned_data["financial_reference"] = ""
         return cleaned_data
+
+
+class ActivityProgressForm(forms.ModelForm):
+    class Meta:
+        model = Activity
+        fields = ["progress"]
+        labels = {"progress": "Percentual executado (%)"}
+        widgets = {"progress": forms.NumberInput(attrs={"min": "0", "max": "100", "step": "0.01"})}
+
+    def clean_progress(self):
+        progress = self.cleaned_data["progress"]
+        if not 0 <= progress <= 100:
+            raise forms.ValidationError("Informe um percentual entre 0 e 100%.")
+        if progress == 100 and not self.instance.evidences.exclude(attachment="").exists():
+            raise forms.ValidationError("Para concluir a atividade, registre ao menos uma evidência com anexo.")
+        return progress
 
 
 class ActivityEvidenceForm(forms.ModelForm):
@@ -389,12 +395,13 @@ class ActivityEvidenceForm(forms.ModelForm):
 
 
 class ActivityBlockerForm(forms.ModelForm):
+    resolution_owner_choice = forms.ChoiceField(label="Responsável pela solução")
+
     class Meta:
         model = ActivityBlocker
-        fields = ["description", "resolution_owner", "expected_resolution_date", "status", "resolution_note"]
+        fields = ["description", "expected_resolution_date", "status", "resolution_note"]
         labels = {
             "description": "Impedimento identificado",
-            "resolution_owner": "Responsável pela solução",
             "expected_resolution_date": "Previsão de desbloqueio",
             "status": "Situação",
             "resolution_note": "Providência ou solução adotada",
@@ -407,7 +414,31 @@ class ActivityBlockerForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["resolution_owner"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
+        users = get_user_model().objects.filter(is_active=True).order_by("first_name", "last_name", "username")
+        self.fields["resolution_owner_choice"].choices = [
+            ("", "Selecione o responsável"),
+            *[(f"user:{user.pk}", user.get_full_name() or user.username) for user in users],
+            *[(f"external:{value}", label) for value, label in ActivityBlocker.ExternalOwnerType.choices],
+        ]
+        if self.instance.pk:
+            if self.instance.external_owner_type:
+                self.initial["resolution_owner_choice"] = f"external:{self.instance.external_owner_type}"
+            elif self.instance.resolution_owner_id:
+                self.initial["resolution_owner_choice"] = f"user:{self.instance.resolution_owner_id}"
+        self.order_fields(["description", "resolution_owner_choice", "expected_resolution_date", "status", "resolution_note"])
+
+    def save(self, commit=True):
+        blocker = super().save(commit=False)
+        choice = self.cleaned_data["resolution_owner_choice"]
+        if choice.startswith("user:"):
+            blocker.resolution_owner_id = int(choice.split(":", 1)[1])
+            blocker.external_owner_type = ""
+        else:
+            blocker.resolution_owner = None
+            blocker.external_owner_type = choice.split(":", 1)[1]
+        if commit:
+            blocker.save()
+        return blocker
 
 
 class ActivityRiskForm(forms.ModelForm):
@@ -463,6 +494,13 @@ class ActivityRiskForm(forms.ModelForm):
         if not 1 <= value <= 5:
             raise forms.ValidationError("Informe um valor entre 1 e 5.")
         return value
+
+
+class InitialActivityRiskForm(ActivityRiskForm):
+    """Risco previsto cadastrado junto com a nova atividade."""
+
+    class Meta(ActivityRiskForm.Meta):
+        fields = [field for field in ActivityRiskForm.Meta.fields if field != "status"]
 
 
 class RiskIdentificationForm(forms.ModelForm):
@@ -703,6 +741,7 @@ class RiskTreatmentForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["decision"].choices = RiskTreatment.Decision.choices
         self.fields["responsible"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
         self.fields["due_date"].help_text = "Não é uma previsão de quando o risco ocorrerá; é o prazo da ação de tratamento."
 
@@ -956,7 +995,7 @@ class GroupForm(forms.Form):
 
 class ActivityRiskReportForm(forms.Form):
     risk = forms.ModelChoiceField(queryset=Risk.objects.none(), required=False, label="Qual risco?", empty_label="Cadastrar risco não previsto")
-    materialized = forms.ChoiceField(label="O risco se materializou?", choices=(("", "Selecione"), ("SIM", "Sim"), ("NAO", "Não")))
+    materialized = forms.ChoiceField(label="O risco se materializou?", required=False, choices=(("", "Selecione"), ("SIM", "Sim"), ("NAO", "Não")))
 
     edit_materialization = forms.BooleanField(required=False, label="Editar os dados de materialização já cadastrados")
 
@@ -971,6 +1010,10 @@ class ActivityRiskReportForm(forms.Form):
     def clean(self):
         data = super().clean()
         risk = data.get("risk")
+        if not risk:
+            data["materialized"] = "SIM"
+        elif not data.get("materialized"):
+            self.add_error("materialized", "Informe se o risco cadastrado se materializou.")
         if risk and risk.status == Risk.Status.MATERIALIZED and data.get("materialized") == "NAO":
             self.add_error("materialized", "Este risco já está materializado. Selecione Sim; o histórico de ocorrências será mantido.")
         return data

@@ -11,6 +11,18 @@ class NameOrEmailBackend(ModelBackend):
     a pessoa precisa entrar com o e-mail.
     """
 
+    def has_perm(self, user_obj, perm, obj=None):
+        if super().has_perm(user_obj, perm, obj):
+            return True
+        if not user_obj.is_active or obj is not None:
+            return False
+        app_label, _, codename = perm.partition(".")
+        return (
+            app_label == "core"
+            and codename.startswith("view_")
+            and super().has_perm(user_obj, "core.view_other_units")
+        )
+
     def authenticate(self, request, username=None, password=None, **kwargs):
         if username is None or password is None:
             return None

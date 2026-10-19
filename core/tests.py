@@ -8,6 +8,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 
+from .forms import RiskTreatmentForm
 from .models import (
     ActionPlan,
     Activity,
@@ -85,6 +86,18 @@ class LoadPeiIndicatorsTests(TestCase):
         legacy.refresh_from_db()
         self.assertEqual(legacy.code, "IE 13.3")
         self.assertEqual(StrategicTarget.objects.count(), 10)
+
+    def test_quadro_has_action_mapping_for_every_indicator(self):
+        from .pei_indicator_data import INDICATOR_ACTION_CODES, INDICATOR_ROWS
+
+        self.assertEqual({row[0] for row in INDICATOR_ROWS}, set(INDICATOR_ACTION_CODES))
+        project = PlanArtifact.objects.get(parent=self.objectives["13"])
+        action = StrategicAction.objects.create(
+            artifact=project, code="AE 13.2", title="Formar conselhos", coordinating_unit=self.unit
+        )
+        call_command("load_pei_indicators", stdout=StringIO())
+        self.assertEqual(StrategicTarget.objects.get(code="Mt 13.4").action, action)
+        self.assertEqual(StrategicTarget.objects.get(code="Mt 12.2").action.code, "AE 12.1")
 
 
 class UserAndGroupManagementTests(TestCase):
@@ -250,6 +263,16 @@ class LoginAndProfileTests(TestCase):
         response = self.client.post("/login/", {"username": "Ana Lima", "password": "errada"})
         self.assertEqual(response.status_code, 200)
 
+    def test_report_access_denied_returns_to_reports(self):
+        self.client.force_login(self.person)
+        response = self.client.get("/relatorios/trimestrais/1/")
+        self.assertEqual(response.status_code, 403)
+        self.assertContains(response, "Você não tem permissão para visualizar este relatório.", status_code=403)
+        self.assertContains(response, 'href="/relatorios/">Voltar para relatórios</a>', status_code=403)
+
+        response = self.client.get("/usuarios/novo/")
+        self.assertContains(response, 'href="/">Voltar ao painel</a>', status_code=403)
+
     def test_login_by_name_is_refused_when_name_is_ambiguous(self):
         User.objects.create_user(username="ana2@exemplo.gov.br", password="senha-segura", first_name="Ana", last_name="Lima")
         response = self.client.post("/login/", {"username": "Ana Lima", "password": "senha-segura"})
@@ -306,6 +329,15 @@ class DashboardAndRiskTests(TestCase):
         self.user.user_permissions.add(
             *Permission.objects.filter(content_type__app_label="core").exclude(codename__in=["change_indicator", "change_indicatormeasurement", "view_other_units"])
         )
+
+    def test_risk_treatment_requires_an_explicit_response_without_blank_option(self):
+        form = RiskTreatmentForm()
+        self.assertEqual(
+            [value for value, _ in form.fields["decision"].choices],
+            ["ACEITAR", "MITIGAR", "EVITAR", "TRANSFERIR"],
+        )
+        self.assertTrue(form.fields["decision"].required)
+        self.assertIn("decision", RiskTreatmentForm({"decision": "", "responsible": self.user.pk}).errors)
 
     def test_risk_sections_require_their_own_permissions(self):
         action_plan = ActionPlan.objects.create(action=self.action, manager=self.user)
@@ -807,6 +839,10 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(dashboard.context["selected_unit"], str(self.unit.pk))
         self.assertEqual(dashboard.context["action_count"], 1)
         self.assertIn(other_unit, dashboard.context["units"])
+        all_units = self.client.get("/", {"unit": ""})
+        self.assertEqual(all_units.context["selected_unit"], "")
+        self.assertEqual(all_units.context["action_count"], 2)
+        self.assertEqual(self.client.get("/").context["selected_unit"], str(self.unit.pk))
         dashboard = self.client.get("/", {"unit": other_unit.pk})
         self.assertEqual(dashboard.context["selected_unit"], str(other_unit.pk))
         self.assertEqual(dashboard.context["action_count"], 1)
@@ -835,6 +871,72 @@ class DashboardAndRiskTests(TestCase):
         self.assertTrue(IndicatorMeasurement.objects.filter(pk=measurement.pk).exists())
         self.assertFalse(ActionPlan.objects.filter(action=other_action).exists())
         self.assertEqual(self.client.post(f"/planos-de-acao/{self.action.pk}/", {"operation": "start_plan"}).status_code, 302)
+
+    def test_other_units_permission_alone_grants_reading_across_modules(self):
+        other_unit = OrganizationalUnit.objects.create(
+            organization=self.unit.organization, name="Unidade externa", acronym="EXT",
+            unit_type=OrganizationalUnit.UnitType.SECTOR,
+        )
+        other_action = StrategicAction.objects.create(
+            artifact=self.artifact, coordinating_unit=other_unit,
+            code="AE EXTERNA", title="Ação externa",
+        )
+        other_risk = Risk.objects.create(
+            action=other_action, owner=self.user, title="Risco externo",
+            cause="Causa externa", probability=2, impact=2,
+        )
+        RiskAssessment.objects.create(risk=other_risk, probability=2, impact=2,
+                                      author=self.user, notes="Avaliação externa")
+        indicator = Indicator.objects.create(code="IE EXTERNO", name="Indicador externo", responsible_unit=other_unit)
+        indicator.artifacts.add(self.artifact)
+        IndicatorMeasurement.objects.create(indicator=indicator, reference_period="2026",
+                                            measured_value="50", recorded_by=self.user)
+        reader = User.objects.create_user(username="leitor", password="senha-segura")
+        UserProfile.objects.create(user=reader, unit=self.unit)
+        reader.user_permissions.add(Permission.objects.get(codename="view_other_units"))
+        self.client.force_login(reader)
+
+        self.assertTrue(reader.has_perm("core.view_actionplan"))
+        self.assertTrue(reader.has_perm("core.view_indicatormeasurement"))
+        self.assertTrue(reader.has_perm("core.view_riskassessment"))
+        self.assertFalse(reader.has_perm("core.add_risk"))
+        self.assertFalse(reader.has_perm("core.change_indicator"))
+        self.assertNotContains(self.client.get("/planos-de-acao/"), "AE EXTERNA")
+        plans = self.client.get("/planos-de-acao/", {"unit": other_unit.pk})
+        self.assertContains(plans, "AE EXTERNA")
+        self.assertContains(plans, f'href="/planos-de-acao/{other_action.pk}/">Visualizar plano')
+        self.assertContains(self.client.get("/indicadores/", {"unit": other_unit.pk}), "IE EXTERNO")
+        self.assertContains(self.client.get("/riscos/", {"unit": other_unit.pk}), "Risco externo")
+        self.assertContains(self.client.get(f"/planos-de-acao/{other_action.pk}/riscos/{other_risk.pk}/"), "Avaliação externa")
+        self.assertEqual(self.client.post(f"/planos-de-acao/{other_action.pk}/", {"operation": "start_plan"}).status_code, 404)
+
+    def test_target_and_indicator_status_filters_are_independent(self):
+        self.client.force_login(self.user)
+        measured = Indicator.objects.create(code="IE AFERIDO", name="Aferido", responsible_unit=self.unit)
+        pending = Indicator.objects.create(code="IE PENDENTE", name="Pendente", responsible_unit=self.unit)
+        for indicator in (measured, pending):
+            indicator.artifacts.add(self.artifact)
+        IndicatorMeasurement.objects.create(
+            indicator=measured, reference_period="2026", measured_value="100",
+            expected_value=Decimal("100"), recorded_by=self.user,
+        )
+        completed_target = StrategicTarget.objects.create(artifact=self.artifact, code="MT AFERIDA", description="Meta aferida")
+        pending_target = StrategicTarget.objects.create(artifact=self.artifact, code="MT PENDENTE", description="Meta pendente")
+        completed_target.indicators.add(measured)
+        pending_target.indicators.add(pending)
+
+        page = self.client.get("/indicadores/", {"target_status": "gray", "indicator_status": "green"})
+        self.assertContains(page, 'name="target_status"')
+        self.assertContains(page, 'name="indicator_status"')
+        self.assertEqual([row["indicator"].code for row in page.context["indicator_rows"]], ["IE AFERIDO"])
+        self.assertEqual([row["target"].code for row in page.context["target_rows"]], ["MT PENDENTE"])
+        self.assertEqual(page.context["selected_target_status"], "gray")
+        self.assertEqual(page.context["selected_indicator_status"], "green")
+
+        page = self.client.get("/indicadores/", {"indicator_status": "green"})
+        self.assertEqual(len(page.context["target_rows"]), 2)
+        page = self.client.get("/metas/", {"target_status": "gray"})
+        self.assertEqual(len(page.context["indicator_rows"]), 2)
 
     def test_execution_switches_columns_and_list_without_losing_filters(self):
         self.client.force_login(self.user)
@@ -873,6 +975,26 @@ class DashboardAndRiskTests(TestCase):
         response = self.client.get(f"/planos-de-acao/{self.action.pk}/")
         self.assertIn("unit=" + str(self.unit.pk), response.context["indicators_url"])
 
+    def test_participating_sector_sees_target_of_its_indicator(self):
+        other_unit = OrganizationalUnit.objects.create(
+            organization=self.unit.organization, name="Gabinete", unit_type=OrganizationalUnit.UnitType.UNIT
+        )
+        action = StrategicAction.objects.create(
+            artifact=self.artifact, coordinating_unit=other_unit, code="AE PARTICIPANTE", title="Ação conjunta"
+        )
+        action.participating_units.add(self.unit)
+        indicator = Indicator.objects.create(code="IE PARTICIPANTE", name="Indicador local", responsible_unit=self.unit)
+        indicator.artifacts.add(self.artifact)
+        target = StrategicTarget.objects.create(
+            artifact=self.artifact, action=action, code="MT PARTICIPANTE", description="Meta da ação conjunta"
+        )
+        target.indicators.add(indicator)
+        self.client.force_login(self.user)
+
+        response = self.client.get("/metas/")
+        self.assertContains(response, "MT PARTICIPANTE")
+        self.assertIn(target.pk, [row["target"].pk for row in response.context["target_rows"]])
+
     def test_activity_risk_report_selects_existing_and_registers_unforeseen_occurrence(self):
         self.client.force_login(self.user)
         plan = ActionPlan.objects.create(action=self.action, manager=self.user)
@@ -883,13 +1005,14 @@ class DashboardAndRiskTests(TestCase):
         self.assertContains(response, "Qual risco?")
         self.assertContains(response, "O risco se materializou?")
         self.assertContains(response, "Cadastrar risco não previsto")
+        self.assertEqual(self.client.post(url, {"operation": "report_risk", "risk-report-risk": risk.pk}).status_code, 200)
         response = self.client.post(url, {"operation": "report_risk", "risk-report-risk": risk.pk, "risk-report-materialized": "NAO"})
         self.assertEqual(response.status_code, 302)
         self.assertEqual(Risk.objects.count(), 1)
         risk.refresh_from_db()
         self.assertEqual(risk.activity, activity)
         self.assertFalse(risk.materializations.exists())
-        data = {"operation": "report_risk", "risk-report-risk": "", "risk-report-materialized": "SIM",
+        data = {"operation": "report_risk", "risk-report-risk": "",
                 "unforeseen-title": "Risco não previsto no planejamento", "unforeseen-cause": "Evento inesperado", "unforeseen-owner": self.user.pk,
                 "unforeseen-probability": 3, "unforeseen-impact": 4}
         self.assertEqual(self.client.post(url, data).status_code, 200)
@@ -989,7 +1112,7 @@ class DashboardAndRiskTests(TestCase):
         indicator.artifacts.add(self.artifact)
         target = StrategicTarget.objects.create(artifact=self.artifact, code="MT TRIMESTRE", description="Meta consolidada", target_value="100")
         target.indicators.add(indicator)
-        IndicatorMeasurement.objects.create(indicator=indicator, reference_period="3º trimestre", measured_value="50", expected_value=Decimal("100"), period_end=date(2026, 9, 30), recorded_by=self.user)
+        IndicatorMeasurement.objects.create(indicator=indicator, reference_period="3º trimestre", measured_value="50", baseline_value="0", baseline_date=date(2025, 1, 1), expected_value=Decimal("100"), period_end=date(2026, 9, 30), recorded_by=self.user)
         IndicatorMeasurement.objects.create(indicator=indicator, reference_period="4º trimestre", measured_value="90", expected_value=Decimal("100"), period_end=date(2026, 12, 31), recorded_by=self.user)
         data = {"plan": self.artifact.plan_id, "unit": self.unit.pk, "year": 2026, "quarter": 3}
         page = self.client.get("/relatorios/")
@@ -1002,10 +1125,30 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(report.snapshot["targets"][0]["code"], "MT TRIMESTRE")
         self.assertEqual(report.snapshot["objectives"][0]["code"], self.artifact.code)
         self.assertEqual(report.snapshot["indicators"][0]["latest_result"], "50")
+        self.assertEqual(report.snapshot["targets"][0]["progress"], 50.0)
         self.assertEqual(len(report.snapshot["indicators"][0]["measurements"]), 1)
         page = self.client.get(response.url)
         self.assertContains(page, "Meta consolidada")
         self.assertContains(page, "Consolidado")
+        self.assertContains(page, "Consolidado por")
+        self.assertContains(page, self.user.username)
+        self.assertContains(page, 'href="#report-objectives"')
+        self.assertContains(page, 'href="#report-targets"')
+        self.assertContains(page, 'href="#report-indicators"')
+        self.assertContains(page, 'id="report-indicators"')
+        self.assertContains(page, 'href="#report-objective-1"')
+        self.assertContains(page, 'id="report-objective-1"')
+        self.assertContains(page, 'href="#report-target-1"')
+        self.assertContains(page, 'id="report-target-1"')
+        self.assertContains(page, 'href="#report-indicator-1"')
+        self.assertContains(page, 'id="report-indicator-1"')
+        self.assertContains(page, 'href="#report-action-1"')
+        self.assertContains(page, 'id="report-action-1"')
+        self.assertContains(page, "50%")
+        self.assertTrue(page.context["has_indicator_charts"])
+        self.assertEqual(page.context["indicator_rows"][0]["chart"]["categories"], ["3º trimestre"])
+        self.assertEqual(page.context["indicator_rows"][0]["chart"]["result"], [{"y": 50.0}])
+        self.assertContains(page, 'data-report-indicator-chart')
         original = report.snapshot
         target.description = "Modificado após consolidar"
         target.save()
@@ -1014,11 +1157,84 @@ class DashboardAndRiskTests(TestCase):
         report.refresh_from_db()
         self.assertEqual(report.snapshot, original)
         self.assertNotContains(self.client.get(response.url), "Modificado após consolidar")
+        self.assertEqual(self.client.get(response.url).context["indicator_rows"][0]["chart"]["result"], [{"y": 50.0}])
         self.assertContains(self.client.get("/relatorios/"), "quarterly-sector-consolidated")
         self.assertContains(self.client.get("/relatorios/"), "Ver relatório")
         incomplete = self.client.post("/relatorios/", {"unit": self.unit.pk, "plan": self.artifact.plan_id})
         self.assertEqual(incomplete.status_code, 200)
         self.assertEqual(QuarterlySectorReport.objects.count(), 1)
+
+    def test_report_indicator_charts_require_measurements(self):
+        self.client.force_login(self.user)
+        indicator = Indicator.objects.create(code="IE GRAFICO", name="Indicador com gráfico", responsible_unit=self.unit)
+        indicator.artifacts.add(self.artifact)
+        target = StrategicTarget.objects.create(
+            artifact=self.artifact, code="MT GRAFICO", description="Meta com percentual", target_value="100",
+        )
+        target.indicators.add(indicator)
+        cycle = ReportCycle.objects.create(
+            plan=self.artifact.plan, name="Ciclo de gráficos", period_start=date(2026, 1, 1),
+            period_end=date(2026, 12, 31), due_date=date(2027, 1, 15), created_by=self.user,
+        )
+        report = SectorReport.objects.create(cycle=cycle, unit=self.unit)
+        url = f"/relatorios/{cycle.pk}/setores/{report.pk}/"
+        page = self.client.get(url)
+        self.assertFalse(page.context["has_indicator_charts"])
+        self.assertContains(page, 'href="#report-objectives"')
+        self.assertContains(page, 'href="#report-targets"')
+        self.assertContains(page, 'href="#report-indicators"')
+        self.assertContains(page, 'id="report-indicators"')
+        self.assertContains(page, 'href="#report-objective-1"')
+        self.assertContains(page, 'id="report-objective-1"')
+        self.assertContains(page, 'href="#report-target-1"')
+        self.assertContains(page, 'id="report-target-1"')
+        self.assertContains(page, 'href="#report-indicator-1"')
+        self.assertContains(page, 'id="report-indicator-1"')
+        self.assertContains(page, 'href="#report-action-1"')
+        self.assertContains(page, 'id="report-action-1"')
+        self.assertContains(page, self.artifact.title)
+        self.assertNotContains(page, 'data-report-indicator-chart')
+        IndicatorMeasurement.objects.create(
+            indicator=indicator, reference_period="2026", measured_value="42", baseline_value="0",
+            baseline_date=date(2025, 1, 1), expected_value=Decimal("50"),
+            period_end=date(2026, 12, 31), recorded_by=self.user,
+        )
+        page = self.client.get(url)
+        self.assertTrue(page.context["has_indicator_charts"])
+        self.assertContains(page, 'data-report-indicator-chart')
+        self.assertContains(page, "vendor/highcharts.js")
+        self.assertEqual(page.context["content"]["target_rows"][0]["progress"], 42.0)
+        self.assertContains(page, "42%")
+
+    def test_report_filters_by_year(self):
+        self.client.force_login(self.user)
+        older = QuarterlySectorReport.objects.create(
+            plan=self.artifact.plan, unit=self.unit, year=2025, quarter=4, consolidated_by=self.user
+        )
+        newer = QuarterlySectorReport.objects.create(
+            plan=self.artifact.plan, unit=self.unit, year=2026, quarter=1, consolidated_by=self.user
+        )
+        page = self.client.get("/relatorios/", {"year": "2025"})
+        self.assertContains(page, 'name="year"')
+        self.assertEqual([report.pk for row in page.context["sector_rows"] for report in row["reports"]], [older.pk])
+        self.assertNotContains(page, f'/relatorios/trimestrais/{newer.pk}/')
+
+        spanning = ReportCycle.objects.create(
+            plan=self.artifact.plan, name="Ciclo 2025–2026", period_start=date(2025, 12, 1),
+            period_end=date(2026, 1, 31), due_date=date(2026, 2, 15), created_by=self.user,
+        )
+        spanning.participating_units.add(self.unit)
+        SectorReport.objects.create(cycle=spanning, unit=self.unit)
+        later = ReportCycle.objects.create(
+            plan=self.artifact.plan, name="Ciclo 2027", period_start=date(2027, 1, 1),
+            period_end=date(2027, 12, 31), due_date=date(2028, 1, 15), created_by=self.user,
+        )
+        later.participating_units.add(self.unit)
+        SectorReport.objects.create(cycle=later, unit=self.unit)
+        page = self.client.get("/relatorios/ciclos/", {"year": "2026"})
+        self.assertContains(page, 'name="year"')
+        self.assertContains(page, ">Visualizar</a>", html=False)
+        self.assertEqual([row["cycle"].pk for row in page.context["cycle_rows"]], [spanning.pk])
 
     def test_quarterly_consolidation_requires_permission_and_own_sector(self):
         self.client.force_login(self.user)
@@ -1035,6 +1251,30 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(self.client.post("/relatorios/", data).status_code, 403)
         page = self.client.get("/relatorios/")
         self.assertNotContains(page, "data-consolidate-unit")
+
+    def test_quarterly_report_delete_requires_permission_and_own_sector(self):
+        self.client.force_login(self.user)
+        own = QuarterlySectorReport.objects.create(
+            plan=self.artifact.plan, unit=self.unit, year=2026, quarter=3, consolidated_by=self.user
+        )
+        other_unit = OrganizationalUnit.objects.create(
+            organization=self.unit.organization, name="Outro setor", unit_type=OrganizationalUnit.UnitType.SECTOR
+        )
+        foreign = QuarterlySectorReport.objects.create(
+            plan=self.artifact.plan, unit=other_unit, year=2026, quarter=3, consolidated_by=self.user
+        )
+        own_url = f"/relatorios/trimestrais/{own.pk}/excluir/"
+        foreign_url = f"/relatorios/trimestrais/{foreign.pk}/excluir/"
+        self.assertContains(self.client.get("/relatorios/"), f'action="{own_url}"', html=False)
+        self.assertContains(self.client.get(f"/relatorios/trimestrais/{own.pk}/"), "Excluir relatório")
+        self.assertEqual(self.client.get(own_url).status_code, 405)
+        self.assertEqual(self.client.post(foreign_url).status_code, 404)
+        self.assertEqual(self.client.post(own_url).status_code, 302)
+        self.assertFalse(QuarterlySectorReport.objects.filter(pk=own.pk).exists())
+        self.assertTrue(QuarterlySectorReport.objects.filter(pk=foreign.pk).exists())
+
+        self.user.user_permissions.remove(Permission.objects.get(codename="consolidate_quarterlysectorreport"))
+        self.assertEqual(self.client.post(foreign_url).status_code, 403)
 
     def test_dashboard_links_and_indicator_card(self):
         self.client.login(username="copin", password="senha-segura")
@@ -1134,6 +1374,7 @@ class DashboardAndRiskTests(TestCase):
         response = self.client.post(
             f"/indicadores/{indicator.id}/",
             {
+                "description": "Capacitação do semestre",
                 "measured_by": self.user.id,
                 "baseline_value": "40",
                 "baseline_date": "2025-12-31",
@@ -1155,8 +1396,12 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(measurement.measured_by, self.user)
         self.assertEqual(measurement.measured_unit, self.unit)
         self.assertEqual(measurement.baseline_value, "40")
+        self.assertEqual(measurement.description, "Capacitação do semestre")
 
         response = self.client.get(f"/indicadores/{indicator.id}/")
+        self.assertContains(response, '<td class="measurement-description"><strong>Capacitação do semestre</strong></td>', html=False)
+        self.assertContains(response, '<td class="measurement-period">01/01/2026 a 30/06/2026</td>', html=False)
+        self.assertContains(response, '<td class="measurement-baseline">40</td>', html=False)
         self.assertContains(response, "Setor responsável")
         self.assertContains(response, "indicator-chart-data", html=False)
         self.assertContains(response, "vendor/highcharts.js", html=False)
@@ -1166,6 +1411,12 @@ class DashboardAndRiskTests(TestCase):
         self.assertContains(response, "[DEMONSTRAÇÃO] Planilha fictícia")
         self.assertContains(response, "Anexar evidência da aferição")
         self.assertContains(response, 'enctype="multipart/form-data"', html=False)
+
+        overview = self.client.get("/indicadores/")
+        self.assertContains(overview, '<td class="measurement-period">01/01/2026 a 30/06/2026</td>', html=False)
+        self.assertContains(overview, '<td class="measurement-baseline">40</td>', html=False)
+        self.assertContains(overview, "Capacitação do semestre")
+        self.assertNotContains(overview, "Registrado por copin")
 
     def test_indicator_definition_can_be_edited_by_authorized_user(self):
         indicator = Indicator.objects.create(code="IE 02.1", name="Taxa de crescimento", responsible_unit=self.unit)
@@ -1273,6 +1524,7 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(response.status_code, 302)
         report.refresh_from_db()
         self.assertEqual(report.status, SectorReport.Status.SUBMITTED)
+        self.assertContains(self.client.get(response.url), "Responsável pelo relatório")
         self.assertEqual(report.snapshot["action_count"], 1)
 
         self.client.login(username="validador", password="senha-segura")
@@ -1305,6 +1557,50 @@ class DashboardAndRiskTests(TestCase):
         )
         self.assertEqual(risk.level, 20)
 
+    def test_activity_can_be_created_with_initial_risk_atomically(self):
+        self.client.login(username="copin", password="senha-segura")
+        action_plan = ActionPlan.objects.create(action=self.action, manager=self.user)
+        detail_url = f"/planos-de-acao/{self.action.id}/"
+        response = self.client.get(detail_url)
+        self.assertContains(response, "Risco obrigatório da atividade")
+        self.assertContains(response, 'name="initial-risk-title"')
+        self.assertNotContains(response, 'name="include_initial_risk"')
+
+        payload = {
+            "operation": "add_activity",
+            "title": "Preparar relatório",
+            "executor": self.user.id,
+            "weight": "30",
+            "start_date": "2026-05-01",
+            "end_date": "2026-06-30",
+            "requires_financial_resource": "NAO",
+            "initial-risk-title": "Atraso na coleta",
+            "initial-risk-cause": "Dados incompletos",
+            "initial-risk-owner": self.user.id,
+            "initial-risk-probability": "3",
+            "initial-risk-impact": "4",
+            "initial-risk-treatment": "Mitigar",
+        }
+        response = self.client.post(detail_url, {key: value for key, value in payload.items() if not key.startswith("initial-risk-")})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Activity.objects.filter(action_plan=action_plan).exists())
+
+        response = self.client.post(detail_url, {**payload, "initial-risk-impact": ""})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-open-on-load')
+        self.assertFalse(Activity.objects.filter(action_plan=action_plan).exists())
+        self.assertFalse(Risk.objects.filter(action=self.action).exists())
+
+        response = self.client.post(detail_url, payload)
+        self.assertEqual(response.status_code, 302)
+        activity = Activity.objects.get(action_plan=action_plan)
+        risk = Risk.objects.get(activity=activity)
+        self.assertEqual(risk.action, self.action)
+        self.assertEqual(risk.status, Risk.Status.IDENTIFIED)
+        self.assertFalse(risk.is_unforeseen)
+        self.assertEqual(RiskAssessment.objects.get(risk=risk).level, 12)
+        self.assertEqual(RiskTreatment.objects.get(risk=risk).decision, RiskTreatment.Decision.MITIGATE)
+
     def test_user_can_start_an_action_plan_and_add_an_activity(self):
         self.client.login(username="copin", password="senha-segura")
         detail_url = f"/planos-de-acao/{self.action.id}/"
@@ -1322,6 +1618,8 @@ class DashboardAndRiskTests(TestCase):
         self.assertContains(response, "Peso na Ação Estratégica")
         self.assertContains(response, 'value="NAO"')
         self.assertContains(response, 'value="SIM"')
+        self.assertNotContains(response, 'name="progress"')
+        self.assertNotContains(response, 'name="status"')
 
         response = self.client.post(
             detail_url,
@@ -1342,6 +1640,11 @@ class DashboardAndRiskTests(TestCase):
                 "funding_source": "FAF",
                 "financial_responsible_unit": self.action.coordinating_unit_id,
                 "financial_reference": "Processo de demonstração",
+                "initial-risk-title": "Falha no levantamento",
+                "initial-risk-cause": "Dados incompletos",
+                "initial-risk-owner": self.user.id,
+                "initial-risk-probability": "2",
+                "initial-risk-impact": "3",
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -1350,6 +1653,16 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(activity.start_date, date(2026, 5, 1))
         self.assertEqual(activity.end_date, date(2026, 6, 30))
         self.assertEqual(activity.funding_source, "FAF")
+        self.assertEqual(activity.progress, 0)
+        self.assertEqual(activity.status, StrategicAction.Status.NOT_STARTED)
+        self.action.refresh_from_db()
+        self.assertEqual(self.action.progress, 0)
+
+        follow_up_url = f"/planos-de-acao/{self.action.id}/atividades/{activity.id}/acompanhar/"
+        response = self.client.post(follow_up_url, {"operation": "update_progress", "progress-progress": "25"})
+        self.assertEqual(response.status_code, 302)
+        activity.refresh_from_db()
+        self.assertEqual(activity.progress, 25)
         self.action.refresh_from_db()
         self.assertEqual(self.action.progress, 10)
 
@@ -1379,6 +1692,11 @@ class DashboardAndRiskTests(TestCase):
             "weight": "25", "start_date": "2026-01-01", "end_date": "2026-01-10",
             "progress": "20", "status": StrategicAction.Status.IN_PROGRESS,
             "requires_financial_resource": "NAO",
+            "initial-risk-title": "Atraso na entrega",
+            "initial-risk-cause": "Equipe indisponível",
+            "initial-risk-owner": self.user.id,
+            "initial-risk-probability": "2",
+            "initial-risk-impact": "3",
         }
         response = self.client.post(detail_url, payload)
         self.assertEqual(response.status_code, 200)
@@ -1392,7 +1710,8 @@ class DashboardAndRiskTests(TestCase):
         self.action.refresh_from_db()
         self.assertEqual(first.weight, Decimal("45"))
         self.assertEqual(second.weight, Decimal("30"))
-        self.assertEqual(self.action.progress, Decimal("35"))
+        self.assertEqual(self.action.progress, Decimal("30"))
+        self.assertEqual(action_plan.activities.get(title="Terceira").progress, 0)
         self.assertContains(self.client.get(detail_url), "Peso distribuído</span><strong>100%</strong>", html=False)
 
         response = self.client.post(detail_url, {**payload, "weight": "101"})
@@ -1473,6 +1792,13 @@ class DashboardAndRiskTests(TestCase):
             end_date=date(2026, 6, 30),
         )
         edit_url = f"/planos-de-acao/{self.action.id}/atividades/{activity.id}/editar/"
+        follow_up_url = f"/planos-de-acao/{self.action.id}/atividades/{activity.id}/acompanhar/"
+        edit_page = self.client.get(edit_url)
+        self.assertNotContains(edit_page, 'name="progress"')
+        self.assertNotContains(edit_page, 'name="status"')
+        follow_up_page = self.client.get(follow_up_url)
+        self.assertContains(follow_up_page, 'name="progress-progress"')
+        self.assertContains(follow_up_page, 'value="update_progress"')
         data = {
             "title": "Entregar relatório",
             "description": "",
@@ -1487,6 +1813,12 @@ class DashboardAndRiskTests(TestCase):
         }
 
         response = self.client.post(edit_url, data)
+        self.assertEqual(response.status_code, 302)
+        activity.refresh_from_db()
+        self.assertEqual(activity.progress, 0)
+        self.assertEqual(activity.status, StrategicAction.Status.DELAYED)
+
+        response = self.client.post(follow_up_url, {"operation": "update_progress", "progress-progress": "100"})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "registre ao menos uma evidência com anexo")
         activity.refresh_from_db()
@@ -1499,10 +1831,34 @@ class DashboardAndRiskTests(TestCase):
             evidence_type=ActivityEvidence.EvidenceType.ATTACHMENT,
             attachment="activity_evidences/relatorio.pdf",
         )
-        response = self.client.post(edit_url, data)
+        response = self.client.post(follow_up_url, {"operation": "update_progress", "progress-progress": "100"})
         self.assertEqual(response.status_code, 302)
         activity.refresh_from_db()
         self.assertEqual(activity.status, StrategicAction.Status.COMPLETED)
+
+    def test_blocker_accepts_external_owners(self):
+        self.client.force_login(self.user)
+        plan = ActionPlan.objects.create(action=self.action, manager=self.user)
+        activity = Activity.objects.create(
+            action_plan=plan, executor=self.user, title="Atividade externa", weight=100,
+            start_date=date(2026, 1, 1), end_date=date(2026, 12, 31),
+        )
+        url = f"/planos-de-acao/{self.action.pk}/atividades/{activity.pk}/acompanhar/"
+        page = self.client.get(url)
+        self.assertContains(page, "Ator externo ao órgão")
+        self.assertContains(page, "Ator externo ao setor")
+        for value, label in ActivityBlocker.ExternalOwnerType.choices:
+            response = self.client.post(url, {
+                "operation": "add_blocker",
+                "blocker-description": f"Impedimento {value}",
+                "blocker-resolution_owner_choice": f"external:{value}",
+                "blocker-status": ActivityBlocker.Status.OPEN,
+            })
+            self.assertEqual(response.status_code, 302)
+            blocker = ActivityBlocker.objects.get(description=f"Impedimento {value}")
+            self.assertIsNone(blocker.resolution_owner)
+            self.assertEqual(blocker.external_owner_type, value)
+            self.assertContains(self.client.get(url), f"Responsável: {label}")
 
     def test_user_can_follow_up_activity_with_evidence_blocker_and_risk(self):
         self.client.login(username="copin", password="senha-segura")
@@ -1542,14 +1898,17 @@ class DashboardAndRiskTests(TestCase):
             {
                 "operation": "add_blocker",
                 "blocker-description": "Unidade não enviou os dados.",
-                "blocker-resolution_owner": self.user.id,
+                "blocker-resolution_owner_choice": f"user:{self.user.id}",
                 "blocker-expected_resolution_date": "2026-06-10",
-                "blocker-status": ActivityBlocker.Status.IN_TREATMENT,
+                "blocker-status": ActivityBlocker.Status.PARTIALLY_RESOLVED,
                 "blocker-resolution_note": "Cobrança encaminhada.",
             },
         )
         self.assertEqual(response.status_code, 302)
         self.assertEqual(ActivityBlocker.objects.filter(activity=activity).count(), 1)
+        blocker = ActivityBlocker.objects.get(activity=activity)
+        self.assertEqual(blocker.get_status_display(), "Parcialmente resolvido")
+        self.assertContains(self.client.get(follow_up_url), "Parcialmente resolvido")
 
         response = self.client.post(
             follow_up_url,
