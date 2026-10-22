@@ -1,0 +1,30 @@
+{% load static %}
+{% if has_indicator_charts %}
+<script src="{% static 'vendor/highcharts.js' %}"></script>
+<script>
+(function () {
+  document.querySelectorAll('[data-report-indicator-chart]').forEach(function (container) {
+    var source = document.getElementById(container.dataset.source);
+    if (!source) return;
+    var chart = JSON.parse(source.textContent);
+    var series = [{name: 'Resultado aferido', data: chart.result, color: '#1669ba'}];
+    if (chart.has_expected) {
+      series.push({name: 'Meta do período', data: chart.expected, color: '#697a93', dashStyle: 'ShortDash'});
+    }
+    Highcharts.chart(container, {
+      chart: {type: 'line', height: 300},
+      title: {text: null},
+      credits: {enabled: false},
+      xAxis: {categories: chart.categories, title: {text: 'Período'}},
+      yAxis: {title: {text: 'Valor'}},
+      legend: {enabled: series.length > 1},
+      tooltip: {formatter: function () {
+        return this.point.tip || (this.series.name + ': ' + this.y);
+      }},
+      plotOptions: {line: {marker: {enabled: true}, dataLabels: {enabled: true}}},
+      series: series
+    });
+  });
+}());
+</script>
+{% endif %}

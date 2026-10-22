@@ -18,6 +18,17 @@
     <article class="metric-card metric-danger"><span>Riscos</span><strong>{% if can_view.risks %}{{ risks|length }}{% else %}🔒{% endif %}</strong></article>
   </section>
 
+  <section class="panel" id="execucao">
+    <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Execução da atividade</h2></div><span class="chip chip-{{ activity.status|lower }}">{{ activity.get_status_display }}</span></div>
+    <p>{{ activity.progress|floatformat:"-1" }}% executado. A situação é definida automaticamente pelo progresso, prazo e evidências.</p>
+    {% if perms.core.change_activity %}<form method="post" class="activity-form">{% csrf_token %}
+      <input type="hidden" name="operation" value="update_progress">
+      <div class="form-field">{{ progress_form.progress.label_tag }}{{ progress_form.progress }}{% if progress_form.progress.errors %}<small class="field-error">{{ progress_form.progress.errors|striptags }}</small>{% endif %}</div>
+      <p class="form-hint">Para chegar a 100% e concluir a atividade, registre uma evidência com anexo.</p>
+      <button class="button button-primary" type="submit">Atualizar execução</button>
+    </form>{% endif %}
+  </section>
+
   <section class="follow-up-grid">
     <article class="panel follow-up-panel" id="evidencias">
       <div class="panel-heading"><div><p class="eyebrow">Comprovação</p><h2>Evidências</h2></div></div>
@@ -58,7 +69,7 @@
           {% for blocker in blockers %}
             <div class="record-card follow-up-editable-card"><div class="record-content">
               <div class="record-card-heading"><strong>{{ blocker.description }}</strong><span class="chip {% if blocker.status == 'RESOLVIDO' %}chip-concluida{% else %}chip-atrasada{% endif %}">{{ blocker.get_status_display }}</span></div>
-              <small>Responsável: {{ blocker.resolution_owner.get_full_name|default:blocker.resolution_owner.username }}</small>
+              <small>Responsável: {{ blocker.resolution_owner_label }}</small>
               {% if blocker.expected_resolution_date %}<small>Previsão: {{ blocker.expected_resolution_date|date:"d/m/Y" }}</small>{% endif %}
               {% if blocker.resolution_note %}<p>{{ blocker.resolution_note }}</p>{% endif %}
               </div>{% if perms.core.change_activityblocker and not request.read_only_other_unit %}<div class="record-actions"><a class="icon-button record-action" href="?editar_impedimento={{ blocker.pk }}#impedimentos" title="Editar impedimento" aria-label="Editar impedimento">{% include "core/_record_icon.html" with icon="edit" %}</a></div>{% endif %}

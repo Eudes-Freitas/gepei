@@ -2,8 +2,16 @@
 {% block title %}Acesso negado | GEPEI{% endblock %}
 {% block content %}
   <section class="empty-state large-empty" role="alert">
+    {% if request.path|slice:':12' == '/relatorios/' %}
+    <strong>Você não tem permissão para visualizar este relatório.</strong>
+    {% else %}
     <strong>Você não tem permissão para acessar esta página.</strong>
+    {% endif %}
     <span>Solicite ao administrador do sistema o acesso ao perfil necessário.</span>
+    {% if request.path|slice:':12' == '/relatorios/' %}
+    <a class="button button-secondary" href="{% url 'report_cycle_overview' %}">Voltar para relatórios</a>
+    {% else %}
     <a class="button button-secondary" href="{% url 'dashboard' %}">Voltar ao painel</a>
+    {% endif %}
   </section>
 {% endblock %}

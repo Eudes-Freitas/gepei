@@ -5,7 +5,7 @@ from django.db import transaction
 
 from core.models import Indicator, OrganizationalUnit, PlanArtifact, StrategicAction, StrategicTarget
 from core.pei_responsibility_data import OBJECTIVE_RESPONSIBILITIES
-from core.pei_indicator_data import INDICATOR_ROWS, INDICATOR_UNITS_SOURCES
+from core.pei_indicator_data import INDICATOR_ROWS, INDICATOR_UNITS_SOURCES, INDICATOR_ACTION_CODES
 
 
 class Command(BaseCommand):
@@ -29,14 +29,22 @@ class Command(BaseCommand):
                 missing.add(objective_code)
                 continue
 
+            action = StrategicAction.objects.filter(
+                artifact__parent=objective,
+                code=INDICATOR_ACTION_CODES[number],
+            ).first()
+
+            target_defaults = {
+                "description": target_text,
+                "target_value": target_value,
+                "reference_period": periodicity.rstrip("."),
+            }
+            if action:
+                target_defaults["action"] = action
             target, target_created = StrategicTarget.objects.update_or_create(
                 artifact=objective,
                 code=f"Mt {number}",
-                defaults={
-                    "description": target_text,
-                    "target_value": target_value,
-                    "reference_period": periodicity.rstrip("."),
-                },
+                defaults=target_defaults,
             )
             created_targets += target_created
 

@@ -73,9 +73,18 @@
         <div class="panel-heading"><div><p class="eyebrow">Série histórica</p><h2>Aferições registradas</h2></div><div class="panel-heading-actions"><span class="chip chip-neutral">{{ indicator.measurements.all|length }} registro{{ indicator.measurements.all|length|pluralize:"s" }}</span>{% if can_add_measurement %}<button class="button button-primary" type="button" data-open-measurement-form>Nova aferição</button>{% endif %}</div></div>
         {% if not can_view_measurements %}<div class="empty-state" role="alert"><strong>Sem permissão.</strong><span>Você não tem permissão para visualizar as aferições deste indicador.</span></div>
         {% elif indicator.measurements.all %}
-          <div class="responsive-table"><table>
-            <thead><tr><th>Período</th><th>Linha de base</th><th>Resultado</th><th>Meta do período</th><th>Fonte/evidência</th><th>Registrado por</th><th>Detalhes</th></tr></thead>
-            <tbody>{% for measurement in indicator.measurements.all %}<tr><td><strong>{{ measurement.reference_period }}</strong>{% if measurement.note %}<span>{{ measurement.note }}</span>{% endif %}</td><td>{{ measurement.baseline_value|default:"—" }}</td><td>{{ measurement.measured_value }}</td><td>{{ measurement.expected_value|floatformat:"-1"|default:"Não informada" }}</td><td>{% if measurement.source_reference %}<span>{{ measurement.source_reference }}</span>{% endif %}{% if measurement.evidence_attachment %}<a href="{{ measurement.evidence_attachment.url }}" target="_blank" rel="noopener">Abrir arquivo anexado</a>{% elif not measurement.source_reference %}Não informada{% endif %}</td><td>{{ measurement.recorded_by.get_full_name|default:measurement.recorded_by.username }}<small>{{ measurement.recorded_at|date:"d/m/Y H:i" }}</small></td><td><button class="text-button" type="button" data-view-measurement data-period="{{ measurement.reference_period }}" data-baseline="{{ measurement.baseline_value }}" data-baseline-date="{{ measurement.baseline_date|date:"d/m/Y" }}" data-measured="{{ measurement.measured_value }}" data-expected="{% if measurement.expected_value != None %}{{ measurement.expected_value|floatformat:"-2" }}{% endif %}" data-source="{{ measurement.source_reference }}" data-file="{% if measurement.evidence_attachment %}{{ measurement.evidence_attachment.url }}{% endif %}" data-file-name="{% if measurement.evidence_attachment %}{{ measurement.evidence_attachment.name|cut:"indicator_measurements/" }}{% endif %}" data-note="{{ measurement.note }}" data-by="{{ measurement.responsible_name }}" data-unit="{{ measurement.responsible_unit_label }}" data-at="{{ measurement.recorded_at|date:"d/m/Y H:i" }}">Ver</button>{% include "core/_measurement_actions.html" %}</td></tr>{% endfor %}</tbody>
+          <div class="responsive-table"><table class="measurement-history-table">
+            <thead><tr><th>Descrição</th><th>Período</th><th>Linha de base</th><th>Resultado</th><th>Meta do período</th><th>Fonte/evidência</th><th>Registrado por</th><th>Detalhes</th></tr></thead>
+            <tbody>{% for measurement in indicator.measurements.all %}<tr>
+              <td class="measurement-description"><strong>{{ measurement.description|default:measurement.note|default:"—"|truncatechars:80 }}</strong></td>
+              <td class="measurement-period">{{ measurement.period_label }}</td>
+              <td class="measurement-baseline">{{ measurement.baseline_value|default:"—" }}</td>
+              <td>{{ measurement.measured_value }}</td>
+              <td>{{ measurement.expected_value|floatformat:"-1"|default:"Não informada" }}</td>
+              <td>{% if measurement.source_reference %}<span>{{ measurement.source_reference }}</span>{% endif %}{% if measurement.evidence_attachment %}<a href="{{ measurement.evidence_attachment.url }}" target="_blank" rel="noopener">Abrir arquivo anexado</a>{% elif not measurement.source_reference %}Não informada{% endif %}</td>
+              <td>{{ measurement.recorded_by.get_full_name|default:measurement.recorded_by.username }}<small>{{ measurement.recorded_at|date:"d/m/Y H:i" }}</small></td>
+              <td><button class="text-button" type="button" data-view-measurement data-description="{{ measurement.description|default:measurement.note }}" data-period="{{ measurement.period_label }}" data-baseline="{{ measurement.baseline_value }}" data-baseline-date="{{ measurement.baseline_date|date:"d/m/Y" }}" data-measured="{{ measurement.measured_value }}" data-expected="{% if measurement.expected_value != None %}{{ measurement.expected_value|floatformat:"-2" }}{% endif %}" data-source="{{ measurement.source_reference }}" data-file="{% if measurement.evidence_attachment %}{{ measurement.evidence_attachment.url }}{% endif %}" data-file-name="{% if measurement.evidence_attachment %}{{ measurement.evidence_attachment.name|cut:"indicator_measurements/" }}{% endif %}" data-note="{{ measurement.note }}" data-by="{{ measurement.responsible_name }}" data-unit="{{ measurement.responsible_unit_label }}" data-at="{{ measurement.recorded_at|date:"d/m/Y H:i" }}">Ver</button>{% include "core/_measurement_actions.html" %}</td>
+            </tr>{% endfor %}</tbody>
           </table></div>
         {% else %}<div class="empty-state"><strong>Nenhuma aferição registrada.</strong><span>Use o botão “Nova aferição” para iniciar a série histórica.</span></div>{% endif %}
       </article>
@@ -107,6 +116,7 @@
   <dialog closedby="none" class="panel activity-form-panel measurement-view-panel" id="measurement-view" aria-labelledby="measurement-view-title">
     <div class="dialog-heading"><div><p class="eyebrow">Aferição registrada</p><h2 id="measurement-view-title">Detalhes da aferição</h2></div><button class="icon-button dialog-close" type="button" data-close-measurement-view aria-label="Fechar">×</button></div>
     <dl class="definition-grid">
+      <div><dt>Descrição</dt><dd data-field="description"></dd></div>
       <div><dt>Linha de base</dt><dd data-field="baseline"></dd></div>
       <div><dt>Data da linha de base</dt><dd data-field="baselineDate"></dd></div>
       <div><dt>Resultado aferido</dt><dd data-field="measured"></dd></div>
@@ -196,7 +206,7 @@
         document.querySelectorAll('[data-view-measurement]').forEach(function (button) {
           button.addEventListener('click', function () {
             var d = button.dataset;
-            ['period', 'baseline', 'baselineDate', 'measured', 'expected', 'source', 'note', 'by', 'unit', 'at'].forEach(function (name) { setText(name, d[name]); });
+            ['description', 'period', 'baseline', 'baselineDate', 'measured', 'expected', 'source', 'note', 'by', 'unit', 'at'].forEach(function (name) { setText(name, d[name]); });
             var fileCell = view.querySelector('[data-field="file"]');
             fileCell.textContent = '';
             if (d.file) {

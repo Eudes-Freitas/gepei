@@ -170,7 +170,7 @@ def scope_by_unit(queryset, user, field, include_unassigned=False, for_view=Fals
 
 
 def selected_unit_for_request(request):
-    """Default sector accounts to their own unit, including after clearing filters."""
+    """Use the user's unit by default; allow an explicit all-units filter for readers."""
     ids = user_unit_ids(request.user)
     requested = request.GET.get("unit", "")
     if ids is None:

@@ -10,8 +10,8 @@
     <form method="post" class="activity-form" autocomplete="off">{% csrf_token %}
       {% for field in form %}
         <div class="form-field {% if field.name == 'unit_name' %}unit-field{% endif %}">
-          {{ field.label_tag }}{{ field }}
-          {% if field.name == 'unit_name' %}<ul class="unit-suggestions" data-unit-suggestions hidden></ul><small class="unit-status" data-unit-status hidden></small>{% endif %}
+          {{ field.label_tag }}
+          {% if field.name == 'unit_name' %}<div class="unit-input-wrap">{{ field }}<ul class="unit-suggestions" data-unit-suggestions hidden></ul></div><small class="unit-status" data-unit-status hidden></small>{% else %}{{ field }}{% endif %}
           {% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}
           {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
         </div>
@@ -29,6 +29,7 @@
       var endpoint = "{% url 'unit_suggestions' %}";
       var timer = null;
       var request = 0;
+      var selected = '';
 
       function normalize(text) {
         return text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -41,27 +42,33 @@
           var button = document.createElement('button');
           button.type = 'button';
           button.textContent = unit.name + (unit.acronym ? ' · ' + unit.acronym : '');
-          button.addEventListener('mousedown', function (event) {
-            event.preventDefault();
+          button.addEventListener('click', function () {
             input.value = unit.name;
+            selected = unit.name;
             request += 1;
             list.hidden = true;
-            showStatus(true, unit.name);
+            status.hidden = false;
+            status.textContent = 'Setor selecionado: ' + unit.name + '.';
+            input.focus();
           });
           item.appendChild(button);
           list.appendChild(item);
         });
-        var exact = results.some(function (unit) {
-          return normalize(unit.name) === normalize(typed) || (unit.acronym && normalize(unit.acronym) === normalize(typed));
-        });
-        list.hidden = results.length === 0 || exact;
-        showStatus(exact, typed);
+        list.hidden = results.length === 0;
+        showStatus(results, typed);
       }
 
-      function showStatus(exists, typed) {
+      function showStatus(results, typed) {
         if (!typed.trim()) { status.hidden = true; return; }
         status.hidden = false;
-        status.textContent = exists ? 'Setor já cadastrado.' : 'Setor não encontrado: ele será cadastrado como “' + typed.trim() + '”.';
+        if (results.length) {
+          var exact = results.some(function (unit) {
+            return normalize(unit.name) === normalize(typed) || (unit.acronym && normalize(unit.acronym) === normalize(typed));
+          });
+          status.textContent = exact ? 'Setor encontrado. Selecione o nome completo na lista.' : 'Selecione um setor semelhante na lista ou continue digitando para cadastrar outro.';
+        } else {
+          status.textContent = 'Setor não encontrado: ele será cadastrado como “' + typed.trim() + '”.';
+        }
       }
 
       function search() {
@@ -78,11 +85,21 @@
           .catch(function () {});
       }
 
-      input.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(search, 200); });
-      input.addEventListener('focus', function () { if (input.value.trim()) { search(); } });
-      input.addEventListener('blur', function () { request += 1; list.hidden = true; });
+      input.addEventListener('input', function () { selected = ''; clearTimeout(timer); timer = setTimeout(search, 200); });
+      input.addEventListener('focus', function () { if (input.value.trim() && normalize(input.value) !== normalize(selected)) { search(); } });
+      input.closest('.unit-input-wrap').addEventListener('focusout', function (event) {
+        if (!event.currentTarget.contains(event.relatedTarget)) { list.hidden = true; }
+      });
       input.addEventListener('keydown', function (event) {
         if (event.key === 'Escape') { request += 1; list.hidden = true; }
+        if (event.key === 'ArrowDown' && !list.hidden) { event.preventDefault(); list.querySelector('button').focus(); }
+      });
+      list.addEventListener('keydown', function (event) {
+        var buttons = Array.from(list.querySelectorAll('button'));
+        var index = buttons.indexOf(document.activeElement);
+        if (event.key === 'ArrowDown' && index < buttons.length - 1) { event.preventDefault(); buttons[index + 1].focus(); }
+        if (event.key === 'ArrowUp') { event.preventDefault(); if (index > 0) { buttons[index - 1].focus(); } else { input.focus(); } }
+        if (event.key === 'Escape') { event.preventDefault(); list.hidden = true; input.focus(); }
       });
       list.hidden = true;
     }());

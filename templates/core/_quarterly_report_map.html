@@ -1,0 +1,12 @@
+<nav class="panel report-section-map" aria-label="Mapa do relatório">
+  <h2>Mapa do relatório</h2>
+  <ol class="report-map-list">
+    <li><a href="#report-objectives">Objetivos estratégicos (OE)</a><ul class="report-map-items">{% for item in data.objectives %}<li><a href="#report-objective-{{ forloop.counter }}"><strong>{{ item.code|default:"OE" }}</strong><span>{{ item.title }}</span></a></li>{% empty %}<li class="report-map-empty">Nenhum objetivo vinculado</li>{% endfor %}</ul></li>
+    <li><a href="#report-targets">Metas</a><ul class="report-map-items">{% for item in data.targets %}<li><a href="#report-target-{{ forloop.counter }}"><strong>{{ item.code|default:"Meta" }}</strong><span>{{ item.description }}</span>{% if item.period %}<small>Referência: {{ item.period }}</small>{% endif %}</a></li>{% empty %}<li class="report-map-empty">Nenhuma meta vinculada</li>{% endfor %}</ul></li>
+    <li><a href="#report-indicators">Indicadores</a><ul class="report-map-items">{% for row in indicator_rows %}<li><a href="#report-indicator-{{ forloop.counter }}"><strong>{{ row.item.code|default:"Indicador" }}</strong><span>{{ row.item.name }}</span>{% if row.item.latest_period %}<small>Última aferição: {{ row.item.latest_period }}</small>{% endif %}</a></li>{% empty %}<li class="report-map-empty">Nenhum indicador vinculado</li>{% endfor %}</ul></li>
+    <li><a href="#report-actions">Ações e atividades</a><ul class="report-map-items">{% for item in data.actions %}<li><a href="#report-action-{{ forloop.counter }}"><strong>{{ item.code|default:"Ação" }}</strong><span>{{ item.title }}</span></a></li>{% empty %}<li class="report-map-empty">Nenhuma ação vinculada</li>{% endfor %}</ul></li>
+    <li><a href="#report-risks">Riscos e impedimentos</a></li>
+    <li><a href="#report-evidences">Evidências</a></li>
+    <li><a href="#report-financial">Execução financeira</a></li>
+  </ol>
+</nav>

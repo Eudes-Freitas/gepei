@@ -29,8 +29,29 @@ def _period(year, quarter):
     return date(year, month, 1), date(year, month + 2, calendar.monthrange(year, month + 2)[1])
 
 
+def _snapshot_indicator_chart(indicator):
+    """Monta a série apenas com as aferições preservadas no relatório."""
+    from .views import _decimal_from_measurement
+
+    points = []
+    for measurement in reversed(indicator.get("measurements", [])):
+        result = _decimal_from_measurement(measurement.get("result"))
+        if result is None:
+            continue
+        expected = _decimal_from_measurement(measurement.get("expected"))
+        points.append((measurement.get("period") or "Período não informado", float(result), float(expected) if expected is not None else None))
+    if not points:
+        return None
+    return {
+        "categories": [period for period, _, _ in points],
+        "result": [{"y": value} for _, value, _ in points],
+        "expected": [expected for _, _, expected in points],
+        "has_expected": any(expected is not None for _, _, expected in points),
+    }
+
+
 def _snapshot(plan, unit, year, quarter):
-    from .views import _indicator_signal
+    from .views import _final_progress, _indicator_signal
     start, end = _period(year, quarter)
     actions = list(StrategicAction.objects.filter(artifact__plan=plan).filter(Q(coordinating_unit=unit) | Q(participating_units=unit)).distinct().select_related("artifact"))
     activities = list(Activity.objects.filter(action_plan__action__in=actions).select_related("action_plan__action", "executor"))
@@ -56,6 +77,7 @@ def _snapshot(plan, unit, year, quarter):
                 objective_ids.add(node.id)
             node = artifacts.get(node.parent_id)
     indicator_rows = []
+    indicator_by_id = {indicator.pk: indicator for indicator in indicators}
     for indicator in indicators:
         measurements = [m for m in indicator.measurements.all() if (m.period_end or timezone.localtime(m.recorded_at).date()) <= end]
         measurements.sort(key=lambda m: (m.period_end or timezone.localtime(m.recorded_at).date(), m.recorded_at, m.pk), reverse=True)
@@ -63,6 +85,21 @@ def _snapshot(plan, unit, year, quarter):
         signal = _indicator_signal(indicator, evaluation_date=end)
         latest = signal["measurement"]
         indicator_rows.append({"id": indicator.id, "code": indicator.code, "name": indicator.name, "formula": indicator.formula, "unit": indicator.measurement_unit, "reference_parameters": indicator.reference_parameters, "source": indicator.data_source, "target_ids": [t.pk for t in indicator.targets.all()], "history": [{"period": m.reference_period, "result": m.measured_value, "expected": str(m.expected_value) if m.expected_value is not None else None} for m in measurements], "responsible_units": indicator.responsible_units_label, "status": signal["label"], "achievement": signal["achievement"], "latest_result": latest.measured_value if latest else None, "latest_period": latest.reference_period if latest else "", "measurements": [{"period": m.reference_period, "result": m.measured_value, "expected": str(m.expected_value) if m.expected_value is not None else None, "baseline": m.baseline_value, "source": m.source_reference, "id": m.pk, "file": m.evidence_attachment.name, "period_end": m.period_end.isoformat() if m.period_end else ""} for m in measurements if (m.period_end or timezone.localtime(m.recorded_at).date()) >= start]})
+    target_rows = []
+    for target in targets:
+        values = []
+        for indicator in target.indicators.all():
+            current = indicator_by_id.get(indicator.pk)
+            if current is None:
+                continue
+            signal = _indicator_signal(current, target=target, evaluation_date=end)
+            progress = _final_progress(current, signal["measurement"], target=target)
+            if progress is not None:
+                values.append(progress)
+        target_rows.append({"id": target.pk, "code": target.code, "description": target.description,
+                            "value": target.target_value, "unit": target.unit_of_measure,
+                            "period": target.reference_period, "objective": target.artifact.code,
+                            "progress": round(sum(values) / len(values), 1) if values else None})
     risks = Risk.objects.filter(action__in=actions).select_related("action", "activity")
     evidences = ActivityEvidence.objects.filter(activity__in=activities, created_at__date__range=(start, end)).select_related("activity")
     blockers = ActivityBlocker.objects.filter(activity__in=activities)
@@ -72,7 +109,7 @@ def _snapshot(plan, unit, year, quarter):
         "scope_version": 2,
         "contains_test_data": any("[TESTE]" in m["period"] for row in indicator_rows for m in row["measurements"]) or any("[TESTE]" in a.title for a in activities),
         "objectives": [{"id": pk, "code": artifacts[pk].code, "title": artifacts[pk].title} for pk in sorted(objective_ids)],
-        "targets": [{"id": t.pk, "code": t.code, "description": t.description, "value": t.target_value, "unit": t.unit_of_measure, "period": t.reference_period, "objective": t.artifact.code} for t in targets],
+        "targets": target_rows,
         "indicators": indicator_rows,
         "actions": [{"id": a.pk, "code": a.code, "title": a.title, "status": a.get_status_display(), "progress": str(a.progress), "due_date": a.due_date.isoformat() if a.due_date else ""} for a in actions],
         "activities": [{"id": a.pk, "action_id": a.action_plan.action_id, "action": a.action_plan.action.code, "title": a.title, "status": a.get_status_display(), "progress": str(a.progress), "executor": a.executor.get_full_name() or a.executor.username} for a in activities],
@@ -90,6 +127,7 @@ def overview(request):
     today = timezone.localdate()
     selected_unit = selected_unit_for_request(request)
     selected_plan = request.GET.get("plan", "")
+    selected_year = request.GET.get("year", "")
     view_units = view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
     write_units = scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
     can_consolidate = request.user.has_perm("core.consolidate_quarterlysectorreport")
@@ -107,6 +145,7 @@ def overview(request):
             messages.success(request, "Relatório trimestral consolidado." if created else "Este setor já tem relatório consolidado para o plano e trimestre escolhidos.")
             return redirect("quarterly_report_detail", report_id=report.id)
     reports = QuarterlySectorReport.objects.filter(unit__in=view_units).select_related("unit", "plan", "consolidated_by")
+    years = sorted(set(reports.values_list("year", flat=True)) | {today.year}, reverse=True)
     if selected_unit.isdigit():
         reports = reports.filter(unit_id=selected_unit)
     if selected_plan.isdigit():
@@ -226,7 +265,7 @@ def _report_display_data(snapshot, report=None):
     linked_target_ids = set()
     for indicator_index, item in enumerate(data["indicators"]):
         ids = set(item.get("target_ids", []))
-        item["targets"] = [dict(target) for target in snapshot.get("targets", []) if target.get("id") in ids]
+        item["targets"] = [{**target, "report_anchor": f"report-target-{index}" if target.get("id") not in linked_target_ids else ""} for index, target in enumerate(snapshot.get("targets", []), 1) if target.get("id") in ids]
         linked_target_ids.update(ids)
         item["measurements"] = [dict(m) for m in item.get("measurements", [])]
         chart_rows = []
@@ -362,4 +401,6 @@ def detail(request, report_id):
     report = get_object_or_404(QuarterlySectorReport.objects.filter(unit__in=view_scope_units(OrganizationalUnit.objects.all(), request.user)).select_related("unit", "plan", "consolidated_by"), pk=report_id)
     ids = user_unit_ids(request.user)
     request.read_only_other_unit = ids is not None and report.unit_id not in ids
-    return render(request, "core/quarterly_report_detail.html", {"report": report, "data": _report_display_data(report.snapshot, report), "can_manage_report": request.user.has_perm("core.consolidate_quarterlysectorreport") and scope_units(OrganizationalUnit.objects.all(), request.user).filter(pk=report.unit_id).exists()})
+    display_data = _report_display_data(report.snapshot, report)
+    indicator_rows = [{"item": item, "chart": _snapshot_indicator_chart(item), "chart_data_id": item["chart_data_id"]} for item in display_data["indicators"]]
+    return render(request, "core/quarterly_report_detail.html", {"report": report, "data": display_data, "indicator_rows": indicator_rows, "has_indicator_charts": any(row["chart"] for row in indicator_rows), "can_manage_report": request.user.has_perm("core.consolidate_quarterlysectorreport") and scope_units(OrganizationalUnit.objects.all(), request.user).filter(pk=report.unit_id).exists()})

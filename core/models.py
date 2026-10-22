@@ -198,7 +198,12 @@ class ActivityBlocker(models.Model):
     class Status(models.TextChoices):
         OPEN = "ABERTO", "Aberto"
         IN_TREATMENT = "EM_TRATAMENTO", "Em tratamento"
+        PARTIALLY_RESOLVED = "PARCIAL", "Parcialmente resolvido"
         RESOLVED = "RESOLVIDO", "Resolvido"
+
+    class ExternalOwnerType(models.TextChoices):
+        ORGAN = "ORGAO", "Ator externo ao órgão"
+        SECTOR = "SETOR", "Ator externo ao setor"
 
     activity = models.ForeignKey(Activity, on_delete=models.CASCADE, related_name="blockers")
     created_by = models.ForeignKey(
@@ -208,9 +213,12 @@ class ActivityBlocker(models.Model):
     )
     resolution_owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
         on_delete=models.PROTECT,
         related_name="assigned_activity_blockers",
     )
+    external_owner_type = models.CharField(max_length=5, choices=ExternalOwnerType.choices, blank=True)
     description = models.TextField()
     expected_resolution_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.OPEN)
@@ -235,6 +243,14 @@ class ActivityBlocker(models.Model):
 
     def __str__(self):
         return self.description[:80]
+
+    @property
+    def resolution_owner_label(self):
+        if self.external_owner_type:
+            return self.get_external_owner_type_display()
+        if self.resolution_owner:
+            return self.resolution_owner.get_full_name() or self.resolution_owner.username
+        return "A definir"
 
 
 class StrategicTarget(models.Model):
@@ -339,6 +355,7 @@ class Indicator(models.Model):
 
 class IndicatorMeasurement(models.Model):
     indicator = models.ForeignKey(Indicator, on_delete=models.CASCADE, related_name="measurements")
+    description = models.CharField(max_length=255, blank=True)
     reference_period = models.CharField(max_length=120)
     baseline_value = models.CharField(max_length=120, blank=True)
     baseline_date = models.DateField(null=True, blank=True)
@@ -374,6 +391,12 @@ class IndicatorMeasurement(models.Model):
 
     class Meta:
         ordering = ["-recorded_at"]
+
+    @property
+    def period_label(self):
+        if self.period_start and self.period_end:
+            return f"{self.period_start:%d/%m/%Y} a {self.period_end:%d/%m/%Y}"
+        return self.reference_period
 
     @property
     def responsible_name(self):

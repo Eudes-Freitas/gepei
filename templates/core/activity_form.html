@@ -5,7 +5,8 @@
   <section class="panel form-page-panel">
     <p class="eyebrow">{{ action.code }} · Plano de ação</p>
     <h1>Editar atividade</h1>
-    <p class="form-hint">Atualize a atividade, seu período, sua execução e, quando aplicável, os dados financeiros.</p>
+    <p class="form-hint">Atualize os dados da atividade, seu período e, quando aplicável, os dados financeiros. O percentual executado fica em “Atualizar atividade”.</p>
+    <p class="form-hint">Situação: <strong>{{ activity.get_status_display }}</strong> · {{ activity.progress|floatformat:"-1" }}% executado</p>
     <form method="post" class="activity-form">{% csrf_token %}
       {% for field in form %}<div class="form-field {% if field.name == 'planned_cost' or field.name == 'disbursed_cost' or field.name == 'funding_source' or field.name == 'funding_source_other' or field.name == 'financial_responsible_unit' or field.name == 'financial_reference' %}financial-field{% endif %}" {% if field.name == 'planned_cost' or field.name == 'disbursed_cost' or field.name == 'funding_source' or field.name == 'funding_source_other' or field.name == 'financial_responsible_unit' or field.name == 'financial_reference' %}hidden{% endif %}>{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}
       <div class="form-buttons"><button class="button button-primary" type="submit">Salvar alterações</button><a class="button button-secondary" href="{% url 'action_plan_detail' action.id %}">Cancelar</a></div>

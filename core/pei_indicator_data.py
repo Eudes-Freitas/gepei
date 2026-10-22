@@ -159,6 +159,40 @@ INDICATOR_ROWS = [
 ]
 
 
+# A ação que entrega ou acompanha cada meta do Quadro de Indicadores.
+# Os números do quadro identificam o objetivo, mas não coincidem sempre com os da ação.
+INDICATOR_ACTION_CODES = {
+    "01.1": "AE 01.2", "01.2": "AE 01.3",
+    "02.1": "AE 02.1", "02.2": "AE 02.2",
+    "03.1": "AE 03.1", "03.2": "AE 03.2", "03.3": "AE 03.2", "03.4": "AE 03.2",
+    "04.1": "AE 04.2",
+    "05.1": "AE 05.2", "05.2": "AE 05.3", "05.3": "AE 05.1", "05.4": "AE 05.7",
+    "06.1": "AE 06.2", "06.2": "AE 06.2",
+    "07.1": "AE 07.1", "07.2": "AE 07.1", "07.3": "AE 07.1",
+    "08.1": "AE 08.4", "08.2": "AE 08.3",
+    "09.1": "AE 09.1", "09.2": "AE 09.3",
+    "10.1": "AE 10.2", "10.2": "AE 10.2", "10.3": "AE 10.3",
+    "11.1": "AE 11.1", "11.2": "AE 11.1",
+    "12.1": "AE 12.1", "12.2": "AE 12.1", "12.3": "AE 12.1", "12.4": "AE 12.1", "12.5": "AE 12.1",
+    "13.1": "AE 13.1", "13.2": "AE 13.4", "13.3": "AE 13.3", "13.4": "AE 13.2", "13.5": "AE 13.5",
+}
+
+
+# Setores responsáveis pelos indicadores. Algumas ações são coordenadas pelo GS,
+# enquanto a aferição cabe ao setor participante (SRH ou ENG).
+INDICATOR_RESPONSIBLE_UNITS = {
+    **{number: "SRH" for number in ("01", "02", "03")},
+    "04": "ENG",
+    "05": "CTINF",
+    "06": "SAF",
+    "07": "SPC",
+    **{number: "COPIN" for number in ("08", "09", "10")},
+    "11": "GS",
+    "12": "SESED",
+    "13": "CPCID",
+}
+
+
 # Unidade de medida (derivada da fórmula do Apêndice A) e fonte de dados (proposta por tema/setor) de cada indicador.
 # O Apêndice A não informa linha de base; ela segue "A definir" até a primeira aferição.
 INDICATOR_UNITS_SOURCES = {
