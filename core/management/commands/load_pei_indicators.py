@@ -3,7 +3,8 @@
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from core.models import Indicator, PlanArtifact, StrategicAction, StrategicTarget
+from core.models import Indicator, OrganizationalUnit, PlanArtifact, StrategicAction, StrategicTarget
+from core.pei_responsibility_data import OBJECTIVE_RESPONSIBILITIES
 from core.pei_indicator_data import INDICATOR_ROWS, INDICATOR_UNITS_SOURCES
 
 
@@ -62,7 +63,15 @@ class Command(BaseCommand):
             if not indicator.responsible_unit_id:
                 action = StrategicAction.objects.filter(artifact__parent=objective).order_by("code").first()
                 indicator.responsible_unit = action.coordinating_unit if action else None
+            action = StrategicAction.objects.filter(artifact__parent=objective).select_related("coordinating_unit").order_by("code").first()
+            unit_queryset = OrganizationalUnit.objects.filter(acronym__in=OBJECTIVE_RESPONSIBILITIES.get(number.split(".")[0], ()))
+            if action:
+                unit_queryset = unit_queryset.filter(organization_id=action.coordinating_unit.organization_id)
+            responsible_units = list(unit_queryset)
+            if responsible_units and indicator.responsible_unit_id not in {unit.pk for unit in responsible_units}:
+                indicator.responsible_unit = responsible_units[0]
             indicator.save()
+            indicator.responsible_units.set(responsible_units)
             indicator.artifacts.set([objective])
             indicator.targets.set([target])
             created_indicators += indicator_created

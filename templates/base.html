@@ -5,7 +5,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}GEPEI{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'css/gepei.css' %}?v=20261016-3">
+  <link rel="stylesheet" href="{% static 'css/gepei.css' %}?v=20261022-10">
+  <script>
+    // Cancelamento nativo (Esc) não deve descartar um modal aberto.
+    document.addEventListener('cancel', function (event) {
+      if (event.target instanceof HTMLDialogElement) {
+        event.preventDefault();
+      }
+    }, true);
+  </script>
 </head>
 <body>
   <header class="topbar">
@@ -56,20 +64,6 @@
     {% endif %}
     {% block content %}{% endblock %}
   </main>
-  <script>
-    // "Voltar" retorna à página anterior do sistema; sem histórico interno, segue o link padrão.
-    document.addEventListener("click", function (event) {
-      var link = event.target.closest(".back-link");
-      if (!link || event.ctrlKey || event.metaKey || event.shiftKey) return;
-      try {
-        var previous = new URL(document.referrer);
-        if (previous.origin === location.origin && previous.pathname !== location.pathname && previous.pathname !== "{% url 'login' %}") {
-          event.preventDefault();
-          history.back();
-        }
-      } catch (error) {}
-    });
-  </script>
   {% block extra_script %}{% endblock %}
 </body>
 </html>

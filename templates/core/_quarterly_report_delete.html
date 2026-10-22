@@ -1,0 +1,6 @@
+<dialog closedby="none" class="panel activity-form-panel" id="delete-report-{{ report.pk }}" aria-labelledby="delete-report-title-{{ report.pk }}">
+  <div class="dialog-heading"><h2 id="delete-report-title-{{ report.pk }}">Excluir relatório</h2><button class="icon-button dialog-close" type="button" data-close-report-delete aria-label="Fechar">×</button></div>
+  <p>{{ report.unit.acronym }} · {{ report.plan.acronym }} · {{ report.quarter }}º trimestre de {{ report.year }}</p>
+  <p>Excluir este relatório consolidado? Os cadastros do plano, as aferições e as evidências serão mantidos.</p>
+  <form method="post" action="{% url 'quarterly_report_delete' report.pk %}">{% csrf_token %}<button class="button button-danger" type="submit">Excluir relatório</button></form>
+</dialog>

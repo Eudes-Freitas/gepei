@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Editar plano de ação | {{ action.code }} | GEPEI{% endblock %}
+{% block content %}
+<a class="back-link" href="{% url 'action_plan_detail' action.id %}">← Voltar ao plano de ação</a>
+<section class="panel form-page-panel">
+  <p class="eyebrow">{{ action.code }} · Execução</p>
+  <h1>Editar plano de ação</h1>
+  <p class="form-hint">Atualize as informações do plano. Para editar tarefas, entregas, pesos e dados financeiros de uma atividade, use o lápis na lista de atividades.</p>
+  <form method="post" class="activity-form">{% csrf_token %}
+    {% if manager_form %}{% for field in manager_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}{{ manager_form.non_field_errors }}{% endif %}
+    {% if action_form %}{% for field in action_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}{{ action_form.non_field_errors }}{% endif %}
+    <div class="form-buttons"><button type="submit" class="button button-primary">Salvar alterações</button><a class="button button-secondary" href="{% url 'action_plan_detail' action.id %}">Cancelar</a></div>
+  </form>
+</section>
+{% endblock %}

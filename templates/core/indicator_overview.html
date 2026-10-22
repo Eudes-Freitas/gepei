@@ -11,7 +11,12 @@
     {% if plan %}<span class="chip chip-neutral">{{ plan.acronym }} · {{ plan.start_date|date:"Y" }}–{{ plan.end_date|date:"Y" }}</span>{% endif %}
   </section>
 
+  {% include "core/_results_status_legend.html" %}
+
   <form class="dashboard-filters" method="get" action="{% if perms.core.view_indicator %}{% url 'indicator_overview' %}{% else %}{% url 'target_overview' %}{% endif %}" aria-label="Filtros dos indicadores">
+    <label>Ano
+      <select name="year"><option value="">Todos os anos</option>{% for year in available_years %}<option value="{{ year }}" {% if selected_year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>{% endfor %}</select>
+    </label>
     <label>Plano
       <select name="plan"><option value="">Todos os planos</option>{% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}</select>
     </label>
@@ -37,6 +42,8 @@
     <button class="button button-primary" type="submit">Aplicar filtros</button>
     <a class="clear-filter" href="{% if perms.core.view_indicator %}{% url 'indicator_overview' %}{% else %}{% url 'target_overview' %}{% endif %}">Limpar</a>
   </form>
+
+  {% if selected_year %}<p class="form-hint">Resultados de {{ selected_year }} (cálculo até o encerramento do ano, limitado ao fim do plano): situações e gráficos consideram as aferições cujo período termina neste ano. Sem datas do período, é usado o ano informado na referência. Metas e indicadores sem aferição no ano permanecem visíveis.</p>{% endif %}
 
   {% if perms.core.view_indicator %}
   <section class="metrics metrics-centered indicator-metrics" aria-label="Resumo dos indicadores">

@@ -1,0 +1,11 @@
+<details class="registered-risk activity-risk-draft" data-risk-draft {% if risk_form.errors or forloop.last %}open{% endif %}>
+  <summary><strong data-risk-draft-title>{% if risk_form.title.value %}{{ risk_form.title.value }}{% else %}Novo risco{% endif %}</strong></summary>
+  <div class="record-card activity-form">
+    {{ risk_form.non_field_errors }}
+    <div hidden>{{ risk_form.DELETE }}</div>
+    {% for field in risk_form %}{% if field.name != "DELETE" %}
+      {% include "core/_form_field.html" with field=field %}
+    {% endif %}{% endfor %}
+    <button class="button button-secondary text-danger" type="button" data-remove-risk-draft>Remover este risco do cadastro</button>
+  </div>
+</details>

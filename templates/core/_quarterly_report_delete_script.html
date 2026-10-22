@@ -1,0 +1,5 @@
+<script>(function(){
+  document.querySelectorAll('[data-delete-report]').forEach(function(button){button.addEventListener('click',function(){document.getElementById('delete-report-'+button.dataset.deleteReport).showModal();});});
+  document.querySelectorAll('[data-close-report-delete]').forEach(function(button){button.addEventListener('click',function(){button.closest('dialog').close();});});
+  document.querySelectorAll('[data-select-report]').forEach(function(select){select.addEventListener('change',function(){if(select.value){window.location.assign(select.value);}});});
+}());</script>

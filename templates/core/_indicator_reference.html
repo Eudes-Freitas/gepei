@@ -1,0 +1,7 @@
+{% if reference %}<details class="indicator-reference"><summary>Base de 2024 e projeções do documento</summary>
+<p><strong>Linha de base (2024):</strong> {{ reference.baseline_text }}{% if reference.baseline_value != None %} {{ reference.unit }}{% endif %}. <strong>Fonte:</strong> {{ reference.source }}, p. {{ reference.page }}.</p>
+<p class="form-hint">31/12/2024 representa o encerramento do ano-base; o documento não informa o dia da coleta. {% if reference.mode == "annual" %}As projeções são entregas de cada ano; no período completo, o cálculo soma os resultados anuais, usando a última aferição de cada ano.{% elif reference.mode == "threshold" %}A projeção é um patamar a manter no ano.{% else %}As projeções representam o nível acumulado esperado; o avanço compara o resultado com a linha de base.{% endif %}</p>
+<div class="responsive-table"><table><thead><tr>{% for year,value in reference.projections.items %}<th>{{ year }}</th>{% endfor %}</tr></thead><tbody><tr>{% for year,value in reference.projections.items %}<td>{% if value != None %}{{ value }}{% else %}—{% endif %}</td>{% endfor %}</tr></tbody></table></div>
+<p class="form-hint">Unidade das projeções: {{ reference.unit }}. Os valores originais da meta vinculada permanecem preservados.</p>
+{% if reference.note %}<p class="form-hint">{{ reference.note }}</p>{% endif %}
+</details>{% endif %}

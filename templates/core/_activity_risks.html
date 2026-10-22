@@ -1,0 +1,38 @@
+{% if activity_risk_formset %}
+<section data-activity-risk-section>
+  <h3>Riscos da atividade</h3>
+  <p class="form-hint">Cadastre os riscos previstos para esta atividade. A ação e a atividade serão vinculadas automaticamente ao salvar.</p>
+  {{ activity_risk_formset.management_form }}
+  {{ activity_risk_formset.non_form_errors }}
+  <div class="registered-risks" data-activity-risk-list>
+    {% for risk_form in activity_risk_formset %}{% include "core/_activity_risk_draft.html" with risk_form=risk_form %}{% endfor %}
+  </div>
+  <template data-empty-activity-risk>{% include "core/_activity_risk_draft.html" with risk_form=activity_risk_formset.empty_form %}</template>
+  <button class="button button-secondary" type="button" data-add-activity-risk>Cadastrar risco</button>
+  <p class="form-hint">Os riscos serão salvos junto com a atividade.</p>
+  <script>(function(){
+    var section=document.currentScript.closest('[data-activity-risk-section]');
+    var list=section.querySelector('[data-activity-risk-list]');
+    var total=section.querySelector('[name="activity-risks-TOTAL_FORMS"]');
+    var add=section.querySelector('[data-add-activity-risk]');
+    function activeDrafts(){return Array.from(list.querySelectorAll('[data-risk-draft]')).filter(function(d){return !d.hidden;});}
+    function updateButton(){add.textContent=activeDrafts().length?'Cadastrar outro risco':'Cadastrar risco';add.disabled=Number(total.value)>=20;}
+    function bind(draft){
+      var title=draft.querySelector('input[name$="-title"]');
+      title.addEventListener('input',function(){draft.querySelector('[data-risk-draft-title]').textContent=title.value||'Novo risco';});
+      var deleted=draft.querySelector('input[name$="-DELETE"]');
+      draft.querySelector('[data-remove-risk-draft]').addEventListener('click',function(){deleted.checked=true;draft.hidden=true;draft.querySelectorAll('input,select,textarea').forEach(function(f){if(f!==deleted){f.disabled=true;}});updateButton();});
+      if(deleted.checked){draft.querySelector('[data-remove-risk-draft]').click();}
+    }
+    list.querySelectorAll('[data-risk-draft]').forEach(bind);
+    add.addEventListener('click',function(){
+      activeDrafts().forEach(function(d){d.open=false;});
+      var html=section.querySelector('[data-empty-activity-risk]').innerHTML.replace(/__prefix__/g,total.value);
+      list.insertAdjacentHTML('beforeend',html);total.value=Number(total.value)+1;
+      var draft=list.lastElementChild;draft.open=true;bind(draft);updateButton();draft.scrollIntoView({block:'nearest'});draft.querySelector('input[name$="-title"]').focus();
+    });
+    section.closest('form').addEventListener('invalid',function(event){var draft=event.target.closest('[data-risk-draft]');if(draft){draft.open=true;}},true);
+    updateButton();
+  }());</script>
+</section>
+{% endif %}

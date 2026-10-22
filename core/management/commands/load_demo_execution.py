@@ -84,7 +84,7 @@ class Command(BaseCommand):
         self.add_risk_scenario(
             action, user, "[DEMONSTRAÇÃO] Pequeno ajuste no cronograma de entrevistas",
             "Possível remarcação de uma reunião setorial.", 1, 2,
-            Risk.Status.IDENTIFIED, None,
+            Risk.Status.IN_TREATMENT, RiskTreatment.Decision.MITIGATE,
             occurrence_timing=Risk.OccurrenceTiming.DATE_OR_MILESTONE,
             expected_occurrence_date=date(2026, 9, 10),
             trigger="Reunião de validação com as unidades participantes.",
@@ -112,10 +112,12 @@ class Command(BaseCommand):
             trigger="Janela de manutenção programada do serviço.",
         )
         risk_action = StrategicAction.objects.get(code="AE 08.1")
+        risk_activity = self.ensure_risk_activity(risk_action, user, "Atividade vinculada ao risco: [DEMONSTRAÇÃO] Informações setoriais incompletas")
         risk, _ = Risk.objects.get_or_create(
             action=risk_action,
             title="[DEMONSTRAÇÃO] Informações setoriais incompletas",
             defaults={
+                "activity": risk_activity,
                 "owner": user,
                 "cause": "Atualizações setoriais não enviadas no período de monitoramento.",
                 "probability": 4,
@@ -126,6 +128,9 @@ class Command(BaseCommand):
                 "contingency_measure": "Escalonar a pendência à COPIN e ao gestor responsável.",
             },
         )
+        if not risk.activity_id:
+            risk.activity = risk_activity
+            risk.save(update_fields=["activity"])
         self.stdout.write(self.style.SUCCESS(f"Dados fictícios inseridos. Risco de demonstração: nível {risk.level}."))
 
     def add_risk_scenario(
@@ -134,11 +139,12 @@ class Command(BaseCommand):
         occurrence_timing=Risk.OccurrenceTiming.UNKNOWN, exposure_start_date=None,
         exposure_end_date=None, expected_occurrence_date=None, trigger="",
     ):
+        activity = activity or self.ensure_risk_activity(action, user, f"Atividade vinculada ao risco: {title}"[:255])
         risk, created = Risk.objects.get_or_create(
             action=action,
-            activity=activity,
             title=title,
             defaults={
+                "activity": activity,
                 "owner": user,
                 "cause": cause,
                 "probability": probability,
@@ -154,6 +160,9 @@ class Command(BaseCommand):
                 "trigger_description": trigger,
             },
         )
+        if not risk.activity_id:
+            risk.activity = activity
+            risk.save(update_fields=["activity"])
         if not created and risk.occurrence_timing == Risk.OccurrenceTiming.UNKNOWN:
             risk.occurrence_timing = occurrence_timing
             risk.exposure_start_date = exposure_start_date
@@ -218,6 +227,15 @@ class Command(BaseCommand):
                 },
             )
         return risk
+
+    def ensure_risk_activity(self, action, user, title):
+        plan, _ = ActionPlan.objects.get_or_create(action=action, defaults={"manager": user})
+        activity, _ = Activity.objects.get_or_create(
+            action_plan=plan, title=title,
+            defaults={"executor": user, "weight": 0, "end_date": action.due_date or date(2026, 12, 31),
+                      "description": "Atividade fictícia para demonstração do acompanhamento de riscos."},
+        )
+        return activity
 
     def add_activities(self, action_code, user, rows):
         action = StrategicAction.objects.get(code=action_code)

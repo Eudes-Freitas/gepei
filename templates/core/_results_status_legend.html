@@ -1,0 +1,38 @@
+<details class="panel entry-form" id="results-status-legend">
+  <summary>Legenda das situações e regras de cálculo</summary>
+  <p>A situação compara o avanço realizado desde a linha de base com o avanço esperado para o tempo decorrido. Por padrão, “Todos os anos” considera o período completo, até o prazo final do plano, sem usar a data atual para reduzir o prazo. Somente ao selecionar um ano o cálculo passa a considerar o encerramento desse ano, limitado ao fim do plano.</p>
+  <div class="responsive-table">
+    <table>
+      <thead><tr><th>Situação</th><th>Regra utilizada</th></tr></thead>
+      <tbody>
+        <tr><td>Todas as situações</td><td>Exibe todos os registros, sem filtrar a situação.</td></tr>
+        <tr><td>Aferidos</td><td>Registros com dados suficientes para calcular e classificar o atingimento.</td></tr>
+        <tr><td>Atenção, alerta ou crítico</td><td>Agrupa os registros com atingimento abaixo de 100%.</td></tr>
+        <tr><td><span class="signal signal-green">Conforme</span></td><td>Atingimento igual ou superior a 100%.</td></tr>
+        <tr><td><span class="signal signal-yellow">Atenção</span></td><td>Atingimento a partir de 90% e abaixo de 100%.</td></tr>
+        <tr><td><span class="signal signal-orange">Alerta</span></td><td>Atingimento a partir de 70% e abaixo de 90%.</td></tr>
+        <tr><td><span class="signal signal-red">Crítico</span></td><td>Atingimento abaixo de 70%.</td></tr>
+        <tr><td>Metas sem indicador</td><td>Metas sem indicador vinculado.</td></tr>
+        <tr><td>Sem aferição ou indicador</td><td>Agrupa registros sem classificação suficiente e metas sem indicador.</td></tr>
+        <tr><td>Sem aferição ou dado insuficiente</td><td>Não há aferição, faltam dados para calcular o atingimento, a meta é incompatível com o sentido do indicador, o período ainda não iniciou ou o indicador depende de uma faixa ainda não configurada.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>Quando existem projeções documentais</h3>
+  <p>Os indicadores com parâmetros de <strong>DADOS INDICADORES.pdf</strong> usam a base de 2024 e as projeções anuais de 2025 a 2034. Para níveis acumulados, o cumprimento é (resultado − base) ÷ (projeção esperada − base) × 100; a mesma fórmula mede reduções. Entre os pontos anuais informados, o valor esperado é interpolado pelos dias transcorridos.</p>
+  <p>Para entregas anuais, compara-se o resultado acumulado do ano com a parcela da previsão anual até a data; no período completo, somam-se os resultados anuais, usando a última aferição de cada ano, sem somar novamente os trimestres. Para patamares anuais, como satisfação de 70%, compara-se diretamente o resultado com o patamar. Um traço no quadro significa ausência de previsão naquele ano, não zero. “Não há” é preservado como ausência de base numérica; nesse caso, a comparação usa resultado ÷ projeção, sem apresentar zero como valor observado.</p>
+  <p>Por padrão, permanece a avaliação do período completo até 2034. Ao escolher um ano, usa-se a projeção até o fim daquele ano. Nos relatórios trimestrais, usa-se o fim do trimestre. As cores mantêm as faixas abaixo; onde a meta exige um valor estritamente maior ou menor, a igualdade ao limite não é Conforme.</p>
+  <h3>Como o tempo entra no cálculo sem projeções documentais</h3>
+  <ol>
+    <li><strong>Tempo decorrido:</strong> dias desde a data da linha de base ÷ total de dias entre a linha de base e o fim do plano. Limitado a 100% do prazo.</li>
+    <li><strong>Valor esperado até a data:</strong> linha de base + (meta final − linha de base) × proporção do tempo decorrido.</li>
+    <li><strong>Avanço realizado:</strong> (resultado − linha de base) ÷ (meta final − linha de base).</li>
+    <li><strong>Índice de cumprimento do ritmo:</strong> avanço realizado ÷ proporção do tempo decorrido × 100. Se houver piora em relação à linha de base, o índice é limitado a 0%.</li>
+  </ol>
+  <p><strong>Exemplo — maior é melhor:</strong> partir de 0 para alcançar 100. Com 25% do prazo decorrido e resultado 30, o índice é 120%: Conforme. Com o mesmo resultado após 50% do prazo, o índice cai para 60%: Crítico.</p>
+  <p><strong>Exemplo — menor é melhor:</strong> reduzir de 20 para 10. Na metade do prazo, espera-se chegar a 15. Se o resultado for 16, a redução realizada foi 4, diante de uma redução esperada de 5: índice de 80%, Alerta.</p>
+  <p><strong>Antes do início:</strong> o indicador fica sem classificação, com a indicação “Período não iniciado”. Após o prazo final, compara-se o avanço com 100% do caminho até a meta.</p>
+  <p><strong>Meta específica do período:</strong> sem uma trajetória calculável por linha de base, data e meta final, usa-se a meta do período registrada, sem aplicar o tempo novamente. Maior é melhor: resultado ÷ meta do período × 100. Menor é melhor: meta ÷ resultado × 100, considerando Conforme quando o resultado é igual ou inferior à meta. Sem dados suficientes para nenhuma dessas comparações, fica sem classificação.</p>
+  <p><strong>Meta com vários indicadores:</strong> vale a pior situação entre os indicadores classificados. Se nenhum puder ser classificado, a meta fica sem aferição suficiente. Sem indicadores vinculados, fica como “Sem indicador”.</p>
+  <p class="form-hint">Sem projeções documentais cadastradas, o cálculo usa uma distribuição uniforme do avanço ao longo do prazo do plano. O índice de ritmo e o percentual de execução da atividade são medidas diferentes. Indicadores do tipo “Faixa esperada” permanecem sem classificação enquanto a faixa não estiver configurada.</p>
+</details>

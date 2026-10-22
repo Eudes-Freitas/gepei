@@ -32,6 +32,7 @@
     <a class="button {% if display_mode == 'columns' %}button-primary{% else %}button-secondary{% endif %}" href="{{ columns_url }}" {% if display_mode == 'columns' %}aria-current="true"{% endif %}>Colunas</a>
     <a class="button {% if display_mode == 'list' %}button-primary{% else %}button-secondary{% endif %}" href="{{ list_url }}" {% if display_mode == 'list' %}aria-current="true"{% endif %}>Listagem</a>
   </nav>
+  <div class="execution-progress-legend" aria-label="Escala de execução: vermelho em 0%, amarelo em 50% e verde em 100%"><span>0%</span><i aria-hidden="true"></i><span>100% executado</span></div>
   {% if display_mode == "list" %}
     <section class="panel execution-list" aria-label="Listagem de planos de ação">
       <div class="responsive-table"><table>

@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -109,6 +110,10 @@ class StrategicAction(models.Model):
     def __str__(self):
         return f"{self.code} — {self.title}"
 
+    @property
+    def can_materialize_risks(self):
+        return self.status == self.Status.IN_PROGRESS and ActionPlan.objects.filter(action_id=self.pk).exists()
+
 
 class ActionPlan(models.Model):
     action = models.OneToOneField(StrategicAction, on_delete=models.CASCADE, related_name="action_plan")
@@ -117,6 +122,8 @@ class ActionPlan(models.Model):
 
 
 class Activity(models.Model):
+    PAUSED = "PAUSADA"
+
     class FundingSource(models.TextChoices):
         FAF = "FAF", "Fundo a Fundo (FaF)"
         CODE_0500 = "0500", "Fonte 0500"
@@ -132,7 +139,7 @@ class Activity(models.Model):
     progress = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField()
-    status = models.CharField(max_length=15, choices=StrategicAction.Status.choices, default=StrategicAction.Status.NOT_STARTED)
+    status = models.CharField(max_length=15, choices=[*StrategicAction.Status.choices, ("PAUSADA", "Pausada")], default=StrategicAction.Status.NOT_STARTED)
     expected_delivery = models.CharField(max_length=255, blank=True)
     requires_financial_resource = models.BooleanField(default=False)
     planned_cost = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
@@ -150,6 +157,13 @@ class Activity(models.Model):
 
     class Meta:
         ordering = ["position", "start_date", "end_date", "id"]
+
+    def save(self, *args, **kwargs):
+        if self.pk and self.blockers.filter(status__in=["ABERTO", "EM_TRATAMENTO"]).exists():
+            self.status = self.PAUSED
+            if kwargs.get("update_fields") is not None:
+                kwargs["update_fields"] = set(kwargs["update_fields"]) | {"status"}
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.title
@@ -205,6 +219,19 @@ class ActivityBlocker(models.Model):
 
     class Meta:
         ordering = ["status", "expected_resolution_date", "-created_at"]
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        activity = self.activity
+        if activity.blockers.filter(status__in=[self.Status.OPEN, self.Status.IN_TREATMENT]).exists():
+            activity.status = Activity.PAUSED
+        elif activity.status == Activity.PAUSED:
+            activity.status = (
+                StrategicAction.Status.COMPLETED if activity.progress >= 100
+                else StrategicAction.Status.IN_PROGRESS if activity.progress > 0
+                else StrategicAction.Status.NOT_STARTED
+            )
+        activity.save(update_fields=["status"])
 
     def __str__(self):
         return self.description[:80]
@@ -272,8 +299,39 @@ class Indicator(models.Model):
         on_delete=models.PROTECT,
         related_name="indicators",
     )
+    reference_parameters = models.JSONField(default=dict, blank=True)
+    responsible_units = models.ManyToManyField(OrganizationalUnit, blank=True, related_name="shared_indicators")
     artifacts = models.ManyToManyField(PlanArtifact, related_name="indicators", blank=True)
     targets = models.ManyToManyField(StrategicTarget, related_name="indicators", blank=True)
+
+    @property
+    def measurement_direction_label(self):
+        if not self.reference_parameters:
+            return self.get_direction_display()
+        parameters = self.reference_parameters
+        if parameters["mode"] == "threshold":
+            return "Patamar mínimo anual (projeção documental)"
+        from decimal import Decimal
+        base = Decimal(parameters["baseline_value"] or "0")
+        return ("Menor" if Decimal(parameters["final_value"]) < base else "Maior") + " é melhor (projeção documental)"
+
+    @property
+    def measurement_unit(self):
+        return self.reference_parameters.get("unit") or self.unit_of_measure
+
+    @property
+    def responsible_unit_ids(self):
+        ids = {unit.pk for unit in self.responsible_units.all()}
+        if self.responsible_unit_id:
+            ids.add(self.responsible_unit_id)
+        return ids
+
+    @property
+    def responsible_units_label(self):
+        units = {unit.pk: unit for unit in self.responsible_units.all()}
+        if self.responsible_unit_id:
+            units[self.responsible_unit_id] = self.responsible_unit
+        return ", ".join(sorted(unit.acronym or unit.name for unit in units.values())) or "A definir"
 
     def __str__(self):
         return f"{self.code} — {self.name}".strip(" —")
@@ -433,7 +491,7 @@ class Risk(models.Model):
         UNKNOWN = "INDETERMINADO", "Não é possível estimar o momento"
 
     action = models.ForeignKey(StrategicAction, on_delete=models.CASCADE, related_name="risks")
-    activity = models.ForeignKey(Activity, null=True, blank=True, on_delete=models.SET_NULL, related_name="risks")
+    activity = models.ForeignKey(Activity, on_delete=models.PROTECT, related_name="risks")
     is_unforeseen = models.BooleanField("Risco não previsto", default=False)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     title = models.CharField(max_length=255)
@@ -551,6 +609,11 @@ class RiskMaterialization(models.Model):
     evidence_attachment = models.FileField("Anexo da evidência", upload_to="risk_evidences/%Y/%m/", blank=True)
     recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     recorded_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        super().clean()
+        if self._state.adding and self.risk_id and not self.risk.action.can_materialize_risks:
+            raise ValidationError("Só é possível materializar um risco com plano de ação em andamento.")
 
     class Meta:
         ordering = ["-occurred_on", "-id"]

@@ -6,6 +6,7 @@ from django.contrib.auth.models import Group
 from django.db import transaction
 
 from .models import (
+    ActionPlan,
     Activity,
     ActivityBlocker,
     ActivityEvidence,
@@ -238,6 +239,40 @@ class ReportValidationForm(forms.Form):
         return cleaned_data
 
 
+class ActionPlanExecutionForm(forms.ModelForm):
+    class Meta:
+        model = StrategicAction
+        fields = ["title", "description", "due_date", "status", "participating_units", "funding_sources"]
+        labels = {
+            "title": "Título da ação estratégica",
+            "description": "Descrição",
+            "due_date": "Prazo da ação",
+            "status": "Situação da ação",
+            "participating_units": "Unidades participantes",
+            "funding_sources": "Fontes de financiamento",
+        }
+        widgets = {
+            "description": forms.Textarea(attrs={"rows": 3}),
+            "due_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+            "participating_units": forms.SelectMultiple(attrs={"size": 6}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["participating_units"].queryset = OrganizationalUnit.objects.order_by("name")
+
+
+class ActionPlanManagerForm(forms.ModelForm):
+    class Meta:
+        model = ActionPlan
+        fields = ["manager"]
+        labels = {"manager": "Responsável pelo plano"}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["manager"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
+
+
 class ActivityForm(forms.ModelForm):
     """Cadastro de atividade operacional dentro de um plano de ação."""
 
@@ -301,6 +336,7 @@ class ActivityForm(forms.ModelForm):
         self.action_plan = action_plan
         self.fields["executor"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
         self.fields["financial_responsible_unit"].queryset = OrganizationalUnit.objects.order_by("name")
+        self.fields["progress"].help_text = "Com 0%, a atividade permanece não iniciada. Um percentual acima de 0% inicia a execução; a evidência com anexo conclui a atividade em 100%."
         self.fields["start_date"].required = True
         self.fields["end_date"].required = True
         self.fields["weight"].help_text = "Informe um peso entre 0,01% e 100%. Se o total passar de 100%, os pesos das atividades existentes serão reduzidos proporcionalmente."
@@ -341,13 +377,20 @@ class ActivityForm(forms.ModelForm):
         if start_date and end_date and start_date > end_date:
             self.add_error("end_date", "A data de conclusão não pode ser anterior à data de início.")
 
-        if cleaned_data.get("status") == StrategicAction.Status.COMPLETED:
+        progress = cleaned_data.get("progress")
+        status = cleaned_data.get("status")
+        if status == StrategicAction.Status.COMPLETED or progress == 100:
             has_evidence = self.instance.pk and self.instance.evidences.exclude(attachment="").exists()
             if not has_evidence:
                 self.add_error(
                     "status",
                     "Para concluir a atividade, registre ao menos uma evidência com anexo (ícone de documento na lista de atividades).",
                 )
+            else:
+                cleaned_data["progress"] = Decimal("100")
+                cleaned_data["status"] = StrategicAction.Status.COMPLETED
+        elif progress is not None and status in (StrategicAction.Status.NOT_STARTED, StrategicAction.Status.IN_PROGRESS):
+            cleaned_data["status"] = StrategicAction.Status.IN_PROGRESS if progress > 0 else StrategicAction.Status.NOT_STARTED
 
         requires_financial_resource = cleaned_data.get("requires_financial_resource")
         planned_cost = cleaned_data.get("planned_cost")
@@ -385,7 +428,7 @@ class ActivityEvidenceForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["attachment"].required = True
-        self.fields["attachment"].help_text = "Obrigatório. Anexe o documento, relatório ou foto que comprova a entrega."
+        self.fields["attachment"].help_text = "Obrigatório. Ao salvar a evidência, a atividade será concluída automaticamente com 100% de execução."
 
 
 class ActivityBlockerForm(forms.ModelForm):
@@ -410,10 +453,34 @@ class ActivityBlockerForm(forms.ModelForm):
         self.fields["resolution_owner"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
 
 
+def validate_risk_timing(form, cleaned_data):
+    timing = cleaned_data.get("occurrence_timing")
+    exposure_start = cleaned_data.get("exposure_start_date")
+    exposure_end = cleaned_data.get("exposure_end_date")
+    expected_date = cleaned_data.get("expected_occurrence_date")
+    trigger = cleaned_data.get("trigger_description")
+    if timing == Risk.OccurrenceTiming.EXPOSURE_WINDOW:
+        if not exposure_start and not exposure_end:
+            form.add_error("exposure_start_date", "Informe ao menos o início ou o fim do período provável.")
+        elif exposure_start and exposure_end and exposure_start > exposure_end:
+            form.add_error("exposure_end_date", "O fim do período não pode ser anterior ao início.")
+    else:
+        cleaned_data["exposure_start_date"] = None
+        cleaned_data["exposure_end_date"] = None
+    if timing == Risk.OccurrenceTiming.DATE_OR_MILESTONE:
+        if not expected_date and not trigger:
+            form.add_error("trigger_description", "Informe uma data provável ou descreva o marco ou condição.")
+    else:
+        cleaned_data["expected_occurrence_date"] = None
+    return cleaned_data
+
+
 class ActivityRiskForm(forms.ModelForm):
+    register_another = forms.BooleanField(required=False, label="Cadastrar outro risco após salvar")
+    treatment_responsible = forms.ModelChoiceField(queryset=get_user_model().objects.filter(is_active=True), label="Responsável pelo tratamento")
     treatment = forms.ChoiceField(
         choices=(("", "---------"), ("Evitar", "Evitar"), ("Mitigar", "Mitigar"), ("Transferir", "Transferir"), ("Aceitar", "Aceitar")),
-        required=False,
+        required=True,
         label="Resposta ao risco",
     )
 
@@ -422,10 +489,15 @@ class ActivityRiskForm(forms.ModelForm):
         fields = [
             "title",
             "cause",
-            "owner",
+            "treatment_responsible",
             "probability",
             "impact",
             "status",
+            "occurrence_timing",
+            "exposure_start_date",
+            "exposure_end_date",
+            "expected_occurrence_date",
+            "trigger_description",
             "treatment",
             "preventive_measure",
             "contingency_measure",
@@ -433,14 +505,22 @@ class ActivityRiskForm(forms.ModelForm):
         labels = {
             "title": "Risco identificado",
             "cause": "Causa",
-            "owner": "Responsável pelo risco",
+            "treatment_responsible": "Responsável pelo tratamento",
             "probability": "Probabilidade (1 a 5)",
             "impact": "Impacto (1 a 5)",
             "status": "Situação",
+            "occurrence_timing": "Quando o risco pode ocorrer?",
+            "exposure_start_date": "Início do período de exposição",
+            "exposure_end_date": "Fim do período de exposição",
+            "expected_occurrence_date": "Data provável (opcional)",
+            "trigger_description": "Marco, sinal ou condição de ocorrência (opcional)",
             "preventive_measure": "Medida preventiva ou controle",
             "contingency_measure": "Medida de contingência",
         }
         widgets = {
+            "exposure_start_date": forms.DateInput(attrs={"type": "date"}),
+            "exposure_end_date": forms.DateInput(attrs={"type": "date"}),
+            "expected_occurrence_date": forms.DateInput(attrs={"type": "date"}),
             "cause": forms.Textarea(attrs={"rows": 2}),
             "preventive_measure": forms.Textarea(attrs={"rows": 2}),
             "contingency_measure": forms.Textarea(attrs={"rows": 2}),
@@ -450,7 +530,9 @@ class ActivityRiskForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["owner"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
+        self.fields["occurrence_timing"].choices = [("", "Selecione quando pode ocorrer"), *Risk.OccurrenceTiming.choices]
+        self.initial.setdefault("occurrence_timing", "")
+        self.fields["treatment_responsible"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
 
     def clean_probability(self):
         value = self.cleaned_data["probability"]
@@ -464,11 +546,16 @@ class ActivityRiskForm(forms.ModelForm):
             raise forms.ValidationError("Informe um valor entre 1 e 5.")
         return value
 
+    def clean(self):
+        return validate_risk_timing(self, super().clean())
+
 
 class RiskIdentificationForm(forms.ModelForm):
+    treatment_responsible = forms.ModelChoiceField(queryset=get_user_model().objects.filter(is_active=True), label="Responsável pelo tratamento")
+    register_another = forms.BooleanField(required=False, label="Cadastrar outro risco após salvar")
     treatment_decision = forms.ChoiceField(
-        choices=(("", "Definir posteriormente"), *RiskTreatment.Decision.choices),
-        required=False,
+        choices=(("", "Selecione a resposta"), *RiskTreatment.Decision.choices),
+        required=True,
         label="Resposta inicial ao risco",
     )
     treatment_due_date = forms.DateField(
@@ -484,7 +571,7 @@ class RiskIdentificationForm(forms.ModelForm):
             "activity",
             "title",
             "cause",
-            "owner",
+            "treatment_responsible",
             "probability",
             "impact",
             "occurrence_timing",
@@ -498,10 +585,10 @@ class RiskIdentificationForm(forms.ModelForm):
             "contingency_measure",
         ]
         labels = {
-            "activity": "Atividade afetada (opcional)",
+            "activity": "Atividade afetada",
             "title": "Risco identificado",
             "cause": "Causa",
-            "owner": "Responsável pelo risco",
+            "treatment_responsible": "Responsável pelo tratamento",
             "probability": "Probabilidade (1 a 5)",
             "impact": "Impacto (1 a 5)",
             "occurrence_timing": "Quando o risco pode ocorrer?",
@@ -527,8 +614,11 @@ class RiskIdentificationForm(forms.ModelForm):
 
     def __init__(self, *args, action_plan, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["activity"].required = True
+        self.fields["occurrence_timing"].choices = [("", "Selecione quando pode ocorrer"), *Risk.OccurrenceTiming.choices]
+        self.initial.setdefault("occurrence_timing", "")
         self.fields["activity"].queryset = action_plan.activities.order_by("position", "title")
-        self.fields["owner"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
+        self.fields["treatment_responsible"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
 
     def clean_probability(self):
         value = self.cleaned_data["probability"]
@@ -543,26 +633,26 @@ class RiskIdentificationForm(forms.ModelForm):
         return value
 
     def clean(self):
-        cleaned_data = super().clean()
-        timing = cleaned_data.get("occurrence_timing")
-        exposure_start = cleaned_data.get("exposure_start_date")
-        exposure_end = cleaned_data.get("exposure_end_date")
-        expected_date = cleaned_data.get("expected_occurrence_date")
-        trigger = cleaned_data.get("trigger_description")
-        if timing == Risk.OccurrenceTiming.EXPOSURE_WINDOW:
-            if not exposure_start and not exposure_end:
-                self.add_error("exposure_start_date", "Informe ao menos o início ou o fim do período provável.")
-            elif exposure_start and exposure_end and exposure_start > exposure_end:
-                self.add_error("exposure_end_date", "O fim do período não pode ser anterior ao início.")
-        else:
-            cleaned_data["exposure_start_date"] = None
-            cleaned_data["exposure_end_date"] = None
-        if timing == Risk.OccurrenceTiming.DATE_OR_MILESTONE:
-            if not expected_date and not trigger:
-                self.add_error("trigger_description", "Informe uma data provável ou descreva o marco ou condição.")
-        else:
-            cleaned_data["expected_occurrence_date"] = None
-        return cleaned_data
+        return validate_risk_timing(self, super().clean())
+
+
+class ActivityPlanningRiskForm(RiskIdentificationForm):
+    """Risco da atividade que está sendo cadastrada no mesmo envio."""
+
+    class Meta(RiskIdentificationForm.Meta):
+        fields = [field for field in RiskIdentificationForm.Meta.fields if field != "activity"]
+
+    def __init__(self, *args, **kwargs):
+        forms.ModelForm.__init__(self, *args, **kwargs)
+        self.fields.pop("register_another", None)
+        self.fields["occurrence_timing"].choices = [("", "Selecione quando pode ocorrer"), *Risk.OccurrenceTiming.choices]
+        self.initial.setdefault("occurrence_timing", "")
+        self.fields["treatment_responsible"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
+
+
+ActivityPlanningRiskFormSet = forms.formset_factory(
+    ActivityPlanningRiskForm, extra=0, can_delete=True, max_num=20, validate_max=True,
+)
 
 
 class RiskCreateForm(RiskIdentificationForm):
@@ -573,14 +663,17 @@ class RiskCreateForm(RiskIdentificationForm):
         label="Ação estratégica (AE) tratada",
         empty_label="Selecione a AE",
     )
-    field_order = ["action", "activity", "title", "cause", "owner", "probability", "impact"]
+    field_order = ["action", "activity", "title", "cause", "treatment_responsible", "probability", "impact"]
 
     def __init__(self, *args, actions, **kwargs):
         forms.ModelForm.__init__(self, *args, **kwargs)
         self.fields["action"].queryset = actions
         self.fields["action"].label_from_instance = lambda action: f"{action.code} · {action.title}"
+        self.fields["activity"].required = True
+        self.fields["occurrence_timing"].choices = [("", "Selecione quando pode ocorrer"), *Risk.OccurrenceTiming.choices]
+        self.initial.setdefault("occurrence_timing", "")
         self.fields["activity"].queryset = Activity.objects.filter(action_plan__action__in=actions).order_by("position", "title")
-        self.fields["owner"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
+        self.fields["treatment_responsible"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
 
     def clean(self):
         cleaned_data = super().clean()
@@ -642,19 +735,17 @@ class RiskTimingForm(forms.ModelForm):
 class RiskIdentityForm(forms.ModelForm):
     class Meta:
         model = Risk
-        fields = ["title", "cause", "activity", "owner"]
+        fields = ["title", "cause", "activity"]
         labels = {
             "title": "Risco identificado",
             "cause": "Causa",
-            "activity": "Atividade afetada (opcional)",
-            "owner": "Responsável pelo risco",
+            "activity": "Atividade afetada",
         }
         widgets = {"cause": forms.Textarea(attrs={"rows": 3})}
 
     def __init__(self, *args, action_plan=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["activity"].queryset = action_plan.activities.all() if action_plan is not None else Activity.objects.none()
-        self.fields["owner"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
 
 
 class RiskAssessmentForm(forms.ModelForm):
@@ -726,9 +817,16 @@ class RiskMaterializationForm(forms.ModelForm):
             "actions_taken": forms.Textarea(attrs={"rows": 2}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, action=None, **kwargs):
+        self.action = action
         super().__init__(*args, **kwargs)
         self.fields["occurred_on"].help_text = "Preencha somente depois que o risco tiver se materializado."
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if not self.instance.pk and self.action is not None and not self.action.can_materialize_risks:
+            raise forms.ValidationError("Só é possível materializar um risco com plano de ação em andamento.")
+        return cleaned_data
 
 
 class RiskAcceptanceForm(forms.ModelForm):

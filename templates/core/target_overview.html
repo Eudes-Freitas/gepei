@@ -11,9 +11,14 @@
     {% if plan %}<span class="chip chip-neutral">{{ plan.acronym }} · {{ plan.start_date|date:"Y" }}–{{ plan.end_date|date:"Y" }}</span>{% endif %}
   </section>
 
+  {% include "core/_results_status_legend.html" %}
+
   {% include "core/_results_tabs.html" %}
 {% if selected_target %}<p class="form-hint">Exibindo somente a meta selecionada. <a href="{% url 'target_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}">Ver todas as metas</a></p>{% endif %}
   <form class="dashboard-filters" method="get" aria-label="Filtros das metas">
+    <label>Ano
+      <select name="year"><option value="">Todos os anos</option>{% for year in available_years %}<option value="{{ year }}" {% if selected_year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>{% endfor %}</select>
+    </label>
     <label>Plano
       <select name="plan"><option value="">Todos os planos</option>{% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}</select>
     </label>
@@ -86,15 +91,15 @@
     {% endif %}
   </section>
   {% if target_form %}
-  <dialog class="panel activity-form-panel" id="target-form" aria-labelledby="target-form-title" {% if target_form.errors or editing_target %}data-open-on-load{% endif %}>
+  <dialog closedby="none" class="panel activity-form-panel" id="target-form" aria-labelledby="target-form-title" {% if target_form.errors or editing_target %}data-open-on-load{% endif %}>
     <div class="dialog-heading"><div><p class="eyebrow">{% if editing_target %}Editar meta{% else %}Nova meta{% endif %}</p><h2 id="target-form-title">{% if editing_target %}Alterar {{ editing_target.code|default:"meta" }}{% else %}Cadastrar meta{% endif %}</h2></div><button class="icon-button dialog-close" type="button" data-close-target-form aria-label="Fechar">×</button></div>
     <p class="form-hint">A meta fica vinculada a um objetivo do plano e pode ser medida por um ou mais indicadores.</p>
     <form method="post" class="activity-form">{% csrf_token %}
       {% if editing_target %}<input type="hidden" name="target_id" value="{{ editing_target.id }}">{% endif %}
       {% for field in target_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}
-      <div class="form-buttons"><button class="button button-primary" type="submit">{% if editing_target %}Salvar alterações{% else %}Cadastrar meta{% endif %}</button><button class="button button-secondary" type="button" data-close-target-form>Cancelar</button></div>
+      <div class="form-buttons"><button class="button button-primary" type="submit">{% if editing_target %}Salvar alterações{% else %}Cadastrar meta{% endif %}</button></div>
     </form>
-    <script>(function(){var dialog=document.getElementById('target-form');var open=document.querySelector('[data-open-target-form]');if(open){open.addEventListener('click',function(){dialog.showModal();});}dialog.querySelectorAll('[data-close-target-form]').forEach(function(b){b.addEventListener('click',function(){dialog.close();});});dialog.addEventListener('click',function(e){if(e.target===dialog){dialog.close();}});if(dialog.hasAttribute('data-open-on-load')){dialog.showModal();}}());</script>
+    <script>(function(){var dialog=document.getElementById('target-form');var open=document.querySelector('[data-open-target-form]');if(open){open.addEventListener('click',function(){dialog.showModal();});}dialog.querySelectorAll('[data-close-target-form]').forEach(function(b){b.addEventListener('click',function(){dialog.close();});});if(dialog.hasAttribute('data-open-on-load')){dialog.showModal();}}());</script>
   </dialog>
   {% endif %}
 {% endblock %}

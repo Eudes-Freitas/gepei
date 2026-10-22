@@ -7,6 +7,8 @@
     <span class="signal signal-{{ signal.code }}"><i></i>{{ signal.label }}</span>
   </section>
 
+  <p class="form-hint">Setores responsáveis: {{ indicator.responsible_units_label }}</p>
+
   <section class="metrics indicator-detail-metrics" aria-label="Situação atual do indicador">
     <article class="metric-card"><span>Resultado atual</span><strong>{% if signal.measurement %}{{ signal.measurement.measured_value }}{% else %}—{% endif %}</strong></article>
     <article class="metric-card"><span>Meta do período</span><strong>{% if signal.measurement.expected_value != None %}{{ signal.measurement.expected_value|floatformat:"-1" }}{% else %}—{% endif %}</strong></article>
@@ -25,19 +27,20 @@
           <div class="empty-state"><strong>Sem dados para o gráfico.</strong><span>Registre aferições com resultado numérico para acompanhar a evolução.</span></div>
         {% endif %}
       </article>{% endif %}
+      {% include "core/_indicator_reference.html" with reference=indicator.reference_parameters %}
       <article class="panel indicator-definition">
         <div class="panel-heading"><div><p class="eyebrow">Definição</p><h2>Ficha do indicador</h2></div><div class="panel-heading-actions">{% if definition_form %}<button class="button button-secondary" type="button" data-open-definition-form>Editar</button>{% endif %}<button class="button button-secondary" type="button" data-toggle-definition aria-expanded="true" aria-controls="indicator-definition-content">Recolher</button></div></div>
         <dl class="definition-grid" id="indicator-definition-content">
           <div><dt>Tipo</dt><dd>{{ indicator.get_indicator_type_display|default:"A definir" }}</dd></div>
           <div><dt>Fórmula</dt><dd>{{ indicator.formula|default:"A definir" }}</dd></div>
-          <div><dt>Unidade de medida</dt><dd>{{ indicator.unit_of_measure|default:"A definir" }}</dd></div>
+          <div><dt>Unidade de medida</dt><dd>{{ indicator.measurement_unit|default:"A definir" }}</dd></div>
           <div><dt>Fonte de dados</dt><dd>{{ indicator.data_source|default:"A definir" }}</dd></div>
           <div><dt>Linha de base</dt><dd>{{ baseline|default:"A definir" }}</dd></div>
           {% with last=signal.measurement %}
           <div><dt>Responsável pela aferição</dt><dd>{% if last %}{{ last.responsible_name }}{% else %}A definir{% endif %}</dd></div>
           <div><dt>Setor responsável</dt><dd>{% if last.responsible_unit_label %}{{ last.responsible_unit_label }}{% else %}{{ indicator.responsible_unit.acronym|default:indicator.responsible_unit.name|default:"A definir" }}{% endif %}</dd></div>
           {% endwith %}
-          <div><dt>Sentido esperado</dt><dd>{{ indicator.get_direction_display }}</dd></div>
+          <div><dt>Sentido esperado</dt><dd>{{ indicator.measurement_direction_label }}</dd></div>
         </dl>
       </article>
 
@@ -79,9 +82,9 @@
     </div>
   </section>
 
-  {% if can_add_measurement or can_edit_measurement %}<dialog class="panel activity-form-panel indicator-measurement-panel" aria-labelledby="measurement-form-title" {% if measurement_form.errors or editing_measurement %}data-open-on-load{% endif %}>
+  {% if can_add_measurement or can_edit_measurement %}<dialog closedby="none" class="panel activity-form-panel indicator-measurement-panel" aria-labelledby="measurement-form-title" {% if measurement_form.errors or editing_measurement %}data-open-on-load{% endif %}>
     <div class="dialog-heading"><div><p class="eyebrow">{% if editing_measurement %}Editar aferição{% else %}Nova aferição{% endif %}</p><h2 id="measurement-form-title">{% if editing_measurement %}Alterar aferição de {{ editing_measurement.reference_period }}{% else %}Registrar resultado do período{% endif %}</h2></div><button class="icon-button dialog-close" type="button" data-close-measurement-form aria-label="Fechar">×</button></div>
-    <p class="form-hint">A meta do período é calculada automaticamente: evolução linear da linha de base, na data da linha de base, até a meta final no fim do plano, no último dia do período de aferição. O semáforo compara o resultado com essa meta.</p>
+    <p class="form-hint">A meta do período registrada segue a evolução linear da linha de base até a meta final, no último dia do período aferido. Por padrão, a situação considera o avanço desde a linha de base até a meta final, no período completo do plano. Na lista de metas e indicadores, selecionar um ano ajusta o cálculo ao encerramento desse ano, limitado ao prazo final.</p>
     <form method="post" enctype="multipart/form-data" class="activity-form">
       {% csrf_token %}
       {% if editing_measurement %}<input type="hidden" name="measurement_id" value="{{ editing_measurement.id }}">{% endif %}
@@ -90,18 +93,18 @@
     </form>
   </dialog>{% endif %}
   {% if definition_form %}
-  <dialog class="panel activity-form-panel" id="definition-form" aria-labelledby="definition-form-title" {% if definition_form.errors %}data-open-on-load{% endif %}>
+  <dialog closedby="none" class="panel activity-form-panel" id="definition-form" aria-labelledby="definition-form-title" {% if definition_form.errors %}data-open-on-load{% endif %}>
     <div class="dialog-heading"><div><p class="eyebrow">Definição</p><h2 id="definition-form-title">Editar ficha do indicador</h2></div><button class="icon-button dialog-close" type="button" data-close-definition-form aria-label="Fechar">×</button></div>
     <form method="post" class="activity-form">
       {% csrf_token %}
       <input type="hidden" name="operation" value="edit_definition">
       {% for field in definition_form %}<div class="form-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<span class="field-error">{{ error }}</span>{% endfor %}</div>{% endfor %}
-      <div class="form-buttons"><button class="button button-primary" type="submit">Salvar ficha</button><button class="button button-secondary" type="button" data-close-definition-form>Cancelar</button></div>
+      <div class="form-buttons"><button class="button button-primary" type="submit">Salvar ficha</button></div>
     </form>
   </dialog>
   {% endif %}
 
-  <dialog class="panel activity-form-panel measurement-view-panel" id="measurement-view" aria-labelledby="measurement-view-title">
+  <dialog closedby="none" class="panel activity-form-panel measurement-view-panel" id="measurement-view" aria-labelledby="measurement-view-title">
     <div class="dialog-heading"><div><p class="eyebrow">Aferição registrada</p><h2 id="measurement-view-title">Detalhes da aferição</h2></div><button class="icon-button dialog-close" type="button" data-close-measurement-view aria-label="Fechar">×</button></div>
     <dl class="definition-grid">
       <div><dt>Linha de base</dt><dd data-field="baseline"></dd></div>
@@ -173,7 +176,7 @@
         definition.querySelectorAll('[data-close-definition-form]').forEach(function (button) {
           button.addEventListener('click', function () { definition.close(); });
         });
-        definition.addEventListener('click', function (event) { if (event.target === definition) { definition.close(); } });
+
         if (definition.hasAttribute('data-open-on-load')) { definition.showModal(); }
       }
       var definitionToggle = document.querySelector('[data-toggle-definition]');
@@ -209,12 +212,12 @@
           });
         });
         view.querySelector('[data-close-measurement-view]').addEventListener('click', function () { view.close(); });
-        view.addEventListener('click', function (event) { if (event.target === view) { view.close(); } });
+
       }
       if (!dialog) { return; }
       if (open) { open.addEventListener('click', function () { dialog.showModal(); }); }
       dialog.querySelector('[data-close-measurement-form]').addEventListener('click', function () { dialog.close(); });
-      dialog.addEventListener('click', function (event) { if (event.target === dialog) { dialog.close(); } });
+
       if (dialog.hasAttribute('data-open-on-load')) { dialog.showModal(); }
     }());
   </script>
