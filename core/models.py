@@ -565,11 +565,16 @@ class RiskTreatment(models.Model):
 
 
 class RiskMaterialization(models.Model):
+    class MeasureSource(models.TextChoices):
+        PLANNED = "PREVISTA", "Providência prevista adotada"
+        NEW = "NOVA", "Nova providência"
+
     risk = models.ForeignKey(Risk, on_delete=models.CASCADE, related_name="materializations")
     occurred_on = models.DateField()
     description = models.TextField()
     actual_impact = models.TextField()
     actions_taken = models.TextField()
+    measure_source = models.CharField(max_length=8, choices=MeasureSource.choices, blank=True)
     evidence_reference = models.CharField(max_length=255, blank=True)
     evidence_attachment = models.FileField("Anexo da evidência", upload_to="risk_evidences/%Y/%m/", blank=True)
     recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)

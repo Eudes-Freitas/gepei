@@ -1575,6 +1575,10 @@ def risk_overview(request):
 def _sync_action_progress(action, action_plan):
     activities = list(action_plan.activities.all())
     if not activities:
+        action.progress = 0
+        if action.status not in [StrategicAction.Status.BLOCKED, StrategicAction.Status.SUSPENDED]:
+            action.status = StrategicAction.Status.NOT_STARTED
+        action.save(update_fields=["progress", "status"])
         return
     total_progress = sum((activity.weight * activity.progress / 100 for activity in activities), 0)
     action.progress = total_progress
@@ -1957,7 +1961,9 @@ def activity_follow_up(request, action_id, activity_id):
     }
 
     progress_form = ActivityProgressForm(instance=activity, prefix="progress")
-    evidence_form = ActivityEvidenceForm(prefix="evidence")
+    evidence_form = ActivityEvidenceForm(
+        prefix="evidence", initial={"title": activity.expected_delivery}
+    )
     blocker_form = ActivityBlockerForm(prefix="blocker")
     risk_form = ActivityRiskForm(prefix="risk")
     selectable_risks = action.risks.filter(activity=activity).order_by("title") if can_view["risks"] else Risk.objects.none()
@@ -1984,6 +1990,15 @@ def activity_follow_up(request, action_id, activity_id):
                     _require_permission(request.user, "view_riskmaterialization")
                 occurrence_form = RiskMaterializationForm(request.POST, request.FILES, instance=current_occurrence, prefix="occurrence")
                 valid = occurrence_form.is_valid() and valid
+                treatment = selected_risk.treatments.first() if selected_risk else None
+                if valid and treatment and (treatment.preventive_measure or treatment.contingency_measure):
+                    measure_source = occurrence_form.cleaned_data.get("measure_source")
+                    if not measure_source:
+                        occurrence_form.add_error("measure_source", "Informe se a providência prevista foi adotada ou se houve uma nova.")
+                        valid = False
+                    elif measure_source == RiskMaterialization.MeasureSource.NEW and not occurrence_form.cleaned_data.get("actions_taken", "").strip():
+                        occurrence_form.add_error("actions_taken", "Descreva a nova providência adotada.")
+                        valid = False
             if valid:
                 if selected_risk is None:
                     selected_risk = unforeseen_form.save(commit=False)
@@ -2019,7 +2034,7 @@ def activity_follow_up(request, action_id, activity_id):
             _sync_activity_status(activity)
             _sync_action_progress(action, activity.action_plan)
             messages.success(request, "Execução da atividade atualizada.")
-            return redirect("activity_follow_up", action_id=action.id, activity_id=activity.id)
+            return redirect(reverse("activity_follow_up", args=[action.id, activity.id]) + "#inicio")
     elif operation == "add_evidence":
         evidence_form = ActivityEvidenceForm(request.POST, request.FILES, prefix="evidence")
         if evidence_form.is_valid():
@@ -2051,9 +2066,11 @@ def activity_follow_up(request, action_id, activity_id):
     risk_prefill = {}
     can_view_occurrence = request.user.has_perm("core.view_riskmaterialization")
     can_edit_occurrence = can_view_occurrence and request.user.has_perm("core.change_riskmaterialization") and not request.read_only_other_unit
-    for item in selectable_risks.prefetch_related("materializations"):
+    for item in selectable_risks.prefetch_related("materializations", "treatments"):
         latest = next(iter(item.materializations.all()), None)
+        treatment = next(iter(item.treatments.all()), None)
         risk_prefill[str(item.id)] = {
+            "planned_measure": treatment.preventive_measure or treatment.contingency_measure if treatment else "",
             "materialized": "SIM" if latest or item.status == Risk.Status.MATERIALIZED else "NAO",
             "has_occurrence": latest is not None,
             "can_view": can_view_occurrence,
@@ -2064,6 +2081,7 @@ def activity_follow_up(request, action_id, activity_id):
                 "description": latest.description,
                 "actual_impact": latest.actual_impact,
                 "actions_taken": latest.actions_taken,
+                "measure_source": latest.measure_source,
                 "evidence_reference": latest.evidence_reference,
             } if latest and can_view_occurrence else {},
         }
@@ -2082,7 +2100,7 @@ def activity_follow_up(request, action_id, activity_id):
             "can_view": can_view,
             "evidences": evidences,
             "blockers": activity.blockers.select_related("resolution_owner", "created_by") if can_view["blockers"] else [],
-            "risks": activity.risks.select_related("owner") if can_view["risks"] else [],
+            "risks": activity.risks.select_related("owner").prefetch_related("treatments") if can_view["risks"] else [],
             "evidence_form": evidence_form,
             "blocker_form": blocker_form,
             "risk_form": risk_form,

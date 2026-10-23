@@ -749,12 +749,13 @@ class RiskTreatmentForm(forms.ModelForm):
 class RiskMaterializationForm(forms.ModelForm):
     class Meta:
         model = RiskMaterialization
-        fields = ["occurred_on", "description", "actual_impact", "actions_taken", "evidence_reference", "evidence_attachment"]
+        fields = ["occurred_on", "description", "actual_impact", "measure_source", "actions_taken", "evidence_reference", "evidence_attachment"]
         labels = {
             "occurred_on": "Data em que ocorreu (registro posterior)",
             "description": "O que ocorreu",
             "actual_impact": "Impacto ocorrido",
             "actions_taken": "Providências adotadas",
+            "measure_source": "Qual providência foi adotada?",
             "evidence_reference": "Referência da evidência",
             "evidence_attachment": "Anexo da evidência do risco (opcional)",
         }
@@ -763,11 +764,14 @@ class RiskMaterializationForm(forms.ModelForm):
             "description": forms.Textarea(attrs={"rows": 2}),
             "actual_impact": forms.Textarea(attrs={"rows": 2}),
             "actions_taken": forms.Textarea(attrs={"rows": 2}),
+            "measure_source": forms.RadioSelect,
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["occurred_on"].help_text = "Preencha somente depois que o risco tiver se materializado."
+        self.fields["measure_source"].required = False
+        self.fields["measure_source"].choices = RiskMaterialization.MeasureSource.choices
 
 
 class RiskAcceptanceForm(forms.ModelForm):
@@ -997,7 +1001,7 @@ class ActivityRiskReportForm(forms.Form):
     risk = forms.ModelChoiceField(queryset=Risk.objects.none(), required=False, label="Qual risco?", empty_label="Cadastrar risco não previsto")
     materialized = forms.ChoiceField(label="O risco se materializou?", required=False, choices=(("", "Selecione"), ("SIM", "Sim"), ("NAO", "Não")))
 
-    edit_materialization = forms.BooleanField(required=False, label="Editar os dados de materialização já cadastrados")
+    edit_materialization = forms.BooleanField(required=False, label="Atualizar o registro desta ocorrência")
 
     def __init__(self, *args, risks, can_create=True, **kwargs):
         super().__init__(*args, **kwargs)

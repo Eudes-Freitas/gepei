@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Acompanhamento da atividade | GEPEI{% endblock %}
 {% block content %}
+  <span id="inicio"></span>
   <a class="back-link" href="{% url 'action_plan_detail' action.id %}">← Voltar ao plano de ação</a>
   <section class="action-detail-heading">
     <div>
@@ -85,6 +86,7 @@
               {% if risk.is_unforeseen %}<span class="chip chip-warning">Risco não previsto</span>{% endif %}
               <p><strong>Causa:</strong> {{ risk.cause }}</p>
               {% if risk.preventive_measure %}<p><strong>Controle:</strong> {{ risk.preventive_measure }}</p>{% endif %}
+              {% if perms.core.view_risktreatment %}{% for treatment in risk.treatments.all %}<div class="activity-treatment-card"><strong>Tratamento previsto · {{ treatment.get_decision_display }}</strong>{% if treatment.preventive_measure %}<p><strong>Medida preventiva:</strong> {{ treatment.preventive_measure }}</p>{% endif %}{% if treatment.contingency_measure %}<p><strong>Contingência:</strong> {{ treatment.contingency_measure }}</p>{% endif %}</div>{% endfor %}{% endif %}
             </div>
           {% empty %}<div class="empty-state"><span>Nenhum risco vinculado à atividade.</span></div>{% endfor %}
         </div>
@@ -92,12 +94,12 @@
         <summary>Informar risco</summary>
         <form method="post" enctype="multipart/form-data" class="activity-form" data-risk-report>{% csrf_token %}<input type="hidden" name="operation" value="report_risk">
           {% for field in risk_report_form %}{% if field.name != "edit_materialization" %}{% include "core/_form_field.html" with field=field %}{% endif %}{% endfor %}
-          <div data-edit-occurrence hidden>{{ risk_report_form.edit_materialization }} {{ risk_report_form.edit_materialization.label_tag }}</div>
+          <div hidden>{{ risk_report_form.edit_materialization }}</div>
           <p class="form-hint" data-occurrence-notice hidden></p>
           {% if risk_report_form.non_field_errors %}<div class="field-error">{{ risk_report_form.non_field_errors }}</div>{% endif %}
           {% if perms.core.add_risk %}<fieldset data-unforeseen-risk hidden disabled><legend>Risco não previsto</legend><p class="form-hint">Preencha os dados somente se este risco ainda não estiver cadastrado para a ação.</p>{% for field in unforeseen_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}</fieldset>{% endif %}
           <a data-occurrence-attachment hidden target="_blank" rel="noopener">Abrir anexo da evidência do risco</a>
-          <fieldset data-risk-occurrence hidden disabled><legend>Materialização do risco</legend>{% for field in occurrence_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}</fieldset>
+          <fieldset data-risk-occurrence hidden disabled><legend>Materialização do risco</legend>{% for field in occurrence_form %}{% if field.name == "measure_source" %}<div class="activity-measure-choice" data-measure-choice hidden><strong>Qual providência foi adotada?</strong><p data-planned-measure></p>{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% elif field.name == "actions_taken" %}<div class="form-field" data-actions-taken>{{ field.label_tag }}{{ field }}<small class="form-hint">Você pode ajustar a sugestão para descrever exatamente o que foi feito.</small>{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% elif field.name != "evidence_reference" and field.name != "evidence_attachment" %}{% include "core/_form_field.html" with field=field %}{% endif %}{% endfor %}</fieldset>
           <button class="button button-primary" type="submit">Salvar informação do risco</button>
         </form>
         {{ risk_prefill|json_script:"activity-risk-prefill" }}
@@ -108,16 +110,31 @@
           var materialized=form.querySelector('[name="risk-report-materialized"]');
           var materializedBox=materialized.closest('.form-field');
           var edit=form.querySelector('[name="risk-report-edit_materialization"]');
-          var editBox=form.querySelector('[data-edit-occurrence]');
           var notice=form.querySelector('[data-occurrence-notice]');
           var occurrence=form.querySelector('[data-risk-occurrence]');
+          var measureSources=Array.from(form.querySelectorAll('[name="occurrence-measure_source"]'));
+          var measureChoice=form.querySelector('[data-measure-choice]');
+          var actionsTaken=form.querySelector('[name="occurrence-actions_taken"]');
+          var actionsBox=form.querySelector('[data-actions-taken]');
+          var plannedText=form.querySelector('[data-planned-measure]');
+          function selectedMeasure(){var selected=measureSources.find(function(field){return field.checked;});return selected?selected.value:'';}
+          function updateMeasure(load,saved){
+            var planned=saved&&saved.planned_measure;
+            measureChoice.hidden=!planned;
+            measureSources.forEach(function(field){field.disabled=!planned;});
+            plannedText.textContent=planned?'Providência prevista: '+planned:'';
+            if(load){var source=saved&&saved.occurrence.measure_source||'';measureSources.forEach(function(field){field.checked=field.value===source;});}
+            if(planned&&selectedMeasure()==='PREVISTA'&&!actionsTaken.value){actionsTaken.value=planned;}
+            actionsBox.hidden=!!planned&&!selectedMeasure();
+          }
           function update(load){
             var saved=data[risk.value];
             if(load){
               edit.checked=false;
               materialized.value=saved?saved.materialized:'SIM';
-              occurrence.querySelectorAll('input,textarea').forEach(function(field){var name=field.name.replace('occurrence-','');field.value=saved&&saved.occurrence[name]||'';});
+              occurrence.querySelectorAll('input:not([type="radio"]):not([type="file"]),textarea').forEach(function(field){var name=field.name.replace('occurrence-','');field.value=saved&&saved.occurrence[name]||'';});
             }
+            updateMeasure(load,saved);
             var unforeseen=form.querySelector('[data-unforeseen-risk]');
             if(unforeseen){unforeseen.hidden=!!risk.value;unforeseen.disabled=!!risk.value;}
             materializedBox.hidden=!risk.value;
@@ -128,15 +145,15 @@
             if(saved&&saved.attachment_url){attachment.href=saved.attachment_url;}else{attachment.removeAttribute('href');}
             var existing=saved&&saved.has_occurrence;
             var show=!risk.value||materialized.value==='SIM';
-            editBox.hidden=!(show&&existing&&saved.can_edit);
+            if(load){edit.checked=!!(existing&&saved.can_edit);}
             occurrence.hidden=!show||(existing&&!saved.can_view);
             occurrence.disabled=!show||(existing&&!edit.checked);
             notice.hidden=!(show&&existing);
-            notice.textContent=existing&&!saved.can_view?'Materialização já registrada. Sem permissão para visualizar seus detalhes.':'Dados já cadastrados. Mantenha-os como estão ou marque a opção de editar.';
+            notice.textContent=existing&&!saved.can_view?'Materialização já registrada. Sem permissão para visualizar seus detalhes.':existing&&!saved.can_edit?'Dados já cadastrados. Sem permissão para editar.':'Dados da ocorrência carregados. Você pode editar a providência e os demais campos antes de salvar.';
           }
           risk.addEventListener('change',function(){update(true);});
           materialized.addEventListener('change',function(){update(false);});
-          edit.addEventListener('change',function(){update(false);});
+          measureSources.forEach(function(field){field.addEventListener('change',function(){var saved=data[risk.value];if(field.value==='NOVA'){actionsTaken.value=saved.occurrence.measure_source==='NOVA'?saved.occurrence.actions_taken:'';}else{actionsTaken.value=saved.occurrence.measure_source==='PREVISTA'?saved.occurrence.actions_taken:saved.planned_measure;}updateMeasure(false,saved);actionsTaken.focus();});});
           update({% if risk_report_form.is_bound %}false{% else %}true{% endif %});
         }());</script>
       </details>{% endif %}{% endif %}

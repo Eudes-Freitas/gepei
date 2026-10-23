@@ -157,6 +157,12 @@ td .financial-summary,td .financial-summary > div { justify-items:center; justif
 @media (max-width:800px) { .risk-workspace { grid-template-columns:1fr; } .risk-side-menu { position:static; flex-direction:row; flex-wrap:wrap; } }
 
 /* Painel executivo (modelo do protótipo): cartões, donut, barras e indicadores, tudo clicável */
+.activity-treatment-card { background:#fff6d9; border:1px solid #e8cb73; border-left:4px solid #d79b00; border-radius:.5rem; color:#654b12; margin-top:.7rem; padding:.7rem .8rem; }
+.activity-treatment-card p { margin:.4rem 0 0; }
+.activity-measure-choice { background:#fff6d9; border:1px solid #e8cb73; border-radius:.55rem; margin:.8rem 0; padding:.85rem; }
+.activity-measure-choice p { color:#654b12; margin:.4rem 0 .65rem; }
+.activity-measure-choice ul { display:grid; gap:.4rem; list-style:none; margin:0; padding:0; }
+.activity-measure-choice label { cursor:pointer; }
 .dx-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.8rem; margin-bottom:1rem; }
 .dx-kpi { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:.3rem; background:#fff; border:1px solid #e3eaf1; border-radius:15px; padding:1.1rem 1.2rem; box-shadow:0 8px 28px rgba(11,42,74,.07); color:#172b3a; text-decoration:none; transition:transform .12s, box-shadow .12s; }
 .dx-kpi::before { content:""; position:absolute; inset:0 0 auto 0; height:3px; border-radius:15px 15px 0 0; background:#1769aa; }

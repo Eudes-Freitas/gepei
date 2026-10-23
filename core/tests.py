@@ -1051,6 +1051,48 @@ class DashboardAndRiskTests(TestCase):
             self.user.user_permissions.remove(Permission.objects.get(codename="view_activityevidence"))
             self.assertEqual(self.client.get(url).status_code, 403)
 
+    def test_activity_occurrence_records_planned_or_new_measure(self):
+        self.client.login(username="copin", password="senha-segura")
+        action_plan = ActionPlan.objects.create(action=self.action, manager=self.user)
+        activity = Activity.objects.create(
+            action_plan=action_plan, executor=self.user, title="Entrega",
+            weight=100, end_date=date(2026, 12, 31),
+        )
+        risk = Risk.objects.create(
+            action=self.action, activity=activity, owner=self.user,
+            title="Atraso", cause="Teste", probability=2, impact=2,
+        )
+        RiskTreatment.objects.create(
+            risk=risk, decision=RiskTreatment.Decision.MITIGATE,
+            responsible=self.user, created_by=self.user,
+            preventive_measure="Acionar equipe responsável",
+        )
+        url = f"/planos-de-acao/{self.action.id}/atividades/{activity.id}/acompanhar/"
+        response = self.client.get(url)
+        self.assertContains(response, "Tratamento previsto")
+        self.assertContains(response, "Acionar equipe responsável")
+        payload = {
+            "operation": "report_risk", "risk-report-risk": risk.pk,
+            "risk-report-materialized": "SIM", "occurrence-occurred_on": "2026-10-16",
+            "occurrence-description": "Evento ocorrido", "occurrence-actual_impact": "Atraso",
+            "occurrence-actions_taken": "Acionar equipe responsável",
+        }
+        self.assertEqual(self.client.post(url, payload).status_code, 200)
+        self.assertFalse(risk.materializations.exists())
+        response = self.client.post(url, {**payload, "occurrence-measure_source": "PREVISTA", "occurrence-actions_taken": "Acionar equipe e registrar ata"})
+        self.assertEqual(response.status_code, 302)
+        occurrence = risk.materializations.get()
+        self.assertEqual(occurrence.actions_taken, "Acionar equipe e registrar ata")
+        self.assertEqual(occurrence.measure_source, "PREVISTA")
+        response = self.client.post(url, {
+            **payload, "risk-report-edit_materialization": "on",
+            "occurrence-measure_source": "NOVA", "occurrence-actions_taken": "Criar força tarefa",
+        })
+        self.assertEqual(response.status_code, 302)
+        occurrence.refresh_from_db()
+        self.assertEqual(occurrence.measure_source, "NOVA")
+        self.assertEqual(occurrence.actions_taken, "Criar força tarefa")
+
     def test_activity_risk_prefills_and_updates_existing_materialization(self):
         self.client.force_login(self.user)
         plan = ActionPlan.objects.create(action=self.action, manager=self.user)
@@ -1779,6 +1821,66 @@ class DashboardAndRiskTests(TestCase):
         response = self.client.post(f"{detail_url}atividades/{first.id}/excluir/")
         self.assertEqual(response.status_code, 302)
         self.assertFalse(Activity.objects.filter(pk=first.id).exists())
+
+    def test_evidence_title_starts_with_expected_delivery_and_remains_editable(self):
+        self.client.login(username="copin", password="senha-segura")
+        action_plan = ActionPlan.objects.create(action=self.action, manager=self.user)
+        activity = Activity.objects.create(
+            action_plan=action_plan,
+            executor=self.user,
+            title="Preparar relatório",
+            expected_delivery="Relatório final",
+            weight=100,
+            end_date=date(2026, 12, 31),
+        )
+        url = f"/planos-de-acao/{self.action.id}/atividades/{activity.id}/acompanhar/"
+        response = self.client.get(url)
+        self.assertContains(response, 'name="evidence-title"')
+        self.assertContains(response, 'value="Relatório final"')
+
+        response = self.client.post(url, {
+            "operation": "add_evidence",
+            "evidence-title": "Produto revisado",
+            "evidence-evidence_type": ActivityEvidence.EvidenceType.ATTACHMENT,
+            "evidence-attachment": SimpleUploadedFile("prova.txt", b"Entrega realizada"),
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(activity.evidences.get().title, "Produto revisado")
+
+    def test_delete_last_activity_with_related_records_resets_action_progress(self):
+        self.client.login(username="copin", password="senha-segura")
+        action_plan = ActionPlan.objects.create(action=self.action, manager=self.user)
+        activity = Activity.objects.create(
+            action_plan=action_plan, executor=self.user, title="Entrega",
+            weight=100, progress=50, end_date=date(2026, 12, 31),
+        )
+        risk = Risk.objects.create(
+            action=self.action, activity=activity, owner=self.user,
+            title="Risco da entrega", cause="Teste", probability=2, impact=2,
+        )
+        ActivityEvidence.objects.create(
+            activity=activity, created_by=self.user, title="Comprovante",
+            evidence_type=ActivityEvidence.EvidenceType.ATTACHMENT,
+        )
+        ActivityBlocker.objects.create(
+            activity=activity, created_by=self.user, description="Impedimento",
+        )
+        self.action.progress = 50
+        self.action.status = StrategicAction.Status.IN_PROGRESS
+        self.action.save(update_fields=["progress", "status"])
+
+        url = f"/planos-de-acao/{self.action.id}/atividades/{activity.id}/excluir/"
+        self.assertEqual(self.client.get(url).status_code, 200)
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Activity.objects.filter(pk=activity.pk).exists())
+        self.assertFalse(ActivityEvidence.objects.filter(activity_id=activity.pk).exists())
+        self.assertFalse(ActivityBlocker.objects.filter(activity_id=activity.pk).exists())
+        risk.refresh_from_db()
+        self.assertIsNone(risk.activity_id)
+        self.action.refresh_from_db()
+        self.assertEqual(self.action.progress, 0)
+        self.assertEqual(self.action.status, StrategicAction.Status.NOT_STARTED)
 
     def test_activity_can_only_be_completed_with_an_evidence_attachment(self):
         self.client.login(username="copin", password="senha-segura")
