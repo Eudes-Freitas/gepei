@@ -1,0 +1,18 @@
+{% if registered_risks %}
+<div class="registered-risks" aria-label="Riscos já cadastrados">
+  {% for registered in registered_risks %}
+  <details class="registered-risk">
+    <summary><strong>{{ registered.title }}</strong><span class="chip chip-concluida">Salvo</span></summary>
+    <div class="record-card">
+      <p><strong>Ação:</strong> {{ registered.action.code }} · <strong>Atividade:</strong> {{ registered.activity.title }}</p>
+      <p><strong>Causa:</strong> {{ registered.cause }}</p>
+      <p><strong>Quando pode ocorrer:</strong> {{ registered.occurrence_timing_summary }}</p>
+      <p><strong>Classificação:</strong> P{{ registered.probability }} × I{{ registered.impact }} · {{ registered.level_label }}</p>
+      {% if perms.core.view_risktreatment %}{% with treatment=registered.treatments.first %}{% if treatment %}<p><strong>Resposta:</strong> {{ treatment.get_decision_display }} · <strong>Responsável pelo tratamento:</strong> {{ treatment.responsible.get_full_name|default:treatment.responsible.username }}</p>{% endif %}{% endwith %}{% endif %}
+      <a href="{% url 'risk_detail' registered.action_id registered.pk %}">Abrir risco para editar</a>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+<h3 class="next-risk-title" tabindex="-1" data-next-risk>Novo risco</h3>
+{% endif %}

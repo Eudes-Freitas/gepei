@@ -1,12 +1,12 @@
   {% if target_form %}
-  <dialog class="panel activity-form-panel" id="target-form" aria-labelledby="target-form-title" {% if target_form.errors or editing_target %}data-open-on-load{% endif %}>
+  <dialog closedby="none" class="panel activity-form-panel" id="target-form" aria-labelledby="target-form-title" {% if target_form.errors or editing_target %}data-open-on-load{% endif %}>
     <div class="dialog-heading"><div><p class="eyebrow">{% if editing_target %}Editar meta{% else %}Nova meta{% endif %}</p><h2 id="target-form-title">{% if editing_target %}Alterar {{ editing_target.code|default:"meta" }}{% else %}Cadastrar meta{% endif %}</h2></div><button class="icon-button dialog-close" type="button" data-close-target-form aria-label="Fechar">×</button></div>
     <p class="form-hint">A meta fica vinculada a um objetivo do plano e pode ser medida por um ou mais indicadores.</p>
     <form method="post" class="activity-form">{% csrf_token %}
       {% if editing_target %}<input type="hidden" name="target_id" value="{{ editing_target.id }}">{% endif %}
       {% for field in target_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}
-      <div class="form-buttons"><button class="button button-primary" type="submit">{% if editing_target %}Salvar alterações{% else %}Cadastrar meta{% endif %}</button><button class="button button-secondary" type="button" data-close-target-form>Cancelar</button></div>
+      <div class="form-buttons"><button class="button button-primary" type="submit">{% if editing_target %}Salvar alterações{% else %}Cadastrar meta{% endif %}</button></div>
     </form>
-    <script>(function(){var dialog=document.getElementById('target-form');var open=document.querySelector('[data-open-target-form]');if(open){open.addEventListener('click',function(){dialog.showModal();});}dialog.querySelectorAll('[data-close-target-form]').forEach(function(b){b.addEventListener('click',function(){dialog.close();});});dialog.addEventListener('click',function(e){if(e.target===dialog){dialog.close();}});if(dialog.hasAttribute('data-open-on-load')){dialog.showModal();}}());</script>
+    <script>(function(){var dialog=document.getElementById('target-form');var open=document.querySelector('[data-open-target-form]');if(open){open.addEventListener('click',function(){dialog.showModal();});}dialog.querySelectorAll('[data-close-target-form]').forEach(function(b){b.addEventListener('click',function(){dialog.close();});});if(dialog.hasAttribute('data-open-on-load')){dialog.showModal();}}());</script>
   </dialog>
   {% endif %}

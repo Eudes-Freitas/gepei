@@ -21,3 +21,6 @@ organizar-pdfs.ps1
 
 # Configuração local
 .env
+
+# Manifestos locais das cargas fictícias
+.test-data/

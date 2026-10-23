@@ -1,0 +1,1066 @@
+{
+  "source": "OBJETIVOS E AÇÕES.pdf, Apêndice B, páginas 51–60",
+  "applied": true,
+  "actions": [
+    {
+      "code": "AE 01.1",
+      "before": [
+        "SRH"
+      ],
+      "expected": [
+        "SRH"
+      ],
+      "changed": false,
+      "pages": "51"
+    },
+    {
+      "code": "AE 01.2",
+      "before": [
+        "SRH"
+      ],
+      "expected": [
+        "SRH"
+      ],
+      "changed": false,
+      "pages": "51"
+    },
+    {
+      "code": "AE 01.3",
+      "before": [
+        "SRH"
+      ],
+      "expected": [
+        "SRH"
+      ],
+      "changed": false,
+      "pages": "51"
+    },
+    {
+      "code": "AE 02.1",
+      "before": [
+        "GS",
+        "SRH"
+      ],
+      "expected": [
+        "GS",
+        "SRH"
+      ],
+      "changed": false,
+      "pages": "51–52"
+    },
+    {
+      "code": "AE 02.2",
+      "before": [
+        "GS",
+        "SRH"
+      ],
+      "expected": [
+        "GS",
+        "SRH"
+      ],
+      "changed": false,
+      "pages": "51–52"
+    },
+    {
+      "code": "AE 03.1",
+      "before": [
+        "GS",
+        "SRH"
+      ],
+      "expected": [
+        "GS",
+        "SRH"
+      ],
+      "changed": false,
+      "pages": "52"
+    },
+    {
+      "code": "AE 03.2",
+      "before": [
+        "GS",
+        "SRH"
+      ],
+      "expected": [
+        "GS",
+        "SRH"
+      ],
+      "changed": false,
+      "pages": "52"
+    },
+    {
+      "code": "AE 04.1",
+      "before": [
+        "ENG",
+        "GS"
+      ],
+      "expected": [
+        "ENG",
+        "GS"
+      ],
+      "changed": false,
+      "pages": "52–53"
+    },
+    {
+      "code": "AE 04.2",
+      "before": [
+        "ENG",
+        "GS"
+      ],
+      "expected": [
+        "ENG",
+        "GS"
+      ],
+      "changed": false,
+      "pages": "52–53"
+    },
+    {
+      "code": "AE 05.1",
+      "before": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "expected": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "changed": false,
+      "pages": "53–54"
+    },
+    {
+      "code": "AE 05.2",
+      "before": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "expected": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "changed": false,
+      "pages": "53–54"
+    },
+    {
+      "code": "AE 05.3",
+      "before": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "expected": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "changed": false,
+      "pages": "53–54"
+    },
+    {
+      "code": "AE 05.4",
+      "before": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "expected": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "changed": false,
+      "pages": "53–54"
+    },
+    {
+      "code": "AE 05.5",
+      "before": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "expected": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "changed": false,
+      "pages": "53–54"
+    },
+    {
+      "code": "AE 05.6",
+      "before": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "expected": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "changed": false,
+      "pages": "53–54"
+    },
+    {
+      "code": "AE 05.7",
+      "before": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "expected": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "changed": false,
+      "pages": "53–54"
+    },
+    {
+      "code": "AE 06.1",
+      "before": [
+        "FUNSEP",
+        "SAF",
+        "SEAQ",
+        "SPC"
+      ],
+      "expected": [
+        "FUNSEP",
+        "SAF",
+        "SEAQ",
+        "SPC"
+      ],
+      "changed": false,
+      "pages": "54–55"
+    },
+    {
+      "code": "AE 06.2",
+      "before": [
+        "FUNSEP",
+        "SAF",
+        "SEAQ",
+        "SPC"
+      ],
+      "expected": [
+        "FUNSEP",
+        "SAF",
+        "SEAQ",
+        "SPC"
+      ],
+      "changed": false,
+      "pages": "54–55"
+    },
+    {
+      "code": "AE 07.1",
+      "before": [
+        "GS",
+        "SPC"
+      ],
+      "expected": [
+        "GS",
+        "SPC"
+      ],
+      "changed": false,
+      "pages": "55"
+    },
+    {
+      "code": "AE 07.2",
+      "before": [
+        "GS",
+        "SPC"
+      ],
+      "expected": [
+        "GS",
+        "SPC"
+      ],
+      "changed": false,
+      "pages": "55"
+    },
+    {
+      "code": "AE 08.1",
+      "before": [
+        "COPIN",
+        "GS"
+      ],
+      "expected": [
+        "COPIN",
+        "GS"
+      ],
+      "changed": false,
+      "pages": "56"
+    },
+    {
+      "code": "AE 08.2",
+      "before": [
+        "COPIN",
+        "GS"
+      ],
+      "expected": [
+        "COPIN",
+        "GS"
+      ],
+      "changed": false,
+      "pages": "56"
+    },
+    {
+      "code": "AE 08.3",
+      "before": [
+        "COPIN",
+        "GS"
+      ],
+      "expected": [
+        "COPIN",
+        "GS"
+      ],
+      "changed": false,
+      "pages": "56"
+    },
+    {
+      "code": "AE 08.4",
+      "before": [
+        "COPIN",
+        "GS"
+      ],
+      "expected": [
+        "COPIN",
+        "GS"
+      ],
+      "changed": false,
+      "pages": "56"
+    },
+    {
+      "code": "AE 09.1",
+      "before": [
+        "CIOSP",
+        "COPIN",
+        "CTINF",
+        "GS"
+      ],
+      "expected": [
+        "CIOSP",
+        "COPIN",
+        "CTINF",
+        "GS"
+      ],
+      "changed": false,
+      "pages": "56–57"
+    },
+    {
+      "code": "AE 09.2",
+      "before": [
+        "CIOSP",
+        "COPIN",
+        "CTINF",
+        "GS"
+      ],
+      "expected": [
+        "CIOSP",
+        "COPIN",
+        "CTINF",
+        "GS"
+      ],
+      "changed": false,
+      "pages": "56–57"
+    },
+    {
+      "code": "AE 09.3",
+      "before": [
+        "CIOSP",
+        "COPIN",
+        "CTINF",
+        "GS"
+      ],
+      "expected": [
+        "CIOSP",
+        "COPIN",
+        "CTINF",
+        "GS"
+      ],
+      "changed": false,
+      "pages": "56–57"
+    },
+    {
+      "code": "AE 10.1",
+      "before": [
+        "COPIN",
+        "GSA"
+      ],
+      "expected": [
+        "COPIN",
+        "GSA"
+      ],
+      "changed": false,
+      "pages": "57–58"
+    },
+    {
+      "code": "AE 10.2",
+      "before": [
+        "COPIN",
+        "GSA"
+      ],
+      "expected": [
+        "COPIN",
+        "GSA"
+      ],
+      "changed": false,
+      "pages": "57–58"
+    },
+    {
+      "code": "AE 10.3",
+      "before": [
+        "COPIN",
+        "GSA"
+      ],
+      "expected": [
+        "COPIN",
+        "GSA"
+      ],
+      "changed": false,
+      "pages": "57–58"
+    },
+    {
+      "code": "AE 11.1",
+      "before": [
+        "CIOSP",
+        "COPIN",
+        "CTINF",
+        "GS",
+        "SRH"
+      ],
+      "expected": [
+        "CIOSP",
+        "COPIN",
+        "CTINF",
+        "GS",
+        "SRH"
+      ],
+      "changed": false,
+      "pages": "58"
+    },
+    {
+      "code": "AE 12.1",
+      "before": [
+        "SESED"
+      ],
+      "expected": [
+        "SESED"
+      ],
+      "changed": false,
+      "pages": "58–59"
+    },
+    {
+      "code": "AE 13.1",
+      "before": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "expected": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "changed": false,
+      "pages": "59–60"
+    },
+    {
+      "code": "AE 13.2",
+      "before": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "expected": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "changed": false,
+      "pages": "59–60"
+    },
+    {
+      "code": "AE 13.3",
+      "before": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "expected": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "changed": false,
+      "pages": "59–60"
+    },
+    {
+      "code": "AE 13.4",
+      "before": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "expected": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "changed": false,
+      "pages": "59–60"
+    },
+    {
+      "code": "AE 13.5",
+      "before": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "expected": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "changed": false,
+      "pages": "59–60"
+    },
+    {
+      "code": "AE 13.6",
+      "before": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "expected": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "changed": false,
+      "pages": "59–60"
+    },
+    {
+      "code": "AE 13.7",
+      "before": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "expected": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "changed": false,
+      "pages": "59–60"
+    }
+  ],
+  "indicators_and_targets": [
+    {
+      "indicator": "IE 01.1",
+      "target": "Mt 01.1",
+      "before": [
+        "SRH"
+      ],
+      "expected": [
+        "SRH"
+      ],
+      "changed": false,
+      "pages": "51"
+    },
+    {
+      "indicator": "IE 01.2",
+      "target": "Mt 01.2",
+      "before": [
+        "SRH"
+      ],
+      "expected": [
+        "SRH"
+      ],
+      "changed": false,
+      "pages": "51"
+    },
+    {
+      "indicator": "IE 02.1",
+      "target": "Mt 02.1",
+      "before": [
+        "SRH"
+      ],
+      "expected": [
+        "GS",
+        "SRH"
+      ],
+      "changed": true,
+      "pages": "51–52"
+    },
+    {
+      "indicator": "IE 02.2",
+      "target": "Mt 02.2",
+      "before": [
+        "SRH"
+      ],
+      "expected": [
+        "GS",
+        "SRH"
+      ],
+      "changed": true,
+      "pages": "51–52"
+    },
+    {
+      "indicator": "IE 03.1",
+      "target": "Mt 03.1",
+      "before": [
+        "SRH"
+      ],
+      "expected": [
+        "GS",
+        "SRH"
+      ],
+      "changed": true,
+      "pages": "52"
+    },
+    {
+      "indicator": "IE 03.2",
+      "target": "Mt 03.2",
+      "before": [
+        "SRH"
+      ],
+      "expected": [
+        "GS",
+        "SRH"
+      ],
+      "changed": true,
+      "pages": "52"
+    },
+    {
+      "indicator": "IE 03.3",
+      "target": "Mt 03.3",
+      "before": [
+        "SRH"
+      ],
+      "expected": [
+        "GS",
+        "SRH"
+      ],
+      "changed": true,
+      "pages": "52"
+    },
+    {
+      "indicator": "IE 03.4",
+      "target": "Mt 03.4",
+      "before": [
+        "SRH"
+      ],
+      "expected": [
+        "GS",
+        "SRH"
+      ],
+      "changed": true,
+      "pages": "52"
+    },
+    {
+      "indicator": "IE 04.1",
+      "target": "Mt 04.1",
+      "before": [
+        "ENG"
+      ],
+      "expected": [
+        "ENG",
+        "GS"
+      ],
+      "changed": true,
+      "pages": "52–53"
+    },
+    {
+      "indicator": "IE 05.1",
+      "target": "Mt 05.1",
+      "before": [
+        "CTINF"
+      ],
+      "expected": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "changed": true,
+      "pages": "53–54"
+    },
+    {
+      "indicator": "IE 05.2",
+      "target": "Mt 05.2",
+      "before": [
+        "CTINF"
+      ],
+      "expected": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "changed": true,
+      "pages": "53–54"
+    },
+    {
+      "indicator": "IE 05.3",
+      "target": "Mt 05.3",
+      "before": [
+        "CTINF"
+      ],
+      "expected": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "changed": true,
+      "pages": "53–54"
+    },
+    {
+      "indicator": "IE 05.4",
+      "target": "Mt 05.4",
+      "before": [
+        "CTINF"
+      ],
+      "expected": [
+        "CIOSP",
+        "CTINF"
+      ],
+      "changed": true,
+      "pages": "53–54"
+    },
+    {
+      "indicator": "IE 06.1",
+      "target": "Mt 06.1",
+      "before": [
+        "SAF"
+      ],
+      "expected": [
+        "FUNSEP",
+        "SAF",
+        "SEAQ",
+        "SPC"
+      ],
+      "changed": true,
+      "pages": "54–55"
+    },
+    {
+      "indicator": "IE 06.2",
+      "target": "Mt 06.2",
+      "before": [
+        "SAF"
+      ],
+      "expected": [
+        "FUNSEP",
+        "SAF",
+        "SEAQ",
+        "SPC"
+      ],
+      "changed": true,
+      "pages": "54–55"
+    },
+    {
+      "indicator": "IE 07.1",
+      "target": "Mt 07.1",
+      "before": [
+        "SPC"
+      ],
+      "expected": [
+        "GS",
+        "SPC"
+      ],
+      "changed": true,
+      "pages": "55"
+    },
+    {
+      "indicator": "IE 07.2",
+      "target": "Mt 07.2",
+      "before": [
+        "SPC"
+      ],
+      "expected": [
+        "GS",
+        "SPC"
+      ],
+      "changed": true,
+      "pages": "55"
+    },
+    {
+      "indicator": "IE 07.3",
+      "target": "Mt 07.3",
+      "before": [
+        "SPC"
+      ],
+      "expected": [
+        "GS",
+        "SPC"
+      ],
+      "changed": true,
+      "pages": "55"
+    },
+    {
+      "indicator": "IE 08.1",
+      "target": "Mt 08.1",
+      "before": [
+        "COPIN"
+      ],
+      "expected": [
+        "COPIN",
+        "GS"
+      ],
+      "changed": true,
+      "pages": "56"
+    },
+    {
+      "indicator": "IE 08.2",
+      "target": "Mt 08.2",
+      "before": [
+        "COPIN"
+      ],
+      "expected": [
+        "COPIN",
+        "GS"
+      ],
+      "changed": true,
+      "pages": "56"
+    },
+    {
+      "indicator": "IE 09.1",
+      "target": "Mt 09.1",
+      "before": [
+        "COPIN"
+      ],
+      "expected": [
+        "CIOSP",
+        "COPIN",
+        "CTINF",
+        "GS"
+      ],
+      "changed": true,
+      "pages": "56–57"
+    },
+    {
+      "indicator": "IE 09.2",
+      "target": "Mt 09.2",
+      "before": [
+        "COPIN"
+      ],
+      "expected": [
+        "CIOSP",
+        "COPIN",
+        "CTINF",
+        "GS"
+      ],
+      "changed": true,
+      "pages": "56–57"
+    },
+    {
+      "indicator": "IE 10.1",
+      "target": "Mt 10.1",
+      "before": [
+        "COPIN"
+      ],
+      "expected": [
+        "COPIN",
+        "GSA"
+      ],
+      "changed": true,
+      "pages": "57–58"
+    },
+    {
+      "indicator": "IE 10.2",
+      "target": "Mt 10.2",
+      "before": [
+        "COPIN"
+      ],
+      "expected": [
+        "COPIN",
+        "GSA"
+      ],
+      "changed": true,
+      "pages": "57–58"
+    },
+    {
+      "indicator": "IE 10.3",
+      "target": "Mt 10.3",
+      "before": [
+        "COPIN"
+      ],
+      "expected": [
+        "COPIN",
+        "GSA"
+      ],
+      "changed": true,
+      "pages": "57–58"
+    },
+    {
+      "indicator": "IE 11.1",
+      "target": "Mt 11.1",
+      "before": [
+        "GS"
+      ],
+      "expected": [
+        "CIOSP",
+        "COPIN",
+        "CTINF",
+        "GS",
+        "SRH"
+      ],
+      "changed": true,
+      "pages": "58"
+    },
+    {
+      "indicator": "IE 11.2",
+      "target": "Mt 11.2",
+      "before": [
+        "GS"
+      ],
+      "expected": [
+        "CIOSP",
+        "COPIN",
+        "CTINF",
+        "GS",
+        "SRH"
+      ],
+      "changed": true,
+      "pages": "58"
+    },
+    {
+      "indicator": "IE 12.1",
+      "target": "Mt 12.1",
+      "before": [
+        "SESED"
+      ],
+      "expected": [
+        "SESED"
+      ],
+      "changed": false,
+      "pages": "58–59"
+    },
+    {
+      "indicator": "IE 12.2",
+      "target": "Mt 12.2",
+      "before": [
+        "SESED"
+      ],
+      "expected": [
+        "SESED"
+      ],
+      "changed": false,
+      "pages": "58–59"
+    },
+    {
+      "indicator": "IE 12.3",
+      "target": "Mt 12.3",
+      "before": [
+        "SESED"
+      ],
+      "expected": [
+        "SESED"
+      ],
+      "changed": false,
+      "pages": "58–59"
+    },
+    {
+      "indicator": "IE 12.4",
+      "target": "Mt 12.4",
+      "before": [
+        "SESED"
+      ],
+      "expected": [
+        "SESED"
+      ],
+      "changed": false,
+      "pages": "58–59"
+    },
+    {
+      "indicator": "IE 12.5",
+      "target": "Mt 12.5",
+      "before": [
+        "SESED"
+      ],
+      "expected": [
+        "SESED"
+      ],
+      "changed": false,
+      "pages": "58–59"
+    },
+    {
+      "indicator": "IE 13.1",
+      "target": "Mt 13.1",
+      "before": [
+        "CPCID"
+      ],
+      "expected": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "changed": true,
+      "pages": "59–60"
+    },
+    {
+      "indicator": "IE 13.2",
+      "target": "Mt 13.2",
+      "before": [
+        "CPCID"
+      ],
+      "expected": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "changed": true,
+      "pages": "59–60"
+    },
+    {
+      "indicator": "IE 13.3",
+      "target": "Mt 13.3",
+      "before": [
+        "CPCID"
+      ],
+      "expected": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "changed": true,
+      "pages": "59–60"
+    },
+    {
+      "indicator": "IE 13.4",
+      "target": "Mt 13.4",
+      "before": [
+        "CPCID"
+      ],
+      "expected": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "changed": true,
+      "pages": "59–60"
+    },
+    {
+      "indicator": "IE 13.5",
+      "target": "Mt 13.5",
+      "before": [
+        "CPCID"
+      ],
+      "expected": [
+        "CODIMM",
+        "COINE",
+        "CPCID"
+      ],
+      "changed": true,
+      "pages": "59–60"
+    }
+  ],
+  "rebuilt_reports": [
+    {
+      "id": 2,
+      "unit": "GS",
+      "year": 2026,
+      "quarter": 4,
+      "counts": {
+        "objectives": 7,
+        "targets": 16,
+        "indicators": 16,
+        "actions": 16
+      }
+    },
+    {
+      "id": 1,
+      "unit": "COPIN",
+      "year": 2026,
+      "quarter": 3,
+      "counts": {
+        "objectives": 4,
+        "targets": 9,
+        "indicators": 9,
+        "actions": 11
+      }
+    }
+  ]
+}

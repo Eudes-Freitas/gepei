@@ -158,6 +158,11 @@ def scope_by_unit(queryset, user, field, include_unassigned=False, for_view=Fals
         return queryset
     if not for_view and user.has_perm("core.view_other_units"):
         include_unassigned = False
+    if queryset.model._meta.model_name == "indicator" and field == "responsible_unit_id":
+        condition = Q(responsible_unit_id__in=ids) | Q(responsible_units__id__in=ids)
+        if include_unassigned:
+            condition |= Q(responsible_unit__isnull=True, responsible_units__isnull=True)
+        return queryset.filter(condition).distinct()
     condition = Q(**{f"{field}__in": ids})
     if include_unassigned:
         condition |= Q(**{f"{field}__isnull": True})
