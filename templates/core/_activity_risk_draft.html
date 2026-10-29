@@ -1,5 +1,5 @@
 <details class="registered-risk activity-risk-draft" data-risk-draft {% if risk_form.errors or forloop.last %}open{% endif %}>
-  <summary><strong data-risk-draft-title>{% if risk_form.title.value %}{{ risk_form.title.value }}{% else %}Novo risco{% endif %}</strong></summary>
+  <summary><strong data-risk-draft-title>{% if risk_form.title.value %}{{ risk_form.title.value }}{% else %}Cadastrar risco{% endif %}</strong></summary>
   <div class="record-card activity-form">
     {{ risk_form.non_field_errors }}
     <div hidden>{{ risk_form.DELETE }}</div>

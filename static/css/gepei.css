@@ -292,8 +292,14 @@ tr.row-link { cursor:pointer; } tr.row-link:hover td { background:#f4f8fc; }
 }
 
 [data-risk-report] fieldset { border:1px solid var(--border); border-radius:.5rem; min-width:0; margin:0; padding:.8rem; }
+[data-risk-report], [data-risk-report] .form-field, [data-risk-report] fieldset { width:100%; min-width:0; }
+[data-risk-report] .form-field input, [data-risk-report] .form-field select, [data-risk-report] .form-field textarea { max-width:100%; min-width:0; }
 [data-risk-report] fieldset .form-field { margin-bottom:.7rem; }
 [data-risk-report] fieldset[hidden] { display:none; }
+
+/* Keep the risk panel beside the other panels with room for its nested form. */
+.follow-up-grid { grid-template-columns:minmax(0,.9fr) minmax(0,.9fr) minmax(0,1.2fr); }
+@media (max-width:900px) { .follow-up-grid { grid-template-columns:minmax(0,1fr); } }
 
 .follow-up-metrics .metric-card { text-align:center; }
 
@@ -375,8 +381,6 @@ tr.row-link { cursor:pointer; } tr.row-link:hover td { background:#f4f8fc; }
 
 .progress-track[style*="--progress-color"],.table-progress[style*="--progress-color"] { background:color-mix(in srgb,var(--progress-color) 14%,white); }
 .progress-track[style*="--progress-color"] i,.table-progress[style*="--progress-color"] i { background:var(--progress-color); transition:width .25s ease,background-color .25s ease; }
-.execution-progress-legend { display:flex; align-items:center; gap:.6rem; margin:.8rem 0 1.1rem; color:var(--muted); font-size:.8rem; }
-.execution-progress-legend i { display:block; width:180px; max-width:40vw; height:9px; border-radius:999px; background:linear-gradient(90deg,#d32f2f,#f47c48,#ffd166,#a8d887,#198754); }
 
 .evidence-link { margin-left:.5rem; vertical-align:middle; flex-shrink:0; }
 

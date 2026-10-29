@@ -514,7 +514,6 @@ def validate_risk_timing(form, cleaned_data):
     timing = cleaned_data.get("occurrence_timing")
     exposure_start = cleaned_data.get("exposure_start_date")
     exposure_end = cleaned_data.get("exposure_end_date")
-    expected_date = cleaned_data.get("expected_occurrence_date")
     trigger = cleaned_data.get("trigger_description")
     if timing == Risk.OccurrenceTiming.EXPOSURE_WINDOW:
         if not exposure_start and not exposure_end:
@@ -525,10 +524,8 @@ def validate_risk_timing(form, cleaned_data):
         cleaned_data["exposure_start_date"] = None
         cleaned_data["exposure_end_date"] = None
     if timing == Risk.OccurrenceTiming.DATE_OR_MILESTONE:
-        if not expected_date and not trigger:
-            form.add_error("trigger_description", "Informe uma data provável ou descreva o marco ou condição.")
-    else:
-        cleaned_data["expected_occurrence_date"] = None
+        if not trigger:
+            form.add_error("trigger_description", "Descreva o marco ou condição de ocorrência.")
     return cleaned_data
 
 
@@ -553,7 +550,6 @@ class ActivityRiskForm(forms.ModelForm):
             "occurrence_timing",
             "exposure_start_date",
             "exposure_end_date",
-            "expected_occurrence_date",
             "trigger_description",
             "treatment",
             "preventive_measure",
@@ -567,9 +563,8 @@ class ActivityRiskForm(forms.ModelForm):
             "impact": "Impacto (1 a 5)",
             "status": "Situação",
             "occurrence_timing": "Quando o risco pode ocorrer?",
-            "exposure_start_date": "Início do período de exposição",
-            "exposure_end_date": "Fim do período de exposição",
-            "expected_occurrence_date": "Data provável (opcional)",
+            "exposure_start_date": "Início do período",
+            "exposure_end_date": "Fim do período",
             "trigger_description": "Marco, sinal ou condição de ocorrência (opcional)",
             "preventive_measure": "Medida preventiva ou controle",
             "contingency_measure": "Medida de contingência",
@@ -577,7 +572,6 @@ class ActivityRiskForm(forms.ModelForm):
         widgets = {
             "exposure_start_date": forms.DateInput(attrs={"type": "date"}),
             "exposure_end_date": forms.DateInput(attrs={"type": "date"}),
-            "expected_occurrence_date": forms.DateInput(attrs={"type": "date"}),
             "cause": forms.Textarea(attrs={"rows": 2}),
             "preventive_measure": forms.Textarea(attrs={"rows": 2}),
             "contingency_measure": forms.Textarea(attrs={"rows": 2}),
@@ -641,7 +635,6 @@ class RiskIdentificationForm(forms.ModelForm):
             "occurrence_timing",
             "exposure_start_date",
             "exposure_end_date",
-            "expected_occurrence_date",
             "trigger_description",
             "treatment_decision",
             "treatment_due_date",
@@ -656,9 +649,8 @@ class RiskIdentificationForm(forms.ModelForm):
             "probability": "Probabilidade (1 a 5)",
             "impact": "Impacto (1 a 5)",
             "occurrence_timing": "Quando o risco pode ocorrer?",
-            "exposure_start_date": "Início do período de exposição",
-            "exposure_end_date": "Fim do período de exposição",
-            "expected_occurrence_date": "Data provável (opcional)",
+            "exposure_start_date": "Início do período",
+            "exposure_end_date": "Fim do período",
             "trigger_description": "Marco, sinal ou condição de ocorrência (opcional)",
             "preventive_measure": "Medida preventiva ou controle",
             "contingency_measure": "Medida de contingência",
@@ -672,7 +664,6 @@ class RiskIdentificationForm(forms.ModelForm):
             "occurrence_timing": forms.Select(attrs={"data-occurrence-timing": "true"}),
             "exposure_start_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "exposure_end_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
-            "expected_occurrence_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "trigger_description": forms.Textarea(attrs={"rows": 2}),
         }
 
@@ -755,45 +746,23 @@ class RiskTimingForm(forms.ModelForm):
             "occurrence_timing",
             "exposure_start_date",
             "exposure_end_date",
-            "expected_occurrence_date",
             "trigger_description",
         ]
         labels = {
             "occurrence_timing": "Quando o risco pode ocorrer?",
-            "exposure_start_date": "Início do período de exposição",
-            "exposure_end_date": "Fim do período de exposição",
-            "expected_occurrence_date": "Data provável (opcional)",
+            "exposure_start_date": "Início do período",
+            "exposure_end_date": "Fim do período",
             "trigger_description": "Marco, sinal ou condição de ocorrência (opcional)",
         }
         widgets = {
             "occurrence_timing": forms.Select(attrs={"data-occurrence-timing": "true"}),
             "exposure_start_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "exposure_end_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
-            "expected_occurrence_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "trigger_description": forms.Textarea(attrs={"rows": 2}),
         }
 
     def clean(self):
-        cleaned_data = super().clean()
-        timing = cleaned_data.get("occurrence_timing")
-        exposure_start = cleaned_data.get("exposure_start_date")
-        exposure_end = cleaned_data.get("exposure_end_date")
-        expected_date = cleaned_data.get("expected_occurrence_date")
-        trigger = cleaned_data.get("trigger_description")
-        if timing == Risk.OccurrenceTiming.EXPOSURE_WINDOW:
-            if not exposure_start and not exposure_end:
-                self.add_error("exposure_start_date", "Informe ao menos o início ou o fim do período provável.")
-            elif exposure_start and exposure_end and exposure_start > exposure_end:
-                self.add_error("exposure_end_date", "O fim do período não pode ser anterior ao início.")
-        else:
-            cleaned_data["exposure_start_date"] = None
-            cleaned_data["exposure_end_date"] = None
-        if timing == Risk.OccurrenceTiming.DATE_OR_MILESTONE:
-            if not expected_date and not trigger:
-                self.add_error("trigger_description", "Informe uma data provável ou descreva o marco ou condição.")
-        else:
-            cleaned_data["expected_occurrence_date"] = None
-        return cleaned_data
+        return validate_risk_timing(self, super().clean())
 
 
 class RiskIdentityForm(forms.ModelForm):

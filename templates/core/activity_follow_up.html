@@ -21,7 +21,6 @@
 
   <section class="panel" id="execucao">
     <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Execução da atividade</h2></div><span class="chip chip-{{ activity.status|lower }}">{{ activity.get_status_display }}</span></div>
-    <p>{{ activity.progress|floatformat:"-1" }}% executado. A situação é definida automaticamente pelo progresso, prazo e evidências.</p>
     {% if perms.core.change_activity %}<form method="post" class="activity-form">{% csrf_token %}
       <input type="hidden" name="operation" value="update_progress">
       <div class="form-field">{{ progress_form.progress.label_tag }}{{ progress_form.progress }}{% if progress_form.progress.errors %}<small class="field-error">{{ progress_form.progress.errors|striptags }}</small>{% endif %}</div>
@@ -56,7 +55,7 @@
         </div>
       {% else %}<div class="empty-state"><span>Nenhuma evidência registrada.</span></div>{% endif %}
       {% if perms.core.add_activityevidence %}<details class="entry-form" open>
-        <summary>Adicionar evidência</summary>
+        <summary>Atualizar atividade</summary>
         <p class="form-hint">O anexo é obrigatório, e a atividade só pode ser concluída depois que houver uma evidência com anexo.</p>
         <form method="post" enctype="multipart/form-data" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_evidence">{% for field in evidence_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}{% if evidence_form.non_field_errors %}<small class="field-error">{{ evidence_form.non_field_errors|striptags }}</small>{% endif %}<button class="button button-primary" type="submit">Registrar evidência</button></form>
       </details>{% endif %}{% endif %}

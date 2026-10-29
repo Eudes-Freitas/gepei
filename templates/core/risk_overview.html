@@ -70,9 +70,8 @@
       {% include "core/_form_field.html" with field=create_form.impact hint="1 = efeito mínimo · 5 = compromete a AE. Nível = P × I." %}
       <div class="entry-form"><h3>Quando pode ocorrer</h3>
         {% include "core/_form_field.html" with field=create_form.occurrence_timing %}
-        {% include "core/_form_field.html" with field=create_form.exposure_start_date cls="timing-window-field" hide=True %}
-        {% include "core/_form_field.html" with field=create_form.exposure_end_date cls="timing-window-field" hide=True %}
-        {% include "core/_form_field.html" with field=create_form.expected_occurrence_date cls="timing-date-field" hide=True %}
+        {% include "core/_form_field.html" with field=create_form.exposure_start_date %}
+        {% include "core/_form_field.html" with field=create_form.exposure_end_date %}
         {% include "core/_form_field.html" with field=create_form.trigger_description %}
       </div>
       <div class="entry-form"><h3>Resposta ao risco</h3>
@@ -91,9 +90,6 @@
       dialog.querySelector('[data-close-risk-form]').addEventListener('click',function(){dialog.close();});
 
       if(dialog.hasAttribute('data-open-on-load')){dialog.showModal();var next=dialog.querySelector('[data-next-risk]');if(next){next.scrollIntoView({block:'start'});next.focus({preventScroll:true});}}
-      var timing=form.querySelector('[data-occurrence-timing]');var windowFields=form.querySelectorAll('.timing-window-field');var dateFields=form.querySelectorAll('.timing-date-field');
-      function updateTiming(){var value=timing.value;windowFields.forEach(function(f){f.hidden=value!=='PERIODO';});dateFields.forEach(function(f){f.hidden=value!=='DATA_MARCO';});}
-      timing.addEventListener('change',updateTiming);updateTiming();
       var data=JSON.parse(document.getElementById('risk-activities-data').textContent);var action=form.querySelector('[name=action]');var activity=form.querySelector('[name=activity]');var selected=activity.value;
       function updateActivities(){activity.innerHTML='';var empty=document.createElement('option');empty.value='';empty.textContent='Selecione a atividade';activity.appendChild(empty);(data[action.value]||[]).forEach(function(item){var o=document.createElement('option');o.value=item[0];o.textContent=item[1];if(String(item[0])===selected){o.selected=true;}activity.appendChild(o);});selected='';}
       action.addEventListener('change',updateActivities);updateActivities();

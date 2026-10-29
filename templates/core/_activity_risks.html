@@ -19,7 +19,7 @@
     function updateButton(){add.textContent=activeDrafts().length?'Cadastrar outro risco':'Cadastrar risco';add.disabled=Number(total.value)>=20;}
     function bind(draft){
       var title=draft.querySelector('input[name$="-title"]');
-      title.addEventListener('input',function(){draft.querySelector('[data-risk-draft-title]').textContent=title.value||'Novo risco';});
+      title.addEventListener('input',function(){draft.querySelector('[data-risk-draft-title]').textContent=title.value||'Cadastrar risco';});
       var deleted=draft.querySelector('input[name$="-DELETE"]');
       draft.querySelector('[data-remove-risk-draft]').addEventListener('click',function(){deleted.checked=true;draft.hidden=true;draft.querySelectorAll('input,select,textarea').forEach(function(f){if(f!==deleted){f.disabled=true;}});updateButton();});
       if(deleted.checked){draft.querySelector('[data-remove-risk-draft]').click();}
