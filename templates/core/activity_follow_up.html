@@ -111,7 +111,9 @@
         <summary>Informar risco</summary>
         {% include "core/_registered_risks.html" %}
         <form method="post" enctype="multipart/form-data" class="activity-form" data-risk-report>{% csrf_token %}<input type="hidden" name="operation" value="report_risk"><input type="hidden" name="registered_risks" value="{{ registered_risk_ids }}">
-          {% for field in risk_report_form %}{% if field.name != "edit_materialization" %}{% include "core/_form_field.html" with field=field %}{% endif %}{% endfor %}
+          {% include "core/_form_field.html" with field=risk_report_form.materialized %}
+          <div data-risk-report-details hidden>
+          {% include "core/_form_field.html" with field=risk_report_form.risk %}
           <div hidden>{{ risk_report_form.edit_materialization }}</div>
           <p class="form-hint" data-occurrence-notice hidden></p>
           {% if risk_report_form.non_field_errors %}<div class="field-error">{{ risk_report_form.non_field_errors }}</div>{% endif %}
@@ -119,6 +121,7 @@
           <a data-occurrence-attachment hidden target="_blank" rel="noopener">Abrir anexo da evidência do risco</a>
           <fieldset data-risk-occurrence hidden disabled><legend>Materialização do risco</legend>{% for field in occurrence_form %}{% if field.name == "measure_source" %}<div class="activity-measure-choice" data-measure-choice hidden><strong>Qual providência foi adotada?</strong><p data-planned-measure></p>{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% elif field.name == "actions_taken" %}<div class="form-field" data-actions-taken>{{ field.label_tag }}{{ field }}<small class="form-hint">Você pode ajustar a sugestão para descrever exatamente o que foi feito.</small>{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% elif field.name != "evidence_reference" and field.name != "evidence_attachment" %}{% include "core/_form_field.html" with field=field %}{% endif %}{% endfor %}</fieldset>
           <div class="form-buttons"><button class="button button-primary" type="submit">Salvar informação do risco</button>{% if perms.core.add_risk %}<button class="button button-secondary" type="submit" name="unforeseen-register_another" value="on" data-register-another-risk>Cadastrar outro risco</button>{% endif %}</div>
+          </div>
         </form>
         {{ risk_prefill|json_script:"activity-risk-prefill" }}
         <script>(function(){
@@ -126,6 +129,7 @@
           var data=JSON.parse(document.getElementById('activity-risk-prefill').textContent);
           var risk=form.querySelector('[name="risk-report-risk"]');
           var materialized=form.querySelector('[name="risk-report-materialized"]');
+          var reportDetails=form.querySelector('[data-risk-report-details]');
           var edit=form.querySelector('[name="risk-report-edit_materialization"]');
           var notice=form.querySelector('[data-occurrence-notice]');
           var occurrence=form.querySelector('[data-risk-occurrence]');
@@ -148,7 +152,7 @@
             var saved=data[risk.value];
             if(load){
               edit.checked=false;
-              materialized.value=saved?saved.materialized:'';
+              if(saved){materialized.value=saved.materialized;}
               occurrence.querySelectorAll('input:not([type="radio"]):not([type="file"]),textarea').forEach(function(field){var name=field.name.replace('occurrence-','');field.value=saved&&saved.occurrence[name]||'';});
             }
             updateMeasure(load,saved);
@@ -160,6 +164,7 @@
             if(saved&&saved.attachment_url){attachment.href=saved.attachment_url;}else{attachment.removeAttribute('href');}
             var existing=saved&&saved.has_occurrence;
             var show=materialized.value==='SIM';
+            reportDetails.hidden=!show;
             if(load){edit.checked=!!(existing&&saved.can_edit);}
             occurrence.hidden=!show||(existing&&!saved.can_view);
             occurrence.disabled=!show||(existing&&!edit.checked);

@@ -3,7 +3,7 @@
 {% block content %}
   <a class="back-link" href="{% url 'indicator_overview' %}">← Voltar para metas e indicadores</a>
   <section class="action-detail-heading">
-    <div><p class="eyebrow">{{ indicator.code|default:"Indicador estratégico" }}</p><h1>{{ indicator.name }}</h1><p>{{ indicator.description|default:"Descrição ainda não informada." }}</p></div>
+    <div><p class="eyebrow">{{ indicator.code|default:"Indicador estratégico" }}</p><h1>{{ indicator.name }}</h1><p><strong>Objetivo:</strong> {{ indicator.description|default:"Descrição ainda não informada." }}</p></div>
     <span class="signal signal-{{ signal.code }}"><i></i>{{ signal.label }}</span>
   </section>
 
@@ -28,9 +28,9 @@
         {% endif %}
       </article>{% endif %}
       {% include "core/_indicator_reference.html" with reference=indicator.reference_parameters %}
-      <article class="panel indicator-definition">
-        <div class="panel-heading"><div><p class="eyebrow">Definição</p><h2>Ficha do indicador</h2></div><div class="panel-heading-actions">{% if definition_form %}<button class="button button-secondary" type="button" data-open-definition-form>Editar</button>{% endif %}<button class="button button-secondary" type="button" data-toggle-definition aria-expanded="true" aria-controls="indicator-definition-content">Recolher</button></div></div>
-        <dl class="definition-grid" id="indicator-definition-content">
+      <article class="panel indicator-definition target-facts" data-collapsible-facts>
+        <div class="panel-heading"><h4>Ficha do indicador</h4><button class="button button-secondary" type="button" data-toggle-facts aria-expanded="false" aria-controls="indicator-definition-content">Expandir</button></div>
+        <div id="indicator-definition-content" data-facts-content hidden><dl class="definition-grid">
           <div><dt>Tipo</dt><dd>{{ indicator.get_indicator_type_display|default:"A definir" }}</dd></div>
           <div><dt>Fórmula</dt><dd>{{ indicator.formula|default:"A definir" }}</dd></div>
           <div><dt>Unidade de medida</dt><dd>{{ indicator.measurement_unit|default:"A definir" }}</dd></div>
@@ -41,7 +41,7 @@
           <div><dt>Setor responsável</dt><dd>{% if last.responsible_unit_label %}{{ last.responsible_unit_label }}{% else %}{{ indicator.responsible_unit.acronym|default:indicator.responsible_unit.name|default:"A definir" }}{% endif %}</dd></div>
           {% endwith %}
           <div><dt>Sentido esperado</dt><dd>{{ indicator.measurement_direction_label }}</dd></div>
-        </dl>
+        </dl>{% if definition_form %}<button class="button button-secondary" type="button" data-open-definition-form>Editar indicador</button>{% endif %}</div>
       </article>
 
       <article class="panel indicator-relations">
@@ -60,8 +60,8 @@
               <div><dt>Valor esperado da meta</dt><dd>{{ target.target_value|default:"A definir" }}</dd></div>
               <div><dt>Unidade de medida</dt><dd>{{ target.unit_of_measure|default:"A definir" }}</dd></div>
               <div><dt>Período de referência</dt><dd>{{ target.reference_period|default:"A definir" }}</dd></div>
-              <div><dt>Plano</dt><dd>{{ target.artifact.plan.acronym }} · {{ target.artifact.plan.name }}</dd></div>
-              <div><dt>Objetivo ou projeto estratégico</dt><dd>{{ target.artifact.code }} · {{ target.artifact.title }}</dd></div>
+              <div><dt>Plano estratégico</dt><dd>{{ target.artifact.plan.acronym }} · {{ target.artifact.plan.name }}</dd></div>
+              <div><dt>Item do plano estratégico</dt><dd>{{ target.artifact.code }} · {{ target.artifact.title }}</dd></div>
               {% if target.action %}<div><dt>Ação estratégica</dt><dd>{% if perms.core.view_actionplan %}<a href="{% url 'action_plan_detail' target.action_id %}">{{ target.action.code }} · {{ target.action.title }}</a>{% else %}{{ target.action.code }} · {{ target.action.title }}{% endif %}</dd></div>{% endif %}
             </dl>
           </section>
@@ -82,7 +82,7 @@
               <td>{{ measurement.measured_value }}</td>
               <td>{{ measurement.expected_value|floatformat:"-1"|default:"Não informada" }}</td>
               <td>{% if measurement.source_reference %}<span>{{ measurement.source_reference }}</span>{% endif %}{% if measurement.evidence_attachment %}<a href="{{ measurement.evidence_attachment.url }}" target="_blank" rel="noopener">Abrir arquivo anexado</a>{% elif not measurement.source_reference %}Não informada{% endif %}</td>
-              <td>{{ measurement.recorded_by.get_full_name|default:measurement.recorded_by.username }}<small>{{ measurement.recorded_at|date:"d/m/Y H:i" }}</small></td>
+              <td class="measurement-responsible"><strong>{{ measurement.recorded_by.get_full_name|default:measurement.recorded_by.username }}</strong><small>{{ measurement.recorded_at|date:"d/m/Y H:i" }}</small></td>
               <td><button class="text-button" type="button" data-view-measurement data-description="{{ measurement.description|default:measurement.note }}" data-period="{{ measurement.period_label }}" data-baseline="{{ measurement.baseline_value }}" data-baseline-date="{{ measurement.baseline_date|date:"d/m/Y" }}" data-measured="{{ measurement.measured_value }}" data-expected="{% if measurement.expected_value != None %}{{ measurement.expected_value|floatformat:"-2" }}{% endif %}" data-source="{{ measurement.source_reference }}" data-file="{% if measurement.evidence_attachment %}{{ measurement.evidence_attachment.url }}{% endif %}" data-file-name="{% if measurement.evidence_attachment %}{{ measurement.evidence_attachment.name|cut:"indicator_measurements/" }}{% endif %}" data-note="{{ measurement.note }}" data-by="{{ measurement.responsible_name }}" data-unit="{{ measurement.responsible_unit_label }}" data-at="{{ measurement.recorded_at|date:"d/m/Y H:i" }}">Ver</button>{% include "core/_measurement_actions.html" %}</td>
             </tr>{% endfor %}</tbody>
           </table></div>
@@ -189,7 +189,7 @@
 
         if (definition.hasAttribute('data-open-on-load')) { definition.showModal(); }
       }
-      var definitionToggle = document.querySelector('[data-toggle-definition]');
+      var definitionToggle = document.querySelector('.indicator-definition [data-toggle-facts]');
       if (definitionToggle) {
         var definitionContent = document.getElementById('indicator-definition-content');
         definitionToggle.addEventListener('click', function () {

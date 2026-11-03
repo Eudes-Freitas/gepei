@@ -44,7 +44,7 @@ class StrategicTargetForm(forms.ModelForm):
         model = StrategicTarget
         fields = ["artifact", "action", "code", "description", "target_value", "unit_of_measure", "reference_period"]
         labels = {
-            "artifact": "Objetivo ou projeto estratégico",
+            "artifact": "Item do plano estratégico",
             "action": "Ação estratégica (opcional)",
             "code": "Código",
             "description": "Meta",
@@ -356,6 +356,8 @@ class ActivityForm(forms.ModelForm):
         if not self.instance.pk:
             self.fields.pop("progress", None)
             self.fields.pop("status", None)
+        else:
+            self.fields["progress"].disabled = True
 
     def clean_weight(self):
         weight = self.cleaned_data["weight"]
@@ -1107,10 +1109,8 @@ class ActivityRiskReportForm(forms.Form):
     def clean(self):
         data = super().clean()
         risk = data.get("risk")
-        if not risk:
-            data["materialized"] = "SIM"
-        elif not data.get("materialized"):
-            self.add_error("materialized", "Informe se o risco cadastrado se materializou.")
+        if data.get("materialized") != "SIM":
+            self.add_error("materialized", "Selecione Sim para informar a materialização do risco.")
         if risk and risk.status == Risk.Status.MATERIALIZED and data.get("materialized") == "NAO":
             self.add_error("materialized", "Este risco já está materializado. Selecione Sim; o histórico de ocorrências será mantido.")
         return data
@@ -1118,7 +1118,20 @@ class ActivityRiskReportForm(forms.Form):
 
 class UnforeseenActivityRiskForm(ActivityRiskForm):
     class Meta(ActivityRiskForm.Meta):
-        fields = [field for field in ActivityRiskForm.Meta.fields if field != "status"]
+        fields = [field for field in ActivityRiskForm.Meta.fields if field not in ("status", "preventive_measure")]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["occurrence_timing"].label = "Quando o risco ocorreu?"
+        self.fields["occurrence_timing"].choices = [
+            ("", "Selecione quando ocorreu"),
+            (Risk.OccurrenceTiming.ANY_TIME, "Em um momento específico"),
+            (Risk.OccurrenceTiming.EXPOSURE_WINDOW, "Durante um período"),
+            (Risk.OccurrenceTiming.DATE_OR_MILESTONE, "Em uma data ou marco"),
+            (Risk.OccurrenceTiming.UNKNOWN, "Momento não identificado"),
+        ]
+        self.fields["trigger_description"].label = "Marco, sinal ou condição da ocorrência"
+        self.fields["trigger_description"].required = True
 
 
 class QuarterlyReportForm(forms.Form):

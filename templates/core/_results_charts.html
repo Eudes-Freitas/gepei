@@ -40,17 +40,18 @@
       document.querySelectorAll('[data-achievement-source]').forEach(function (box) {
         var data = JSON.parse(document.getElementById(box.dataset.achievementSource).textContent);
         var current = Number(box.dataset.currentIndicator);
+        var withoutMeasurement = data.total === null;
         Highcharts.chart(box, {
           chart: { type: 'pie', height: 340, style: font },
-          title: { text: data.total === null ? 'Sem aferição' : Highcharts.numberFormat(data.total, 1) + '%', verticalAlign: 'middle', y: -6, style: { fontSize: '24px' } },
-          subtitle: { text: 'Total da meta', verticalAlign: 'middle', y: 20 },
+          title: { text: withoutMeasurement ? '0' : Highcharts.numberFormat(data.total, 1) + '%', verticalAlign: 'middle', y: withoutMeasurement ? 0 : -6, style: { fontSize: '24px' } },
+          subtitle: { text: withoutMeasurement ? null : 'Total da meta', verticalAlign: 'middle', y: 20 },
           credits: { enabled: false }, legend: { enabled: true },
           tooltip: { formatter: function () {
             var point = this.point;
             if (point.achievement === null) { return point.name + (data.total === null ? '' : ': <b>' + Highcharts.numberFormat(point.y, 1) + '%</b>'); }
             return point.name + '<br/>Atingimento do indicador: <b>' + Highcharts.numberFormat(point.achievement, 1) + '%</b><br/>Contribuição ao total: <b>' + Highcharts.numberFormat(point.y, 1) + ' pontos percentuais</b>';
           } },
-          plotOptions: { pie: { innerSize: '58%', showInLegend: true, borderWidth: 2, dataLabels: { enabled: true, distance: 14, formatter: function () { return this.point.achievement === null ? this.point.name : this.point.name + ': ' + Highcharts.numberFormat(this.point.achievement, 1) + '%'; } } } },
+          plotOptions: { pie: { innerSize: '58%', showInLegend: true, borderWidth: 2, dataLabels: { enabled: !withoutMeasurement, distance: 14, formatter: function () { return this.point.achievement === null ? this.point.name : this.point.name + ': ' + Highcharts.numberFormat(this.point.achievement, 1) + '%'; } } } },
           series: [{ name: 'Composição da meta', data: data.pie_points.map(function (point) { return Object.assign({}, point, { name: point.name + (point.indicator_id === current ? ' (este indicador)' : ''), borderColor: point.indicator_id === current ? '#0b2a4a' : '#ffffff', borderWidth: point.indicator_id === current ? 3 : 2 }); }) }]
         });
       });

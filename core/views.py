@@ -171,10 +171,10 @@ def _indicator_pace(indicator, measurement, measured, target=None, year=""):
     if (indicator.direction == Indicator.Direction.HIGHER_IS_BETTER and final < baseline) or (
         indicator.direction == Indicator.Direction.LOWER_IS_BETTER and final > baseline
     ):
-        return {"code": "gray", "label": "Meta incompatível com o sentido do indicador", "achievement": None}
+        return {"code": "gray", "label": "Não avaliado", "achievement": None}
     evaluation_date = min(end, date(int(year), 12, 31)) if year else end
     if evaluation_date <= start:
-        return {"code": "gray", "label": "Período não iniciado", "achievement": None, "evaluation_date": evaluation_date}
+        return {"code": "gray", "label": "Não avaliado", "achievement": None, "evaluation_date": evaluation_date}
     elapsed = Decimal((evaluation_date - start).days) / Decimal((end - start).days)
     realized = (measured - baseline) / (final - baseline)
     return {
@@ -191,7 +191,7 @@ def _indicator_signal(indicator, target=None, year="", evaluation_date=None):
     measurements = _results_measurements(indicator, year)
     latest = measurements[0] if measurements else None
     if not latest:
-        return {"code": "gray", "label": "Sem aferição", "achievement": None, "measurement": None}
+        return {"code": "gray", "label": "Não avaliado", "achievement": None, "measurement": None}
     measured = _decimal_from_measurement(latest.measured_value)
     expected = latest.expected_value
     if target is not None:
@@ -207,9 +207,9 @@ def _indicator_signal(indicator, target=None, year="", evaluation_date=None):
     if pace is not None and pace.get("code") == "gray":
         return {**pace, "measurement": latest}
     if measured is None or (expected is None and pace is None):
-        return {"code": "gray", "label": "Dado insuficiente", "achievement": None, "measurement": latest}
+        return {"code": "gray", "label": "Não avaliado", "achievement": None, "measurement": latest}
     if indicator.direction == Indicator.Direction.RANGE:
-        return {"code": "gray", "label": "Faixa a configurar", "achievement": None, "measurement": latest}
+        return {"code": "gray", "label": "Não avaliado", "achievement": None, "measurement": latest}
     if pace is not None:
         achievement = pace["achievement"]
     elif indicator.direction == Indicator.Direction.LOWER_IS_BETTER:
@@ -223,13 +223,13 @@ def _indicator_signal(indicator, target=None, year="", evaluation_date=None):
         else:
             achievement = measured / expected * 100
     if achievement >= 100:
-        code, label = "green", "Conforme"
-    elif achievement >= 90:
-        code, label = "yellow", "Atenção"
-    elif achievement >= 70:
-        code, label = "orange", "Alerta"
+        code, label = "green", "Meta alcançada"
+    elif achievement >= 80:
+        code, label = "yellow", "Próximo da meta"
+    elif achievement >= 50:
+        code, label = "orange", "Atingimento parcial"
     else:
-        code, label = "red", "Crítico"
+        code, label = "red", "Baixo atingimento"
     return {
         **(pace or {"calculation_mode": "period", "expected_value": expected}),
         "code": code,
@@ -240,11 +240,11 @@ def _indicator_signal(indicator, target=None, year="", evaluation_date=None):
 
 
 SIGNAL_STYLE = {
-    "green": ("Conforme", "#16834a"),
-    "yellow": ("Atenção", "#e5a11b"),
-    "orange": ("Alerta", "#e07b1a"),
-    "red": ("Crítico", "#d84a4a"),
-    "gray": ("Sem aferição", "#aebbc8"),
+    "green": ("Meta alcançada", "#16834a"),
+    "yellow": ("Próximo da meta", "#e5a11b"),
+    "orange": ("Atingimento parcial", "#e07b1a"),
+    "red": ("Baixo atingimento", "#d84a4a"),
+    "gray": ("Não avaliado", "#aebbc8"),
 }
 SIGNAL_SEVERITY = {"green": 1, "yellow": 2, "orange": 3, "red": 4}
 
@@ -274,7 +274,7 @@ def _selected_result_status(request, kind):
 def _target_signal(target, signals):
     codes = [signals[item.id] for item in target.indicators.all() if item.id in signals]
     measured = [code for code in codes if code != "gray"]
-    return max(measured, key=SIGNAL_SEVERITY.get) if measured else ("gray" if codes else "none")
+    return max(measured, key=SIGNAL_SEVERITY.get) if measured else "gray"
 
 
 def _can_write_target(user, target):
@@ -295,7 +295,15 @@ def _scoped_targets(user, plans, unit_id=""):
     if visible_ids is not None:
         targets = targets.filter(Q(action__in=view_scope_actions(StrategicAction.objects.all(), user)) | Q(action__isnull=True, indicators__responsible_unit_id__in=visible_ids) | Q(action__isnull=True, indicators__responsible_units__id__in=visible_ids))
     if unit_id.isdigit():
-        targets = targets.filter(Q(action__coordinating_unit_id=unit_id) | Q(action__participating_units__id=unit_id) | Q(action__isnull=True, indicators__responsible_unit_id=unit_id) | Q(action__isnull=True, indicators__responsible_units__id=unit_id))
+        targets = targets.filter(
+            (Q(action__coordinating_unit_id=unit_id) | Q(action__participating_units__id=unit_id) | Q(action__isnull=True))
+            & (
+                Q(indicators__responsible_unit_id=unit_id)
+                | Q(indicators__responsible_units__id=unit_id)
+                | Q(indicators__isnull=True, action__coordinating_unit_id=unit_id)
+                | Q(indicators__isnull=True, action__participating_units__id=unit_id)
+            )
+        )
     return targets.select_related("artifact", "artifact__plan", "action").prefetch_related(
         "indicators", "indicators__responsible_units", "indicators__measurements", "indicators__targets", "indicators__artifacts__plan"
     ).distinct()
@@ -322,7 +330,7 @@ def _target_execution(target, user=None, unit_id="", year=""):
         "target": target,
         "indicators": indicators,
         "code": code,
-        "label": "Sem indicador" if code == "none" else SIGNAL_STYLE[code][0],
+        "label": SIGNAL_STYLE[code][0],
         "achievement": min(achievements) if achievements else None,
         "progress": round(sum(progress) / len(progress), 1) if progress else None,
         "measured_count": len(measurements),
@@ -357,7 +365,7 @@ def _target_achievement_chart(execution):
         if remaining > 0:
             pie_points.append({"name": "Falta atingir", "y": remaining, "achievement": None, "indicator_id": None, "color": "#e1e7ef"})
     else:
-        pie_points = [{"name": "Sem aferição suficiente", "y": 100, "achievement": None, "indicator_id": None, "color": "#e1e7ef"}]
+        pie_points = [{"name": "Sem aferição", "y": 100, "achievement": None, "indicator_id": None, "color": "#e1e7ef"}]
     return {
         "pie_points": pie_points,
         "total": total,
@@ -441,7 +449,7 @@ def _performance_summary(user, dash_plans, base_filters, unit_id):
     charts = {
         "measured": [
             {"name": "Aferidos", "y": measured, "color": "#1769aa", "url": indicator_link(status="measured")},
-            {"name": "Sem aferição", "y": signal_counts["gray"], "color": "#aebbc8", "url": indicator_link(status="gray")},
+            {"name": SIGNAL_STYLE["gray"][0], "y": signal_counts["gray"], "color": SIGNAL_STYLE["gray"][1], "url": indicator_link(status="gray")},
         ],
         "signal": [
             {"name": SIGNAL_STYLE[code][0], "y": signal_counts[code], "color": SIGNAL_STYLE[code][1], "url": indicator_link(status=code)}
@@ -449,12 +457,11 @@ def _performance_summary(user, dash_plans, base_filters, unit_id):
         ],
         "objectives": objective_bars,
         "targets": [
-            {"name": "Conforme", "y": target_counts["green"], "color": "#16834a", "url": target_link(status="green")},
-            {"name": "Atenção", "y": target_counts["yellow"], "color": "#e5a11b", "url": target_link(status="yellow")},
-            {"name": "Alerta", "y": target_counts["orange"], "color": "#e07b1a", "url": target_link(status="orange")},
-            {"name": "Crítico", "y": target_counts["red"], "color": "#d84a4a", "url": target_link(status="red")},
-            {"name": "Sem aferição", "y": target_counts["gray"], "color": "#aebbc8", "url": target_link(status="gray")},
-            {"name": "Sem indicador", "y": target_counts["none"], "color": "#d0d7de", "url": target_link(status="none")},
+            {"name": SIGNAL_STYLE["green"][0], "y": target_counts["green"], "color": SIGNAL_STYLE["green"][1], "url": target_link(status="green")},
+            {"name": SIGNAL_STYLE["yellow"][0], "y": target_counts["yellow"], "color": SIGNAL_STYLE["yellow"][1], "url": target_link(status="yellow")},
+            {"name": SIGNAL_STYLE["orange"][0], "y": target_counts["orange"], "color": SIGNAL_STYLE["orange"][1], "url": target_link(status="orange")},
+            {"name": SIGNAL_STYLE["red"][0], "y": target_counts["red"], "color": SIGNAL_STYLE["red"][1], "url": target_link(status="red")},
+            {"name": SIGNAL_STYLE["gray"][0], "y": target_counts["gray"], "color": SIGNAL_STYLE["gray"][1], "url": target_link(status="gray")},
         ],
     }
     return {
@@ -498,11 +505,7 @@ def dashboard(request):
     selected_status = request.GET.get("status", "")
     if selected_plan.isdigit():
         actions = actions.filter(artifact__plan_id=selected_plan)
-    # Selecting the organ itself (e.g. SESED) covers every unit, so no unit filter applies.
-    unit_filter = (
-        selected_unit.isdigit()
-        and units.filter(pk=selected_unit).exclude(unit_type=OrganizationalUnit.UnitType.ORGAN).exists()
-    )
+    unit_filter = selected_unit.isdigit() and units.filter(pk=selected_unit).exists()
     if unit_filter:
         actions = actions.filter(coordinating_unit_id=selected_unit)
     if selected_status in StrategicAction.Status.values:
@@ -541,10 +544,21 @@ def dashboard(request):
     if selected_plan.isdigit():
         objective_query = objective_query.filter(plan_id=selected_plan)
     if unit_filter or user_unit_ids(request.user, for_view=True) is not None:
+        scoped_targets = _scoped_targets(request.user, plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans, selected_unit if unit_filter else "")
+        scoped_indicators = view_scope_by_unit(
+            Indicator.objects.filter(artifacts__plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans),
+            request.user, "responsible_unit_id", include_unassigned=True,
+        )
+        if unit_filter:
+            scoped_indicators = scoped_indicators.filter(
+                Q(responsible_unit_id=selected_unit) | Q(responsible_units__id=selected_unit)
+            )
         objective_query = objective_query.filter(
             Q(actions__in=actions)
             | Q(planartifact__actions__in=actions)
             | Q(planartifact__planartifact__actions__in=actions)
+            | Q(targets__in=scoped_targets)
+            | Q(indicators__in=scoped_indicators)
         ).distinct()
 
     # Riscos prioritários: apenas altos e críticos do recorte (setor selecionado ou todos os setores).
@@ -828,6 +842,7 @@ def _results_overview(request):
         years.add(int(selected_year))
     context["selected_year"] = selected_year
     context["available_years"] = sorted(years, reverse=True)
+    context["displayed_target_count"] = len(context.get("target_rows", []))
     can_measure = request.user.has_perm("core.view_indicatormeasurement")
     context["can_view_measurements"] = can_measure
     context["can_add_measurement"] = request.user.has_perm("core.add_indicatormeasurement")
@@ -865,6 +880,7 @@ def _indicator_overview_context(request):
     selected_plan = request.GET.get("plan", "")
     selected_unit = selected_unit_for_request(request)
     selected_objective = request.GET.get("objective", "")
+    selected_indicator = request.GET.get("indicator", "")
     selected_status = _selected_result_status(request, "indicator")
     selected_year = _selected_results_year(request)
     plan = plans.filter(pk=selected_plan).first() if selected_plan.isdigit() else plans.first()
@@ -885,11 +901,18 @@ def _indicator_overview_context(request):
         )
         if selected_unit.isdigit():
             indicators = indicators.filter(Q(responsible_unit_id=selected_unit) | Q(responsible_units__id=selected_unit)).distinct()
+            objectives = objectives.filter(
+                Q(indicators__in=indicators)
+                | Q(targets__in=_scoped_targets(request.user, plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans, selected_unit))
+            ).distinct()
         if selected_objective.isdigit():
             indicators = indicators.filter(artifacts__id=selected_objective)
 
+    indicator_options = indicators.order_by("code", "name")
     if request.GET.get("target", "").isdigit():
         indicators = indicators.filter(targets__id=request.GET["target"])
+    if selected_indicator.isdigit():
+        indicators = indicators.filter(pk=selected_indicator)
     indicator_rows = []
     signal_counts = {"green": 0, "yellow": 0, "orange": 0, "red": 0, "gray": 0}
     for indicator in indicators:
@@ -912,6 +935,8 @@ def _indicator_overview_context(request):
             "selected_unit": selected_unit,
             "selected_objective": selected_objective,
             "selected_indicator_status": selected_status,
+            "selected_indicator": selected_indicator,
+            "indicator_options": indicator_options,
             "indicator_rows": indicator_rows,
             "indicator_count": sum(signal_counts.values()),
             "updated_count": sum(value for key, value in signal_counts.items() if key != "gray"),
@@ -925,6 +950,7 @@ def _target_overview_context(request):
     selected_plan = request.GET.get("plan", "")
     selected_year = _selected_results_year(request)
     selected_objective = request.GET.get("objective", "")
+    selected_indicator = request.GET.get("indicator", "")
     plan = plans.filter(pk=selected_plan).first() if selected_plan.isdigit() else plans.first()
 
     targets = StrategicTarget.objects.none()
@@ -935,12 +961,22 @@ def _target_overview_context(request):
             artifact_type=PlanArtifact.ArtifactType.OBJECTIVE,
         ).order_by("code", "title")
         targets = _scoped_targets(request.user, plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans, selected_unit_for_request(request)).order_by("code", "description")
+        selected_unit = selected_unit_for_request(request)
+        if selected_unit.isdigit():
+            objectives = objectives.filter(
+                Q(targets__in=targets)
+                | Q(indicators__responsible_unit_id=selected_unit)
+                | Q(indicators__responsible_units__id=selected_unit)
+            ).distinct()
         if selected_objective.isdigit():
             targets = targets.filter(artifact_id=selected_objective)
 
+    target_options = targets.order_by("code", "description")
     editable_targets = targets.filter(pk__in=[target.pk for target in targets if _can_write_target(request.user, target)])
     if request.GET.get("target", "").isdigit():
         targets = targets.filter(pk=request.GET["target"])
+    if selected_indicator.isdigit():
+        targets = targets.filter(indicators__id=selected_indicator).distinct()
     selected_status = _selected_result_status(request, "target")
     if selected_status in (*SIGNAL_STYLE, "none", "unmeasured", "attention", "measured"):
         indicators = view_scope_by_unit(Indicator.objects.filter(artifacts__plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans).distinct(), request.user, "responsible_unit_id", include_unassigned=True)
@@ -1025,6 +1061,7 @@ def _target_overview_context(request):
             "selected_plan": selected_plan,
             "selected_objective": selected_objective,
             "targets": targets,
+            "target_options": target_options,
             "target_rows": target_rows,
             "status_counts": status_counts,
             "target_attention_count": status_counts["yellow"] + status_counts["orange"] + status_counts["red"],
@@ -1647,6 +1684,9 @@ def risk_overview(request):
         risks = list(risks)
 
     risks.sort(key=lambda risk: (risk.action.artifact.code, risk.action.code, risk.title))
+    writable_action_ids = set(scope_actions(StrategicAction.objects.all(), request.user).values_list("id", flat=True))
+    for risk in risks:
+        risk.can_edit = request.user.has_perm("core.change_risk") and risk.action_id in writable_action_ids
     return render(
         request,
         "core/risk_overview.html",
@@ -2369,6 +2409,7 @@ def risk_map(request, action_id):
             "registered_risks": registered_risks,
             "registered_risk_ids": ",".join(str(item.pk) for item in registered_risks),
             "can_add_risk": not request.read_only_other_unit and request.user.has_perm("core.add_risk"),
+            "can_edit_risk": not request.read_only_other_unit and request.user.has_perm("core.change_risk"),
         },
     )
 

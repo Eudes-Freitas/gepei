@@ -6,8 +6,8 @@
   <dl class="definition-grid">
     <div><dt>Valor esperado</dt><dd>{{ target.target_value|default:"A definir" }}{% if target.unit_of_measure %} {{ target.unit_of_measure }}{% endif %}</dd></div>
     <div><dt>Período da meta</dt><dd>{{ target.reference_period|default:"A definir" }}</dd></div>
-    <div><dt>Plano</dt><dd>{{ target.artifact.plan.acronym }} · {{ target.artifact.plan.name }}</dd></div>
-    <div><dt>Objetivo ou projeto</dt><dd>{{ target.artifact.code }} · {{ target.artifact.title }}</dd></div>
+    <div><dt>Plano estratégico</dt><dd>{{ target.artifact.plan.acronym }} · {{ target.artifact.plan.name }}</dd></div>
+    <div><dt>Item do plano estratégico</dt><dd>{{ target.artifact.code }} · {{ target.artifact.title }}</dd></div>
     {% if target.action %}<div><dt>Ação estratégica</dt><dd>{{ target.action.code }} · {{ target.action.title }}</dd></div>{% endif %}
   </dl>
   {% if can_edit_target and target.can_write %}<a class="button button-secondary" href="{% url 'target_overview' %}?plan={{ target.artifact.plan_id }}&amp;target={{ target.id }}&amp;editar={{ target.id }}{% if selected_unit %}&amp;unit={{ selected_unit }}{% endif %}#meta-{{ target.id }}">Editar meta</a>{% endif %}
@@ -17,7 +17,7 @@
     {% with summary=target.achievement_summary %}
     <section class="target-achievement-section" aria-label="Atingimento da meta {{ target.code }}">
       <h4>Atingimento da meta no período</h4>
-      <p><strong>{% if summary.total != None %}{{ summary.total|floatformat:"-1" }}%{% else %}Sem aferição suficiente{% endif %}</strong> · {{ summary.measured_count }} de {{ summary.indicator_count }} indicadores com atingimento calculado.</p>
+      {% if summary.total != None %}<p><strong>{{ summary.total|floatformat:"-1" }}%</strong> · {{ summary.measured_count }} de {{ summary.indicator_count }} indicadores com atingimento calculado.</p>{% endif %}
       {% if summary.indicator_count %}
         {% with target_id=target.id|stringformat:"s" indicator_id=row.indicator.id|default:0|stringformat:"s" %}
         {% with chart_id="achievement-meta-"|add:target_id|add:"-indicador-"|add:indicator_id %}
@@ -25,7 +25,7 @@
           {{ summary|json_script:chart_id }}
         {% endwith %}{% endwith %}
       {% endif %}
-      <p class="form-hint">As fatias representam a contribuição de cada indicador ao total; a parte cinza indica o que falta atingir. Total: média dos percentuais dos indicadores do recorte, com o mesmo peso e limite de 100% por indicador. Cada percentual compara a última aferição com sua meta do período; valores de unidades diferentes não são somados.{% if summary.partial %} Resultado parcial: indicadores sem dados suficientes ficam fora da média e aparecem sem aferição.{% endif %}</p>
+      {% if summary.total != None %}<p class="form-hint">As fatias representam a contribuição de cada indicador ao total; a parte cinza indica o que falta atingir. Total: média dos percentuais dos indicadores do recorte, com o mesmo peso e limite de 100% por indicador. Cada percentual compara a última aferição com sua meta do período; valores de unidades diferentes não são somados.{% if summary.partial %} Resultado parcial: indicadores sem dados suficientes ficam fora da média e aparecem sem aferição.{% endif %}</p>{% endif %}
     </section>
     {% endwith %}
   {% endif %}

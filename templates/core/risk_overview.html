@@ -48,7 +48,7 @@
           <td class="col-center"><span class="risk-level {% if risk.level >= 20 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }} · {{ risk.level_label }}</span></td>
           <td>{% if not perms.core.view_risktreatment %}🔒{% else %}{% with treatment=risk.treatments.first %}{% if treatment %}{{ treatment.get_decision_display }}{% elif risk.treatment %}{{ risk.treatment|title }}{% else %}A definir{% endif %}{% endwith %}{% endif %}</td>
           <td><span class="chip chip-{{ risk.status|lower }}">{{ risk.get_status_display }}</span></td>
-          <td><div class="row-actions"><a class="text-button" href="{% url 'risk_detail' risk.action.id risk.id %}">Visualizar</a></div></td>
+          <td><div class="row-actions"><a class="row-icon" href="{% url 'risk_detail' risk.action.id risk.id %}" title="Visualizar risco" aria-label="Visualizar risco">{% include "core/_record_icon.html" with icon="view" %}</a></div></td>
         </tr>{% endfor %}
       </tbody></table></div>
     {% else %}<div class="empty-state large-empty"><strong>Nenhum risco encontrado.</strong><span>Altere os filtros ou use “Cadastrar risco”.</span></div>{% endif %}

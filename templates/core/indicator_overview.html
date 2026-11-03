@@ -26,28 +26,32 @@
     <label class="filter-wide">Objetivo estratégico
       <select name="objective"><option value="">Todos os objetivos</option>{% for objective in objectives %}<option value="{{ objective.id }}" {% if selected_objective == objective.id|stringformat:"s" %}selected{% endif %}>{{ objective.code }} · {{ objective.title }}</option>{% endfor %}</select>
     </label>
+    {% if perms.core.view_strategictarget %}<label class="filter-wide">Meta
+      <select name="target"><option value="">Todas as metas</option>{% for target in target_options %}<option value="{{ target.id }}" {% if selected_target == target.id|stringformat:"s" %}selected{% endif %}>{{ target.code|default:"Meta" }} · {{ target.description }}</option>{% endfor %}</select>
+    </label>{% endif %}
+    {% if perms.core.view_indicator %}<label class="filter-wide">Indicador
+      <select name="indicator"><option value="">Todos os indicadores</option>{% for indicator in indicator_options %}<option value="{{ indicator.id }}" {% if selected_indicator == indicator.id|stringformat:"s" %}selected{% endif %}>{{ indicator.code|default:"Indicador" }} · {{ indicator.name }}</option>{% endfor %}</select>
+    </label>{% endif %}
     {% if perms.core.view_strategictarget %}<label>Situação da meta
       <select name="target_status">
         <option value="">Todas as metas</option>
-        <option value="green" {% if selected_target_status == "green" %}selected{% endif %}>Conforme</option>
-        <option value="yellow" {% if selected_target_status == "yellow" %}selected{% endif %}>Atenção</option>
-        <option value="orange" {% if selected_target_status == "orange" %}selected{% endif %}>Alerta</option>
-        <option value="red" {% if selected_target_status == "red" %}selected{% endif %}>Crítico</option>
-        <option value="gray" {% if selected_target_status == "gray" %}selected{% endif %}>Sem aferição</option>
-        <option value="none" {% if selected_target_status == "none" %}selected{% endif %}>Sem indicador</option>
+        <option value="green" {% if selected_target_status == "green" %}selected{% endif %}>Meta alcançada</option>
+        <option value="yellow" {% if selected_target_status == "yellow" %}selected{% endif %}>Próximo da meta</option>
+        <option value="orange" {% if selected_target_status == "orange" %}selected{% endif %}>Atingimento parcial</option>
+        <option value="red" {% if selected_target_status == "red" %}selected{% endif %}>Baixo atingimento</option>
+        <option value="gray" {% if selected_target_status == "gray" %}selected{% endif %}>Não avaliado</option>
       </select>
     </label>{% endif %}
     {% if perms.core.view_indicator %}<label>Situação do indicador
       <select name="indicator_status">
         <option value="">Todos os indicadores</option>
-        <option value="green" {% if selected_indicator_status == "green" %}selected{% endif %}>Conforme</option>
-        <option value="yellow" {% if selected_indicator_status == "yellow" %}selected{% endif %}>Atenção</option>
-        <option value="orange" {% if selected_indicator_status == "orange" %}selected{% endif %}>Alerta</option>
-        <option value="red" {% if selected_indicator_status == "red" %}selected{% endif %}>Crítico</option>
-        <option value="gray" {% if selected_indicator_status == "gray" %}selected{% endif %}>Sem aferição ou dado insuficiente</option>
+        <option value="green" {% if selected_indicator_status == "green" %}selected{% endif %}>Meta alcançada</option>
+        <option value="yellow" {% if selected_indicator_status == "yellow" %}selected{% endif %}>Próximo da meta</option>
+        <option value="orange" {% if selected_indicator_status == "orange" %}selected{% endif %}>Atingimento parcial</option>
+        <option value="red" {% if selected_indicator_status == "red" %}selected{% endif %}>Baixo atingimento</option>
+        <option value="gray" {% if selected_indicator_status == "gray" %}selected{% endif %}>Não avaliado</option>
       </select>
     </label>{% endif %}
-    {% if selected_target %}<input type="hidden" name="target" value="{{ selected_target }}">{% endif %}
     <button class="button button-primary" type="submit">Aplicar filtros</button>
     <a class="clear-filter" href="{% if perms.core.view_indicator %}{% url 'indicator_overview' %}{% else %}{% url 'target_overview' %}{% endif %}">Limpar</a>
   </form>
@@ -55,11 +59,12 @@
   {% if selected_year %}<p class="form-hint">Resultados de {{ selected_year }} (cálculo até o encerramento do ano, limitado ao fim do plano): situações e gráficos consideram as aferições cujo período termina neste ano. Sem datas do período, é usado o ano informado na referência. Metas e indicadores sem aferição no ano permanecem visíveis.</p>{% endif %}
 
   {% if perms.core.view_indicator %}
-  <section class="metrics metrics-centered indicator-metrics" aria-label="Resumo dos indicadores">
+  <section class="metrics metrics-centered indicator-detail-metrics results-overview-metrics" aria-label="Resumo das metas e dos indicadores">
+    {% if perms.core.view_strategictarget %}<article class="metric-card"><span>Metas exibidas</span><strong>{{ displayed_target_count }}</strong></article>{% endif %}
     <article class="metric-card"><span>Indicadores</span><strong>{{ indicator_count }}</strong></article>
     <article class="metric-card metric-blue"><span>Com situação calculada</span><strong>{{ updated_count }}</strong></article>
     <article class="metric-card metric-warning"><span>Exigem atenção</span><strong>{{ attention_count }}</strong></article>
-    <article class="metric-card"><span>Sem aferição completa</span><strong>{{ signal_counts.gray }}</strong></article>
+    <article class="metric-card"><span>Não avaliados</span><strong>{{ signal_counts.gray }}</strong></article>
   </section>
 
   <section aria-label="Metas e indicadores detalhados">

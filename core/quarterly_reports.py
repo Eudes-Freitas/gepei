@@ -57,14 +57,22 @@ def _snapshot(plan, unit, year, quarter):
     activities = list(Activity.objects.filter(action_plan__action__in=actions).select_related("action_plan__action", "executor"))
     artifacts = {a.id: a for a in PlanArtifact.objects.filter(plan=plan)}
     action_artifact_ids = set()
+    action_objective_codes = {}
     for action in actions:
         node = artifacts.get(action.artifact_id)
         visited = set()
         while node and node.pk not in visited:
             visited.add(node.pk)
             action_artifact_ids.add(node.pk)
+            if node.artifact_type == PlanArtifact.ArtifactType.OBJECTIVE:
+                action_objective_codes[action.pk] = node.code
             node = artifacts.get(node.parent_id)
-    targets = list(StrategicTarget.objects.filter(artifact__plan=plan).filter(Q(action__in=actions) | Q(action__isnull=True, indicators__responsible_unit=unit) | Q(action__isnull=True, indicators__responsible_units=unit) | Q(action__isnull=True, artifact_id__in=action_artifact_ids)).distinct().select_related("artifact"))
+    targets = list(StrategicTarget.objects.filter(artifact__plan=plan).filter(
+        Q(action__in=actions)
+        | Q(indicators__responsible_unit=unit)
+        | Q(indicators__responsible_units=unit)
+        | Q(action__isnull=True, artifact_id__in=action_artifact_ids)
+    ).distinct().select_related("artifact"))
     indicators = list(Indicator.objects.filter(((Q(responsible_unit=unit) | Q(responsible_units=unit)) & (Q(artifacts__plan=plan) | Q(targets__artifact__plan=plan))) | Q(targets__in=targets)).distinct().prefetch_related("measurements", "artifacts", "responsible_units", "targets__artifact__plan"))
     objective_ids = set()
     artifact_ids = {a.artifact_id for a in actions} | {t.artifact_id for t in targets} | {a.id for i in indicators for a in i.artifacts.all() if a.plan_id == plan.id}
@@ -111,7 +119,7 @@ def _snapshot(plan, unit, year, quarter):
         "objectives": [{"id": pk, "code": artifacts[pk].code, "title": artifacts[pk].title} for pk in sorted(objective_ids)],
         "targets": target_rows,
         "indicators": indicator_rows,
-        "actions": [{"id": a.pk, "code": a.code, "title": a.title, "status": a.get_status_display(), "progress": str(a.progress), "due_date": a.due_date.isoformat() if a.due_date else ""} for a in actions],
+        "actions": [{"id": a.pk, "code": a.code, "title": a.title, "objective": action_objective_codes.get(a.pk, ""), "status": a.get_status_display(), "progress": str(a.progress), "due_date": a.due_date.isoformat() if a.due_date else ""} for a in actions],
         "activities": [{"id": a.pk, "action_id": a.action_plan.action_id, "action": a.action_plan.action.code, "title": a.title, "status": a.get_status_display(), "progress": str(a.progress), "executor": a.executor.get_full_name() or a.executor.username} for a in activities],
         "risks": [{"id": r.pk, "title": r.title, "action": r.action.code, "status": r.get_status_display(), "level": r.level, "cause": r.cause, "control": r.preventive_measure} for r in risks],
         "blockers": [{"id": b.pk, "description": b.description, "status": b.get_status_display()} for b in blockers],
@@ -231,7 +239,18 @@ def repair_report_scope(report):
 def _report_display_data(snapshot, report=None):
     """Adiciona classes visuais sem alterar os dados consolidados."""
     data = dict(snapshot)
-    signal_classes = {"Conforme": "green", "Atenção": "yellow", "Alerta": "orange", "Crítico": "red"}
+    objectives_by_code = {item.get("code"): item for item in snapshot.get("objectives", []) if item.get("code")}
+
+    def objective_for(item):
+        code = item.get("objective", "")
+        if not code:
+            match = re.match(r"^(?:AE|Mt)\s+(\d{2})\.", item.get("code") or item.get("action") or "")
+            code = f"OE {match.group(1)}" if match else ""
+        objective = objectives_by_code.get(code)
+        return {"objective_code": code, "objective_title": objective.get("title", "") if objective else ""}
+
+    data["targets"] = [{**item, **objective_for(item)} for item in snapshot.get("targets", [])]
+    signal_classes = {"Meta alcançada": "green", "Próximo da meta": "yellow", "Atingimento parcial": "orange", "Baixo atingimento": "red", "Conforme": "green", "Atenção": "yellow", "Alerta": "orange", "Crítico": "red"}
     data["indicators"] = [{**item, "signal_class": signal_classes.get(item.get("status"), "gray")} for item in snapshot.get("indicators", [])]
     action_classes = {label: value.lower() for value, label in [*StrategicAction.Status.choices, (Activity.PAUSED, "Pausada")]}
     risk_classes = {label: value.lower() for value, label in Risk.Status.choices}
@@ -242,6 +261,7 @@ def _report_display_data(snapshot, report=None):
     actions_by_id = {}
     actions_by_code = {}
     for action in data["actions"]:
+        action.update(objective_for(action))
         action["activities"] = []
         if action.get("id") is not None:
             actions_by_id[action["id"]] = action
@@ -258,14 +278,17 @@ def _report_display_data(snapshot, report=None):
             matches = actions_by_code.get(activity.get("action"), [])
             action = matches[0] if len(matches) == 1 else None
         if action is None:
+            activity.update(objective_for(activity))
             data["unassigned_activities"].append(activity)
         else:
+            activity["objective_code"] = action["objective_code"]
+            activity["objective_title"] = action["objective_title"]
             action["activities"].append(activity)
     from .views import _decimal_from_measurement
     linked_target_ids = set()
     for indicator_index, item in enumerate(data["indicators"]):
         ids = set(item.get("target_ids", []))
-        item["targets"] = [{**target, "report_anchor": f"report-target-{index}" if target.get("id") not in linked_target_ids else ""} for index, target in enumerate(snapshot.get("targets", []), 1) if target.get("id") in ids]
+        item["targets"] = [{**target, "report_anchor": f"report-target-{index}" if target.get("id") not in linked_target_ids else ""} for index, target in enumerate(data["targets"], 1) if target.get("id") in ids]
         linked_target_ids.update(ids)
         item["measurements"] = [dict(m) for m in item.get("measurements", [])]
         chart_rows = []
@@ -296,7 +319,7 @@ def _report_display_data(snapshot, report=None):
         item["chart"] = {"categories": [m["period"] for m in chart_rows], "result": [m["result"] for m in chart_rows], "expected": [m["expected"] for m in chart_rows]} if chart_rows else None
         item["chart_id"] = f"report-indicator-chart-{indicator_index}"
         item["chart_data_id"] = f"report-indicator-data-{indicator_index}"
-    data["unlinked_targets"] = [dict(target) for target in snapshot.get("targets", []) if target.get("id") not in linked_target_ids]
+    data["unlinked_targets"] = [dict(target) for target in data["targets"] if target.get("id") not in linked_target_ids]
     data["evidences"] = [dict(item) for item in snapshot.get("evidences", [])]
     for index, item in enumerate(data["evidences"]):
         if report and item.get("file"):
