@@ -6,6 +6,7 @@ from django.db import transaction
 from core.models import Indicator, OrganizationalUnit, PlanArtifact, StrategicAction, StrategicTarget
 from core.pei_responsibility_data import OBJECTIVE_RESPONSIBILITIES
 from core.pei_indicator_data import INDICATOR_ROWS, INDICATOR_UNITS_SOURCES, INDICATOR_ACTION_CODES
+from core.pei_baseline_data import REFERENCE_PARAMETERS
 
 
 class Command(BaseCommand):
@@ -56,6 +57,7 @@ class Command(BaseCommand):
             indicator_created = indicator is None
             if indicator_created:
                 indicator = Indicator()
+                indicator.baseline = REFERENCE_PARAMETERS[number]["baseline_text"]
             indicator.code = f"IE {number}"
             indicator.name = name
             indicator.indicator_type = kind

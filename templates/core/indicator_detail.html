@@ -3,7 +3,7 @@
 {% block content %}
   <a class="back-link" href="{% url 'indicator_overview' %}">← Voltar para metas e indicadores</a>
   <section class="action-detail-heading">
-    <div><p class="eyebrow">{{ indicator.code|default:"Indicador estratégico" }}</p><h1>{{ indicator.name }}</h1><p>{{ indicator.description|default:"Descrição ainda não informada." }}</p></div>
+    <div><p class="eyebrow">{{ indicator.code|default:"Indicador estratégico" }}</p><h1>{{ indicator.name }}</h1><p><strong>Objetivo:</strong> {{ indicator.description|default:"Descrição ainda não informada." }}</p></div>
     <span class="signal signal-{{ signal.code }}"><i></i>{{ signal.label }}</span>
   </section>
 
@@ -68,8 +68,8 @@
               <div><dt>Valor esperado da meta</dt><dd>{{ target.target_value|default:"A definir" }}</dd></div>
               <div><dt>Unidade de medida</dt><dd>{{ target.unit_of_measure|default:"A definir" }}</dd></div>
               <div><dt>Período de referência</dt><dd>{{ target.reference_period|default:"A definir" }}</dd></div>
-              <div><dt>Plano</dt><dd>{{ target.artifact.plan.acronym }} · {{ target.artifact.plan.name }}</dd></div>
-              <div><dt>Objetivo ou projeto estratégico</dt><dd>{{ target.artifact.code }} · {{ target.artifact.title }}</dd></div>
+              <div><dt>Plano estratégico</dt><dd>{{ target.artifact.plan.acronym }} · {{ target.artifact.plan.name }}</dd></div>
+              <div><dt>Item do plano estratégico</dt><dd>{{ target.artifact.code }} · {{ target.artifact.title }}</dd></div>
               {% if target.action %}<div><dt>Ação estratégica</dt><dd>{% if perms.core.view_actionplan %}<a href="{% url 'action_plan_detail' target.action_id %}">{{ target.action.code }} · {{ target.action.title }}</a>{% else %}{{ target.action.code }} · {{ target.action.title }}{% endif %}</dd></div>{% endif %}
             </dl>
           </section>

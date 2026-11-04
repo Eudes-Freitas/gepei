@@ -1,6 +1,6 @@
 <article class="panel unified-indicator-card" id="indicador-{{ row.indicator.id }}" tabindex="-1">
   <div class="panel-heading"><div><p class="eyebrow">{{ row.indicator.code|default:"Indicador" }}</p><h2>{{ row.indicator.name }}</h2></div><span class="signal signal-{{ row.signal.code }}"><i></i>{{ row.signal.label }}</span></div>
-  <p>{{ row.indicator.description|default:"Descrição ainda não informada." }}</p>
+  <p><strong>Objetivo:</strong> {{ row.indicator.description|default:"Descrição ainda não informada." }}</p>
   {% include "core/_indicator_reference.html" with reference=row.indicator.reference_parameters %}
 
   {% if can_view_measurements and not row.targets %}<section class="unified-result-section"><h3>Atingimento do indicador</h3>

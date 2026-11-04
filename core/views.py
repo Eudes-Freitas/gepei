@@ -182,10 +182,10 @@ def _indicator_pace(indicator, measurement, measured, target=None, year="", eval
     if (indicator.direction == Indicator.Direction.HIGHER_IS_BETTER and final < baseline) or (
         indicator.direction == Indicator.Direction.LOWER_IS_BETTER and final > baseline
     ):
-        return {"code": "gray", "label": "Meta incompatível com o sentido do indicador", "achievement": None}
+        return {"code": "gray", "label": "Não avaliado", "achievement": None}
     evaluation_date = min(end, evaluation_date or (date(int(year), 12, 31) if year else end))
     if evaluation_date <= start:
-        return {"code": "gray", "label": "Período não iniciado", "achievement": None, "evaluation_date": evaluation_date}
+        return {"code": "gray", "label": "Não avaliado", "achievement": None, "evaluation_date": evaluation_date}
     elapsed = Decimal((evaluation_date - start).days) / Decimal((end - start).days)
     realized = (measured - baseline) / (final - baseline)
     return {
@@ -205,7 +205,7 @@ def _indicator_signal(indicator, target=None, year="", evaluation_date=None, qua
         evaluation_date = date(int(year), month, monthrange(int(year), month)[1])
     latest = measurements[0] if measurements else None
     if not latest:
-        return {"code": "gray", "label": "Sem aferição", "achievement": None, "measurement": None}
+        return {"code": "gray", "label": "Não avaliado", "achievement": None, "measurement": None}
     measured = _decimal_from_measurement(latest.measured_value)
     expected = latest.expected_value
     if target is not None:
@@ -221,9 +221,9 @@ def _indicator_signal(indicator, target=None, year="", evaluation_date=None, qua
     if pace is not None and pace.get("code") == "gray":
         return {**pace, "measurement": latest}
     if measured is None or (expected is None and pace is None):
-        return {"code": "gray", "label": "Dado insuficiente", "achievement": None, "measurement": latest}
+        return {"code": "gray", "label": "Não avaliado", "achievement": None, "measurement": latest}
     if indicator.direction == Indicator.Direction.RANGE:
-        return {"code": "gray", "label": "Faixa a configurar", "achievement": None, "measurement": latest}
+        return {"code": "gray", "label": "Não avaliado", "achievement": None, "measurement": latest}
     if pace is not None:
         achievement = pace["achievement"]
     elif indicator.direction == Indicator.Direction.LOWER_IS_BETTER:
@@ -237,13 +237,13 @@ def _indicator_signal(indicator, target=None, year="", evaluation_date=None, qua
         else:
             achievement = measured / expected * 100
     if achievement >= 100:
-        code, label = "green", "Conforme"
-    elif achievement >= 90:
-        code, label = "yellow", "Atenção"
-    elif achievement >= 70:
-        code, label = "orange", "Alerta"
+        code, label = "green", "Meta alcançada"
+    elif achievement >= 80:
+        code, label = "yellow", "Próximo da meta"
+    elif achievement >= 50:
+        code, label = "orange", "Atingimento parcial"
     else:
-        code, label = "red", "Crítico"
+        code, label = "red", "Baixo atingimento"
     return {
         **(pace or {"calculation_mode": "period", "expected_value": expected}),
         "code": code,
@@ -254,11 +254,11 @@ def _indicator_signal(indicator, target=None, year="", evaluation_date=None, qua
 
 
 SIGNAL_STYLE = {
-    "green": ("Conforme", "#16834a"),
-    "yellow": ("Atenção", "#e5a11b"),
-    "orange": ("Alerta", "#e07b1a"),
-    "red": ("Crítico", "#d84a4a"),
-    "gray": ("Sem aferição", "#aebbc8"),
+    "green": ("Meta alcançada", "#16834a"),
+    "yellow": ("Próximo da meta", "#e5a11b"),
+    "orange": ("Atingimento parcial", "#e07b1a"),
+    "red": ("Baixo atingimento", "#d84a4a"),
+    "gray": ("Não avaliado", "#aebbc8"),
 }
 SIGNAL_SEVERITY = {"green": 1, "yellow": 2, "orange": 3, "red": 4}
 
@@ -288,7 +288,7 @@ def _selected_result_status(request, kind):
 def _target_signal(target, signals):
     codes = [signals[item.id] for item in target.indicators.all() if item.id in signals]
     measured = [code for code in codes if code != "gray"]
-    return max(measured, key=SIGNAL_SEVERITY.get) if measured else ("gray" if codes else "none")
+    return max(measured, key=SIGNAL_SEVERITY.get) if measured else "gray"
 
 
 def _can_write_target(user, target):
@@ -309,7 +309,15 @@ def _scoped_targets(user, plans, unit_id=""):
     if visible_ids is not None:
         targets = targets.filter(Q(action__in=view_scope_actions(StrategicAction.objects.all(), user)) | Q(action__isnull=True, indicators__responsible_unit_id__in=visible_ids) | Q(action__isnull=True, indicators__responsible_units__id__in=visible_ids))
     if unit_id.isdigit():
-        targets = targets.filter(Q(action__coordinating_unit_id=unit_id) | Q(action__participating_units__id=unit_id) | Q(action__isnull=True, indicators__responsible_unit_id=unit_id) | Q(action__isnull=True, indicators__responsible_units__id=unit_id))
+        targets = targets.filter(
+            (Q(action__coordinating_unit_id=unit_id) | Q(action__participating_units__id=unit_id) | Q(action__isnull=True))
+            & (
+                Q(indicators__responsible_unit_id=unit_id)
+                | Q(indicators__responsible_units__id=unit_id)
+                | Q(indicators__isnull=True, action__coordinating_unit_id=unit_id)
+                | Q(indicators__isnull=True, action__participating_units__id=unit_id)
+            )
+        )
     return targets.select_related("artifact", "artifact__plan", "action").prefetch_related(
         "indicators", "indicators__responsible_units", "indicators__measurements", "indicators__targets", "indicators__artifacts__plan"
     ).distinct()
@@ -336,7 +344,7 @@ def _target_execution(target, user=None, unit_id="", year="", quarter=""):
         "target": target,
         "indicators": indicators,
         "code": code,
-        "label": "Sem indicador" if code == "none" else SIGNAL_STYLE[code][0],
+        "label": SIGNAL_STYLE[code][0],
         "achievement": min(achievements) if achievements else None,
         "progress": round(sum(progress) / len(progress), 1) if progress else None,
         "measured_count": len(measurements),
@@ -371,7 +379,7 @@ def _target_achievement_chart(execution):
         if remaining > 0:
             pie_points.append({"name": "Falta atingir", "y": remaining, "achievement": None, "indicator_id": None, "color": "#e1e7ef"})
     else:
-        pie_points = [{"name": "Sem aferição suficiente", "y": 100, "achievement": None, "indicator_id": None, "color": "#e1e7ef"}]
+        pie_points = [{"name": "Sem aferição", "y": 100, "achievement": None, "indicator_id": None, "color": "#e1e7ef"}]
     return {
         "pie_points": pie_points,
         "total": total,
@@ -455,7 +463,7 @@ def _performance_summary(user, dash_plans, base_filters, unit_id):
     charts = {
         "measured": [
             {"name": "Aferidos", "y": measured, "color": "#1769aa", "url": indicator_link(status="measured")},
-            {"name": "Sem aferição", "y": signal_counts["gray"], "color": "#aebbc8", "url": indicator_link(status="gray")},
+            {"name": SIGNAL_STYLE["gray"][0], "y": signal_counts["gray"], "color": SIGNAL_STYLE["gray"][1], "url": indicator_link(status="gray")},
         ],
         "signal": [
             {"name": SIGNAL_STYLE[code][0], "y": signal_counts[code], "color": SIGNAL_STYLE[code][1], "url": indicator_link(status=code)}
@@ -463,12 +471,11 @@ def _performance_summary(user, dash_plans, base_filters, unit_id):
         ],
         "objectives": objective_bars,
         "targets": [
-            {"name": "Conforme", "y": target_counts["green"], "color": "#16834a", "url": target_link(status="green")},
-            {"name": "Atenção", "y": target_counts["yellow"], "color": "#e5a11b", "url": target_link(status="yellow")},
-            {"name": "Alerta", "y": target_counts["orange"], "color": "#e07b1a", "url": target_link(status="orange")},
-            {"name": "Crítico", "y": target_counts["red"], "color": "#d84a4a", "url": target_link(status="red")},
-            {"name": "Sem aferição", "y": target_counts["gray"], "color": "#aebbc8", "url": target_link(status="gray")},
-            {"name": "Sem indicador", "y": target_counts["none"], "color": "#d0d7de", "url": target_link(status="none")},
+            {"name": SIGNAL_STYLE["green"][0], "y": target_counts["green"], "color": SIGNAL_STYLE["green"][1], "url": target_link(status="green")},
+            {"name": SIGNAL_STYLE["yellow"][0], "y": target_counts["yellow"], "color": SIGNAL_STYLE["yellow"][1], "url": target_link(status="yellow")},
+            {"name": SIGNAL_STYLE["orange"][0], "y": target_counts["orange"], "color": SIGNAL_STYLE["orange"][1], "url": target_link(status="orange")},
+            {"name": SIGNAL_STYLE["red"][0], "y": target_counts["red"], "color": SIGNAL_STYLE["red"][1], "url": target_link(status="red")},
+            {"name": SIGNAL_STYLE["gray"][0], "y": target_counts["gray"], "color": SIGNAL_STYLE["gray"][1], "url": target_link(status="gray")},
         ],
     }
     return {
@@ -512,11 +519,7 @@ def dashboard(request):
     selected_status = request.GET.get("status", "")
     if selected_plan.isdigit():
         actions = actions.filter(artifact__plan_id=selected_plan)
-    # Selecting the organ itself (e.g. SESED) covers every unit, so no unit filter applies.
-    unit_filter = (
-        selected_unit.isdigit()
-        and units.filter(pk=selected_unit).exclude(unit_type=OrganizationalUnit.UnitType.ORGAN).exists()
-    )
+    unit_filter = selected_unit.isdigit() and units.filter(pk=selected_unit).exists()
     if unit_filter:
         actions = actions.filter(coordinating_unit_id=selected_unit)
     if selected_status in StrategicAction.Status.values:
@@ -555,10 +558,21 @@ def dashboard(request):
     if selected_plan.isdigit():
         objective_query = objective_query.filter(plan_id=selected_plan)
     if unit_filter or user_unit_ids(request.user, for_view=True) is not None:
+        scoped_targets = _scoped_targets(request.user, plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans, selected_unit if unit_filter else "")
+        scoped_indicators = view_scope_by_unit(
+            Indicator.objects.filter(artifacts__plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans),
+            request.user, "responsible_unit_id", include_unassigned=True,
+        )
+        if unit_filter:
+            scoped_indicators = scoped_indicators.filter(
+                Q(responsible_unit_id=selected_unit) | Q(responsible_units__id=selected_unit)
+            )
         objective_query = objective_query.filter(
             Q(actions__in=actions)
             | Q(planartifact__actions__in=actions)
             | Q(planartifact__planartifact__actions__in=actions)
+            | Q(targets__in=scoped_targets)
+            | Q(indicators__in=scoped_indicators)
         ).distinct()
 
     # Riscos prioritários: apenas altos e críticos do recorte (setor selecionado ou todos os setores).
@@ -835,6 +849,7 @@ def _results_filter_options(request):
     ).distinct() if request.user.has_perm("core.view_indicator") else Indicator.objects.none()
     if unit.isdigit():
         indicators = indicators.filter(Q(responsible_unit_id=unit) | Q(responsible_units__id=unit)).distinct()
+    available_indicators = indicators
     targets = _scoped_targets(request.user, plans, unit) if request.user.has_perm("core.view_strategictarget") else StrategicTarget.objects.none()
     objectives = PlanArtifact.objects.filter(
         plan__in=plans, artifact_type=PlanArtifact.ArtifactType.OBJECTIVE,
@@ -854,7 +869,7 @@ def _results_filter_options(request):
     if target:
         indicators = indicators.filter(targets=target)
     indicator_id = params.get("indicator", "")
-    if not (indicator_id.isdigit() and indicators.filter(pk=indicator_id).exists()):
+    if not (indicator_id.isdigit() and available_indicators.filter(pk=indicator_id).exists()):
         params.pop("indicator", None)
     request.GET = params
     return {"objectives": objectives, "filter_targets": targets.order_by("code", "description"),
@@ -889,6 +904,7 @@ def _results_overview(request):
     context["period_label"] = f"{selected_quarter}º trimestre de {selected_year}" if selected_quarter else selected_year or "Todo o plano"
     context["selected_year"] = selected_year
     context["available_years"] = sorted(years, reverse=True)
+    context["displayed_target_count"] = len(context.get("target_rows", []))
     can_measure = request.user.has_perm("core.view_indicatormeasurement")
     context["can_view_measurements"] = can_measure
     context["can_add_measurement"] = request.user.has_perm("core.add_indicatormeasurement")
@@ -934,6 +950,7 @@ def _indicator_overview_context(request):
     selected_plan = request.GET.get("plan", "")
     selected_unit = selected_unit_for_request(request)
     selected_objective = request.GET.get("objective", "")
+    selected_indicator = request.GET.get("indicator", "")
     selected_status = _selected_result_status(request, "indicator")
     selected_year = _selected_results_year(request)
     selected_quarter = _selected_results_quarter(request)
@@ -955,9 +972,14 @@ def _indicator_overview_context(request):
         )
         if selected_unit.isdigit():
             indicators = indicators.filter(Q(responsible_unit_id=selected_unit) | Q(responsible_units__id=selected_unit)).distinct()
+            objectives = objectives.filter(
+                Q(indicators__in=indicators)
+                | Q(targets__in=_scoped_targets(request.user, plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans, selected_unit))
+            ).distinct()
         if selected_objective.isdigit():
             indicators = indicators.filter(artifacts__id=selected_objective)
 
+    indicator_options = indicators.order_by("code", "name")
     if request.GET.get("target", "").isdigit():
         indicators = indicators.filter(targets__id=request.GET["target"])
     if request.GET.get("indicator", "").isdigit():
@@ -984,6 +1006,8 @@ def _indicator_overview_context(request):
             "selected_unit": selected_unit,
             "selected_objective": selected_objective,
             "selected_indicator_status": selected_status,
+            "selected_indicator": selected_indicator,
+            "indicator_options": indicator_options,
             "indicator_rows": indicator_rows,
             "indicator_count": sum(signal_counts.values()),
             "updated_count": sum(value for key, value in signal_counts.items() if key != "gray"),
@@ -998,6 +1022,7 @@ def _target_overview_context(request):
     selected_year = _selected_results_year(request)
     selected_quarter = _selected_results_quarter(request)
     selected_objective = request.GET.get("objective", "")
+    selected_indicator = request.GET.get("indicator", "")
     plan = plans.filter(pk=selected_plan).first() if selected_plan.isdigit() else plans.first()
 
     targets = StrategicTarget.objects.none()
@@ -1008,12 +1033,22 @@ def _target_overview_context(request):
             artifact_type=PlanArtifact.ArtifactType.OBJECTIVE,
         ).order_by("code", "title")
         targets = _scoped_targets(request.user, plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans, selected_unit_for_request(request)).order_by("code", "description")
+        selected_unit = selected_unit_for_request(request)
+        if selected_unit.isdigit():
+            objectives = objectives.filter(
+                Q(targets__in=targets)
+                | Q(indicators__responsible_unit_id=selected_unit)
+                | Q(indicators__responsible_units__id=selected_unit)
+            ).distinct()
         if selected_objective.isdigit():
             targets = targets.filter(artifact_id=selected_objective)
 
+    target_options = targets.order_by("code", "description")
     editable_targets = targets.filter(pk__in=[target.pk for target in targets if _can_write_target(request.user, target)])
     if request.GET.get("target", "").isdigit():
         targets = targets.filter(pk=request.GET["target"])
+    if selected_indicator.isdigit():
+        targets = targets.filter(indicators__id=selected_indicator).distinct()
     selected_status = _selected_result_status(request, "target")
     if selected_status in (*SIGNAL_STYLE, "none", "unmeasured", "attention", "measured"):
         indicators = view_scope_by_unit(Indicator.objects.filter(artifacts__plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans).distinct(), request.user, "responsible_unit_id", include_unassigned=True)
@@ -1098,6 +1133,7 @@ def _target_overview_context(request):
             "selected_plan": selected_plan,
             "selected_objective": selected_objective,
             "targets": targets,
+            "target_options": target_options,
             "target_rows": target_rows,
             "status_counts": status_counts,
             "target_attention_count": status_counts["yellow"] + status_counts["orange"] + status_counts["red"],
@@ -1730,6 +1766,9 @@ def risk_overview(request):
         risks = list(risks)
 
     risks.sort(key=lambda risk: (risk.action.artifact.code, risk.action.code, risk.title))
+    writable_action_ids = set(scope_actions(StrategicAction.objects.all(), request.user).values_list("id", flat=True))
+    for risk in risks:
+        risk.can_edit = request.user.has_perm("core.change_risk") and risk.action_id in writable_action_ids
     return render(
         request,
         "core/risk_overview.html",
@@ -1756,6 +1795,12 @@ def risk_overview(request):
 
 def _sync_action_progress(action, action_plan):
     activities = list(action_plan.activities.all())
+    if not activities:
+        action.progress = 0
+        if action.status not in [StrategicAction.Status.BLOCKED, StrategicAction.Status.SUSPENDED]:
+            action.status = StrategicAction.Status.NOT_STARTED
+        action.save(update_fields=["progress", "status"])
+        return
     total_progress = sum((activity.weight * activity.progress / 100 for activity in activities), 0)
     action.progress = total_progress
     total_weight = sum((activity.weight for activity in activities), 0)
@@ -2211,7 +2256,7 @@ def activity_follow_up(request, action_id, activity_id):
             messages.success(request, "Impedimento atualizado.")
             return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "#impedimentos")
 
-    evidence_form = ActivityEvidenceForm(prefix="evidence")
+    evidence_form = ActivityEvidenceForm(prefix="evidence", initial={"title": activity.expected_delivery})
     blocker_form = ActivityBlockerForm(prefix="blocker")
     risk_form = ActivityRiskForm(prefix="risk")
     selectable_risks = action.risks.filter(activity=activity).order_by("title") if can_view["risks"] else Risk.objects.none()
@@ -2238,6 +2283,15 @@ def activity_follow_up(request, action_id, activity_id):
                     _require_permission(request.user, "view_riskmaterialization")
                 occurrence_form = RiskMaterializationForm(request.POST, request.FILES, instance=current_occurrence, action=action, prefix="occurrence")
                 valid = occurrence_form.is_valid() and valid
+                treatment = selected_risk.treatments.first() if selected_risk else None
+                if valid and treatment and (treatment.preventive_measure or treatment.contingency_measure):
+                    measure_source = occurrence_form.cleaned_data.get("measure_source")
+                    if not measure_source:
+                        occurrence_form.add_error("measure_source", "Informe se a providência prevista foi adotada ou se houve uma nova.")
+                        valid = False
+                    elif measure_source == RiskMaterialization.MeasureSource.NEW and not occurrence_form.cleaned_data.get("actions_taken", "").strip():
+                        occurrence_form.add_error("actions_taken", "Descreva a nova providência adotada.")
+                        valid = False
             if materialized and (selected_risk is None or selected_risk.status != Risk.Status.MATERIALIZED or action.status == StrategicAction.Status.NOT_STARTED) and not action.can_materialize_risks:
                 risk_report_form.add_error("materialized", "Só é possível materializar um risco com plano de ação em andamento.")
                 valid = False
@@ -2281,7 +2335,7 @@ def activity_follow_up(request, action_id, activity_id):
             _sync_activity_status(activity)
             _sync_action_progress(action, activity.action_plan)
             messages.success(request, "Execução da atividade atualizada.")
-            return redirect("activity_follow_up", action_id=action.id, activity_id=activity.id)
+            return redirect(reverse("activity_follow_up", args=[action.id, activity.id]) + "#inicio")
     elif operation == "add_evidence":
         evidence_form = ActivityEvidenceForm(request.POST, request.FILES, prefix="evidence")
         if evidence_form.is_valid():
@@ -2345,9 +2399,11 @@ def activity_follow_up(request, action_id, activity_id):
     risk_prefill = {}
     can_view_occurrence = request.user.has_perm("core.view_riskmaterialization")
     can_edit_occurrence = can_view_occurrence and request.user.has_perm("core.change_riskmaterialization") and not request.read_only_other_unit
-    for item in selectable_risks.prefetch_related("materializations"):
+    for item in selectable_risks.prefetch_related("materializations", "treatments"):
         latest = next(iter(item.materializations.all()), None)
+        treatment = next(iter(item.treatments.all()), None)
         risk_prefill[str(item.id)] = {
+            "planned_measure": treatment.preventive_measure or treatment.contingency_measure if treatment else "",
             "materialized": "SIM" if latest or item.status == Risk.Status.MATERIALIZED else "NAO",
             "has_occurrence": latest is not None,
             "can_view": can_view_occurrence,
@@ -2358,6 +2414,7 @@ def activity_follow_up(request, action_id, activity_id):
                 "description": latest.description,
                 "actual_impact": latest.actual_impact,
                 "actions_taken": latest.actions_taken,
+                "measure_source": latest.measure_source,
                 "evidence_reference": latest.evidence_reference,
             } if latest and can_view_occurrence else {},
         }
@@ -2394,7 +2451,7 @@ def activity_follow_up(request, action_id, activity_id):
             "can_view": can_view,
             "evidences": evidences,
             "blockers": activity.blockers.select_related("resolution_owner", "created_by") if can_view["blockers"] else [],
-            "risks": activity.risks.select_related("owner") if can_view["risks"] else [],
+            "risks": activity.risks.select_related("owner").prefetch_related("treatments") if can_view["risks"] else [],
             "evidence_form": evidence_form,
             "editing_evidence": editing_evidence,
             "editing_blocker": editing_blocker,
@@ -2451,6 +2508,7 @@ def risk_map(request, action_id):
             "registered_risks": registered_risks,
             "registered_risk_ids": ",".join(str(item.pk) for item in registered_risks),
             "can_add_risk": not request.read_only_other_unit and request.user.has_perm("core.add_risk"),
+            "can_edit_risk": not request.read_only_other_unit and request.user.has_perm("core.change_risk"),
         },
     )
 
@@ -2723,15 +2781,17 @@ def risk_detail(request, action_id, risk_id):
 
 @login_required
 @permission_required("core.delete_activity", raise_exception=True)
+@transaction.atomic
 def activity_delete(request, action_id, activity_id):
     activity = _get_activity_for_action(request.user, action_id, activity_id)
     action = activity.action_plan.action
     if request.method == "POST":
+        activity.risks.all().delete()
         activity.delete()
         _sync_action_progress(action, action.action_plan)
         messages.success(request, "Atividade excluída do plano de ação.")
         return redirect("action_plan_detail", action_id=action.id)
-    return render(request, "core/activity_confirm_delete.html", {"activity": activity, "action": action})
+    return render(request, "core/activity_confirm_delete.html", {"activity": activity, "action": action, "risk_count": activity.risks.count()})
 
 
 @login_required

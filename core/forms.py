@@ -44,7 +44,7 @@ class StrategicTargetForm(forms.ModelForm):
         model = StrategicTarget
         fields = ["artifact", "action", "code", "description", "target_value", "unit_of_measure", "reference_period"]
         labels = {
-            "artifact": "Objetivo ou projeto estratégico",
+            "artifact": "Item do plano estratégico",
             "action": "Ação estratégica (opcional)",
             "code": "Código",
             "description": "Meta",
@@ -343,6 +343,8 @@ class ActivityForm(forms.ModelForm):
         if not self.instance.pk:
             self.fields.pop("progress", None)
             self.fields.pop("status", None)
+        else:
+            self.fields["progress"].disabled = True
 
     def clean_weight(self):
         weight = self.cleaned_data["weight"]
@@ -501,7 +503,6 @@ def validate_risk_timing(form, cleaned_data):
     timing = cleaned_data.get("occurrence_timing")
     exposure_start = cleaned_data.get("exposure_start_date")
     exposure_end = cleaned_data.get("exposure_end_date")
-    expected_date = cleaned_data.get("expected_occurrence_date")
     trigger = cleaned_data.get("trigger_description")
     if timing == Risk.OccurrenceTiming.EXPOSURE_WINDOW:
         if not exposure_start and not exposure_end:
@@ -512,10 +513,8 @@ def validate_risk_timing(form, cleaned_data):
         cleaned_data["exposure_start_date"] = None
         cleaned_data["exposure_end_date"] = None
     if timing == Risk.OccurrenceTiming.DATE_OR_MILESTONE:
-        if not expected_date and not trigger:
-            form.add_error("trigger_description", "Informe uma data provável ou descreva o marco ou condição.")
-    else:
-        cleaned_data["expected_occurrence_date"] = None
+        if not trigger:
+            form.add_error("trigger_description", "Descreva o marco ou condição de ocorrência.")
     return cleaned_data
 
 
@@ -540,7 +539,6 @@ class ActivityRiskForm(forms.ModelForm):
             "occurrence_timing",
             "exposure_start_date",
             "exposure_end_date",
-            "expected_occurrence_date",
             "trigger_description",
             "treatment",
             "preventive_measure",
@@ -554,9 +552,8 @@ class ActivityRiskForm(forms.ModelForm):
             "impact": "Impacto (1 a 5)",
             "status": "Situação",
             "occurrence_timing": "Quando o risco pode ocorrer?",
-            "exposure_start_date": "Início do período de exposição",
-            "exposure_end_date": "Fim do período de exposição",
-            "expected_occurrence_date": "Data provável (opcional)",
+            "exposure_start_date": "Início do período",
+            "exposure_end_date": "Fim do período",
             "trigger_description": "Marco, sinal ou condição de ocorrência (opcional)",
             "preventive_measure": "Medida preventiva ou controle",
             "contingency_measure": "Medida de contingência",
@@ -564,7 +561,6 @@ class ActivityRiskForm(forms.ModelForm):
         widgets = {
             "exposure_start_date": forms.DateInput(attrs={"type": "date"}),
             "exposure_end_date": forms.DateInput(attrs={"type": "date"}),
-            "expected_occurrence_date": forms.DateInput(attrs={"type": "date"}),
             "cause": forms.Textarea(attrs={"rows": 2}),
             "preventive_measure": forms.Textarea(attrs={"rows": 2}),
             "contingency_measure": forms.Textarea(attrs={"rows": 2}),
@@ -628,7 +624,6 @@ class RiskIdentificationForm(forms.ModelForm):
             "occurrence_timing",
             "exposure_start_date",
             "exposure_end_date",
-            "expected_occurrence_date",
             "trigger_description",
             "treatment_decision",
             "treatment_due_date",
@@ -643,9 +638,8 @@ class RiskIdentificationForm(forms.ModelForm):
             "probability": "Probabilidade (1 a 5)",
             "impact": "Impacto (1 a 5)",
             "occurrence_timing": "Quando o risco pode ocorrer?",
-            "exposure_start_date": "Início do período de exposição",
-            "exposure_end_date": "Fim do período de exposição",
-            "expected_occurrence_date": "Data provável (opcional)",
+            "exposure_start_date": "Início do período",
+            "exposure_end_date": "Fim do período",
             "trigger_description": "Marco, sinal ou condição de ocorrência (opcional)",
             "preventive_measure": "Medida preventiva ou controle",
             "contingency_measure": "Medida de contingência",
@@ -659,7 +653,6 @@ class RiskIdentificationForm(forms.ModelForm):
             "occurrence_timing": forms.Select(attrs={"data-occurrence-timing": "true"}),
             "exposure_start_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "exposure_end_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
-            "expected_occurrence_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "trigger_description": forms.Textarea(attrs={"rows": 2}),
         }
 
@@ -743,45 +736,23 @@ class RiskTimingForm(forms.ModelForm):
             "occurrence_timing",
             "exposure_start_date",
             "exposure_end_date",
-            "expected_occurrence_date",
             "trigger_description",
         ]
         labels = {
             "occurrence_timing": "Quando o risco pode ocorrer?",
-            "exposure_start_date": "Início do período de exposição",
-            "exposure_end_date": "Fim do período de exposição",
-            "expected_occurrence_date": "Data provável (opcional)",
+            "exposure_start_date": "Início do período",
+            "exposure_end_date": "Fim do período",
             "trigger_description": "Marco, sinal ou condição de ocorrência (opcional)",
         }
         widgets = {
             "occurrence_timing": forms.Select(attrs={"data-occurrence-timing": "true"}),
             "exposure_start_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "exposure_end_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
-            "expected_occurrence_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "trigger_description": forms.Textarea(attrs={"rows": 2}),
         }
 
     def clean(self):
-        cleaned_data = super().clean()
-        timing = cleaned_data.get("occurrence_timing")
-        exposure_start = cleaned_data.get("exposure_start_date")
-        exposure_end = cleaned_data.get("exposure_end_date")
-        expected_date = cleaned_data.get("expected_occurrence_date")
-        trigger = cleaned_data.get("trigger_description")
-        if timing == Risk.OccurrenceTiming.EXPOSURE_WINDOW:
-            if not exposure_start and not exposure_end:
-                self.add_error("exposure_start_date", "Informe ao menos o início ou o fim do período provável.")
-            elif exposure_start and exposure_end and exposure_start > exposure_end:
-                self.add_error("exposure_end_date", "O fim do período não pode ser anterior ao início.")
-        else:
-            cleaned_data["exposure_start_date"] = None
-            cleaned_data["exposure_end_date"] = None
-        if timing == Risk.OccurrenceTiming.DATE_OR_MILESTONE:
-            if not expected_date and not trigger:
-                self.add_error("trigger_description", "Informe uma data provável ou descreva o marco ou condição.")
-        else:
-            cleaned_data["expected_occurrence_date"] = None
-        return cleaned_data
+        return validate_risk_timing(self, super().clean())
 
 
 class RiskIdentityForm(forms.ModelForm):
@@ -854,12 +825,13 @@ class RiskTreatmentForm(forms.ModelForm):
 class RiskMaterializationForm(forms.ModelForm):
     class Meta:
         model = RiskMaterialization
-        fields = ["occurred_on", "description", "actual_impact", "actions_taken", "evidence_reference", "evidence_attachment"]
+        fields = ["occurred_on", "description", "actual_impact", "measure_source", "actions_taken", "evidence_reference", "evidence_attachment"]
         labels = {
             "occurred_on": "Data em que ocorreu (registro posterior)",
             "description": "O que ocorreu",
             "actual_impact": "Impacto ocorrido",
             "actions_taken": "Providências adotadas",
+            "measure_source": "Qual providência foi adotada?",
             "evidence_reference": "Referência da evidência",
             "evidence_attachment": "Anexo da evidência do risco (opcional)",
         }
@@ -868,12 +840,15 @@ class RiskMaterializationForm(forms.ModelForm):
             "description": forms.Textarea(attrs={"rows": 2}),
             "actual_impact": forms.Textarea(attrs={"rows": 2}),
             "actions_taken": forms.Textarea(attrs={"rows": 2}),
+            "measure_source": forms.RadioSelect,
         }
 
     def __init__(self, *args, action=None, **kwargs):
         self.action = action
         super().__init__(*args, **kwargs)
         self.fields["occurred_on"].help_text = "Preencha somente depois que o risco tiver se materializado."
+        self.fields["measure_source"].required = False
+        self.fields["measure_source"].choices = RiskMaterialization.MeasureSource.choices
 
     def clean(self):
         cleaned_data = super().clean()
@@ -1109,7 +1084,7 @@ class ActivityRiskReportForm(forms.Form):
     risk = forms.ModelChoiceField(queryset=Risk.objects.none(), required=False, label="Qual risco?", empty_label="Cadastrar risco não previsto")
     materialized = forms.ChoiceField(label="O risco se materializou?", required=False, choices=(("", "Selecione"), ("SIM", "Sim"), ("NAO", "Não")))
 
-    edit_materialization = forms.BooleanField(required=False, label="Editar os dados de materialização já cadastrados")
+    edit_materialization = forms.BooleanField(required=False, label="Atualizar o registro desta ocorrência")
 
     def __init__(self, *args, risks, can_create=True, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1122,10 +1097,8 @@ class ActivityRiskReportForm(forms.Form):
     def clean(self):
         data = super().clean()
         risk = data.get("risk")
-        if not risk:
-            data["materialized"] = "SIM"
-        elif not data.get("materialized"):
-            self.add_error("materialized", "Informe se o risco cadastrado se materializou.")
+        if data.get("materialized") != "SIM":
+            self.add_error("materialized", "Selecione Sim para informar a materialização do risco.")
         if risk and risk.status == Risk.Status.MATERIALIZED and data.get("materialized") == "NAO":
             self.add_error("materialized", "Este risco já está materializado. Selecione Sim; o histórico de ocorrências será mantido.")
         return data
@@ -1133,7 +1106,20 @@ class ActivityRiskReportForm(forms.Form):
 
 class UnforeseenActivityRiskForm(ActivityRiskForm):
     class Meta(ActivityRiskForm.Meta):
-        fields = [field for field in ActivityRiskForm.Meta.fields if field != "status"]
+        fields = [field for field in ActivityRiskForm.Meta.fields if field not in ("status", "preventive_measure")]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["occurrence_timing"].label = "Quando o risco ocorreu?"
+        self.fields["occurrence_timing"].choices = [
+            ("", "Selecione quando ocorreu"),
+            (Risk.OccurrenceTiming.ANY_TIME, "Em um momento específico"),
+            (Risk.OccurrenceTiming.EXPOSURE_WINDOW, "Durante um período"),
+            (Risk.OccurrenceTiming.DATE_OR_MILESTONE, "Em uma data ou marco"),
+            (Risk.OccurrenceTiming.UNKNOWN, "Momento não identificado"),
+        ]
+        self.fields["trigger_description"].label = "Marco, sinal ou condição da ocorrência"
+        self.fields["trigger_description"].required = True
 
 
 class QuarterlyReportForm(forms.Form):
