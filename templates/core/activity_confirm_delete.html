@@ -6,6 +6,6 @@
     <p class="eyebrow">Exclusão de atividade</p>
     <h1>Excluir “{{ activity.title }}”?</h1>
     <p>Esta atividade será retirada do plano de ação, inclusive do cálculo de execução e da distribuição de pesos.</p>
-    <form method="post" class="form-buttons">{% csrf_token %}<button class="button button-danger" type="submit">Excluir atividade</button><a class="button button-secondary" href="{% url 'action_plan_detail' action.id %}">Cancelar</a></form>
+    <form method="post" class="form-buttons">{% csrf_token %}<button class="button button-danger" type="submit">Confirmar exclusão</button><a class="button button-secondary" href="{% url 'action_plan_detail' action.id %}">Cancelar</a></form>
   </section>
 {% endblock %}

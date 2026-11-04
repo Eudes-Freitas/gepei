@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}GEPEI{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'css/gepei.css' %}?v=20261022-10">
+  <link rel="stylesheet" href="{% static 'css/gepei.css' %}?v=20261104-15">
   <script>
     // Cancelamento nativo (Esc) não deve descartar um modal aberto.
     document.addEventListener('cancel', function (event) {
@@ -65,5 +65,6 @@
     {% block content %}{% endblock %}
   </main>
   {% block extra_script %}{% endblock %}
+  <script src="{% static 'js/form-submit-state.js' %}?v=20261104-1" defer></script>
 </body>
 </html>

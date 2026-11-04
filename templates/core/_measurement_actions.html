@@ -1,4 +1,20 @@
 <div class="result-record-actions measurement-actions">
-  {% if perms.core.change_indicatormeasurement and indicator.can_write %}<a class="button button-secondary" href="{% url 'indicator_detail' indicator.id %}?editar={{ measurement.id }}">Editar aferição</a>{% endif %}
-  {% if perms.core.delete_indicatormeasurement and indicator.can_write %}<form method="post" action="{% url 'measurement_delete' indicator.id measurement.id %}" onsubmit="return confirm('Remover esta aferição?');">{% csrf_token %}<button class="button button-secondary" type="submit">Remover aferição</button></form>{% endif %}
+  <button class="row-icon" type="button" title="Visualizar aferição" aria-label="Visualizar aferição" onclick="document.getElementById('measurement-details-{{ measurement.pk }}').showModal()">{% include "core/_record_icon.html" with icon="view" %}</button>
+  {% if perms.core.change_indicatormeasurement and indicator.can_write %}<a class="row-icon" title="Editar aferição" aria-label="Editar aferição" href="{% url 'indicator_detail' indicator.id %}?editar={{ measurement.id }}">{% include "core/_record_icon.html" with icon="edit" %}</a>{% endif %}
+  {% if perms.core.delete_indicatormeasurement and indicator.can_write %}<form method="post" action="{% url 'measurement_delete' indicator.id measurement.id %}" onsubmit="return confirm('Remover esta aferição?');">{% csrf_token %}<button class="row-icon row-icon-danger" type="submit" title="Remover aferição" aria-label="Remover aferição">{% include "core/_record_icon.html" with icon="delete" %}</button></form>{% endif %}
 </div>
+
+<dialog class="panel activity-form-panel measurement-view-panel" id="measurement-details-{{ measurement.pk }}" aria-labelledby="measurement-details-title-{{ measurement.pk }}">
+  <div class="dialog-heading"><h2 id="measurement-details-title-{{ measurement.pk }}">Detalhes da aferição</h2><button type="button" class="icon-button dialog-close" aria-label="Fechar" onclick="this.closest('dialog').close()">×</button></div>
+  <dl class="definition-grid">
+    <div><dt>Descrição</dt><dd>{{ measurement.description|default:"—" }}</dd></div>
+    <div><dt>Data da aferição</dt><dd>{{ measurement.period_end|default:measurement.recorded_at|date:"d/m/Y" }}</dd></div>
+    <div><dt>Linha de base</dt><dd>{{ measurement.baseline_value|default:"—" }}</dd></div>
+    <div><dt>Resultado</dt><dd>{{ measurement.measured_value }}</dd></div>
+    <div><dt>Meta do período</dt><dd>{{ measurement.expected_value|default_if_none:"—" }}</dd></div>
+    <div><dt>Responsável</dt><dd>{{ measurement.responsible_name }}</dd></div>
+    <div><dt>Setor</dt><dd>{{ measurement.responsible_unit_label|default:"Setor não informado" }}</dd></div>
+    <div class="definition-wide"><dt>Fonte/evidência</dt><dd>{{ measurement.source_reference|default:"Não informada" }}{% if measurement.evidence_attachment %} <a href="{{ measurement.evidence_attachment.url }}" target="_blank" rel="noopener">Abrir evidência</a>{% endif %}</dd></div>
+    <div class="definition-wide"><dt>Observações</dt><dd class="measurement-note">{{ measurement.note|default:"—" }}</dd></div>
+  </dl>
+</dialog>

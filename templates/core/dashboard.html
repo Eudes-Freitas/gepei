@@ -34,7 +34,7 @@
   </form>
 
   <section class="dx-kpis" aria-label="Resumo estratégico">
-    {% if can_plans %}<a class="dx-kpi" href="{% url 'pei_overview' %}?{{ objective_query }}"><span class="dx-kpi-label">Objetivos monitorados</span><strong>{{ objective_count }}</strong></a>{% else %}<div class="dx-kpi  dx-locked"><span class="dx-kpi-label">Objetivos monitorados</span><strong>🔒</strong><small>sem permissão</small></div>{% endif %}
+    {% if can_plans %}<a class="dx-kpi" href="{% url 'pei_overview' %}?{{ objective_query }}"><span class="dx-kpi-label">Objetivos estratégicos</span><strong>{{ objective_count }}</strong></a>{% else %}<div class="dx-kpi  dx-locked"><span class="dx-kpi-label">Objetivos estratégicos</span><strong>🔒</strong><small>sem permissão</small></div>{% endif %}
     {% if can_exec %}<a class="dx-kpi dx-green" href="{% url 'action_plan_list' %}{% if base_query %}?{{ base_query }}{% endif %}"><span class="dx-kpi-label">Ações estratégicas</span><strong>{{ action_count }}</strong></a>
     <a class="dx-kpi dx-amber" href="{% url 'action_plan_list' %}?{{ delayed_query }}"><span class="dx-kpi-label">Ações em atraso</span><strong>{{ delayed_count }}</strong></a>{% else %}<div class="dx-kpi dx-green dx-locked"><span class="dx-kpi-label">Ações estratégicas</span><strong>🔒</strong><small>sem permissão</small></div><div class="dx-kpi dx-amber dx-locked"><span class="dx-kpi-label">Ações em atraso</span><strong>🔒</strong><small>sem permissão</small></div>{% endif %}
     {% if can_view_risks %}

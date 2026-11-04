@@ -28,9 +28,9 @@
         {% endif %}
       </article>{% endif %}
       {% include "core/_indicator_reference.html" with reference=indicator.reference_parameters %}
-      <article class="panel indicator-definition">
-        <div class="panel-heading"><div><p class="eyebrow">Definição</p><h2>Ficha do indicador</h2></div><div class="panel-heading-actions">{% if definition_form %}<button class="button button-secondary" type="button" data-open-definition-form>Editar</button>{% endif %}<button class="button button-secondary" type="button" data-toggle-definition aria-expanded="true" aria-controls="indicator-definition-content">Recolher</button></div></div>
-        <dl class="definition-grid" id="indicator-definition-content">
+      <article class="panel indicator-definition indicator-facts" id="ficha-indicador-{{ indicator.pk }}" data-collapsible-facts>
+        <div class="panel-heading"><div><p class="eyebrow">Definição</p><h2>Ficha do indicador</h2></div><div class="panel-heading-actions">{% if definition_form %}<button class="button button-secondary" type="button" data-edit-indicator>Editar</button>{% endif %}<button class="button button-secondary" type="button" data-toggle-definition aria-expanded="true" aria-controls="indicator-definition-content">Recolher</button></div></div>
+        <dl class="definition-grid" id="indicator-definition-content" data-facts-content>
           <div><dt>Tipo</dt><dd>{{ indicator.get_indicator_type_display|default:"A definir" }}</dd></div>
           <div><dt>Fórmula</dt><dd>{{ indicator.formula|default:"A definir" }}</dd></div>
           <div><dt>Unidade de medida</dt><dd>{{ indicator.measurement_unit|default:"A definir" }}</dd></div>
@@ -42,6 +42,14 @@
           {% endwith %}
           <div><dt>Sentido esperado</dt><dd>{{ indicator.measurement_direction_label }}</dd></div>
         </dl>
+        {% if definition_form %}
+        <form class="activity-form" data-inline-indicator-form action="{% url 'indicator_detail' indicator.pk %}" method="post" hidden>
+          {% csrf_token %}<input type="hidden" name="operation" value="edit_definition"><input type="hidden" name="inline" value="1">
+          {% for field in definition_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}
+          <p class="field-error" data-inline-error role="alert" hidden></p>
+          <div class="form-buttons"><button class="button button-primary" type="submit">Salvar ficha</button><button class="button button-secondary" type="button" data-cancel-indicator>Cancelar</button></div>
+        </form>
+        {% endif %}
       </article>
 
       <article class="panel indicator-relations">
@@ -74,16 +82,16 @@
         {% if not can_view_measurements %}<div class="empty-state" role="alert"><strong>Sem permissão.</strong><span>Você não tem permissão para visualizar as aferições deste indicador.</span></div>
         {% elif indicator.measurements.all %}
           <div class="responsive-table"><table class="measurement-history-table">
-            <thead><tr><th>Descrição</th><th>Período</th><th>Linha de base</th><th>Resultado</th><th>Meta do período</th><th>Fonte/evidência</th><th>Registrado por</th><th>Detalhes</th></tr></thead>
+            <thead><tr><th>Descrição</th><th>Data da aferição</th><th>Linha de base</th><th>Resultado</th><th>Meta do período</th><th>Fonte/evidência</th><th>Registrado por</th><th>Detalhes</th></tr></thead>
             <tbody>{% for measurement in indicator.measurements.all %}<tr>
-              <td class="measurement-description"><strong>{{ measurement.description|default:measurement.note|default:"—"|truncatechars:80 }}</strong></td>
-              <td class="measurement-period">{{ measurement.period_label }}</td>
+              <td class="measurement-description"><strong>{{ measurement.description|default:"—"|truncatechars:80 }}</strong></td>
+              <td class="measurement-period">{{ measurement.period_end|default:measurement.recorded_at|date:"d/m/Y" }}</td>
               <td class="measurement-baseline">{{ measurement.baseline_value|default:"—" }}</td>
               <td>{{ measurement.measured_value }}</td>
               <td>{{ measurement.expected_value|floatformat:"-1"|default:"Não informada" }}</td>
               <td>{% if measurement.source_reference %}<span>{{ measurement.source_reference }}</span>{% endif %}{% if measurement.evidence_attachment %}<a href="{{ measurement.evidence_attachment.url }}" target="_blank" rel="noopener">Abrir arquivo anexado</a>{% elif not measurement.source_reference %}Não informada{% endif %}</td>
-              <td>{{ measurement.recorded_by.get_full_name|default:measurement.recorded_by.username }}<small>{{ measurement.recorded_at|date:"d/m/Y H:i" }}</small></td>
-              <td><button class="text-button" type="button" data-view-measurement data-description="{{ measurement.description|default:measurement.note }}" data-period="{{ measurement.period_label }}" data-baseline="{{ measurement.baseline_value }}" data-baseline-date="{{ measurement.baseline_date|date:"d/m/Y" }}" data-measured="{{ measurement.measured_value }}" data-expected="{% if measurement.expected_value != None %}{{ measurement.expected_value|floatformat:"-2" }}{% endif %}" data-source="{{ measurement.source_reference }}" data-file="{% if measurement.evidence_attachment %}{{ measurement.evidence_attachment.url }}{% endif %}" data-file-name="{% if measurement.evidence_attachment %}{{ measurement.evidence_attachment.name|cut:"indicator_measurements/" }}{% endif %}" data-note="{{ measurement.note }}" data-by="{{ measurement.responsible_name }}" data-unit="{{ measurement.responsible_unit_label }}" data-at="{{ measurement.recorded_at|date:"d/m/Y H:i" }}">Ver</button>{% include "core/_measurement_actions.html" %}</td>
+              <td class="measurement-registration"><div><strong>{{ measurement.responsible_name }}</strong></div><div><small>{{ measurement.responsible_unit_label|default:"Setor não informado" }}</small></div><div><small>{{ measurement.recorded_at|date:"d/m/Y" }}</small></div></td>
+              <td>{% include "core/_measurement_actions.html" %}</td>
             </tr>{% endfor %}</tbody>
           </table></div>
         {% else %}<div class="empty-state"><strong>Nenhuma aferição registrada.</strong><span>Use o botão “Nova aferição” para iniciar a série histórica.</span></div>{% endif %}
@@ -101,17 +109,6 @@
       <button class="button button-primary" type="submit">{% if editing_measurement %}Salvar alterações{% else %}Salvar aferição{% endif %}</button>
     </form>
   </dialog>{% endif %}
-  {% if definition_form %}
-  <dialog closedby="none" class="panel activity-form-panel" id="definition-form" aria-labelledby="definition-form-title" {% if definition_form.errors %}data-open-on-load{% endif %}>
-    <div class="dialog-heading"><div><p class="eyebrow">Definição</p><h2 id="definition-form-title">Editar ficha do indicador</h2></div><button class="icon-button dialog-close" type="button" data-close-definition-form aria-label="Fechar">×</button></div>
-    <form method="post" class="activity-form">
-      {% csrf_token %}
-      <input type="hidden" name="operation" value="edit_definition">
-      {% for field in definition_form %}<div class="form-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<span class="field-error">{{ error }}</span>{% endfor %}</div>{% endfor %}
-      <div class="form-buttons"><button class="button button-primary" type="submit">Salvar ficha</button></div>
-    </form>
-  </dialog>
-  {% endif %}
 
   <dialog closedby="none" class="panel activity-form-panel measurement-view-panel" id="measurement-view" aria-labelledby="measurement-view-title">
     <div class="dialog-heading"><div><p class="eyebrow">Aferição registrada</p><h2 id="measurement-view-title">Detalhes da aferição</h2></div><button class="icon-button dialog-close" type="button" data-close-measurement-view aria-label="Fechar">×</button></div>
@@ -180,15 +177,6 @@
     (function () {
       var dialog = document.querySelector('dialog.indicator-measurement-panel');
       var open = document.querySelector('[data-open-measurement-form]');
-      var definition = document.getElementById('definition-form');
-      if (definition) {
-        document.querySelector('[data-open-definition-form]').addEventListener('click', function () { definition.showModal(); });
-        definition.querySelectorAll('[data-close-definition-form]').forEach(function (button) {
-          button.addEventListener('click', function () { definition.close(); });
-        });
-
-        if (definition.hasAttribute('data-open-on-load')) { definition.showModal(); }
-      }
       var definitionToggle = document.querySelector('[data-toggle-definition]');
       if (definitionToggle) {
         var definitionContent = document.getElementById('indicator-definition-content');
@@ -231,4 +219,5 @@
       if (dialog.hasAttribute('data-open-on-load')) { dialog.showModal(); }
     }());
   </script>
+  {% include "core/_inline_indicator_script.html" %}
 {% endblock %}

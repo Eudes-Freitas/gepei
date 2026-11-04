@@ -2054,6 +2054,29 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(self.client.get(f"/planos-de-acao/{other_action.pk}/editar/").status_code, 404)
         self.assertEqual(self.client.post(f"/planos-de-acao/{other_action.pk}/editar/", payload).status_code, 404)
 
+    def test_activity_creation_requires_at_least_one_risk(self):
+        self.client.force_login(self.user)
+        plan = ActionPlan.objects.create(action=self.action, manager=self.user)
+        url = f"/planos-de-acao/{self.action.pk}/"
+        payload = {"operation": "add_activity", "title": "Sem risco", "executor": self.user.pk,
+                   "weight": "100", "start_date": "2026-10-01", "end_date": "2026-12-31",
+                   "progress": "0", "status": StrategicAction.Status.NOT_STARTED,
+                   "requires_financial_resource": "NAO"}
+        variants = [{}, {"activity-risks-TOTAL_FORMS": "0", "activity-risks-INITIAL_FORMS": "0"},
+                    {"activity-risks-TOTAL_FORMS": "1", "activity-risks-INITIAL_FORMS": "0", "activity-risks-0-DELETE": "on"},
+                    {"activity-risks-TOTAL_FORMS": "1", "activity-risks-INITIAL_FORMS": "0"}]
+        for data in variants:
+            with self.subTest(data=data):
+                response = self.client.post(url, {**payload, **data})
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.context["activity_risk_formset"].errors or response.context["activity_risk_formset"].non_form_errors())
+                self.assertContains(response, "data-open-on-load")
+                self.assertFalse(plan.activities.exists())
+                self.assertFalse(Risk.objects.exists())
+        self.user.user_permissions.remove(Permission.objects.get(codename="add_risk"))
+        self.assertEqual(self.client.post(url, payload).status_code, 403)
+        self.assertFalse(plan.activities.exists())
+
     def test_new_activity_can_include_multiple_risks_without_partial_saves(self):
         self.client.force_login(self.user)
         plan = ActionPlan.objects.create(action=self.action, manager=self.user)
@@ -2061,7 +2084,7 @@ class DashboardAndRiskTests(TestCase):
         page = self.client.get(url)
         self.assertContains(page, "Riscos da atividade")
         self.assertContains(page, "data-add-activity-risk")
-        self.assertContains(page, 'name="activity-risks-TOTAL_FORMS" value="0"')
+        self.assertContains(page, 'name="activity-risks-TOTAL_FORMS" value="1"')
         payload = {"operation": "add_activity", "title": "Atividade com riscos", "executor": self.user.pk, "weight": "100", "start_date": "2026-10-01", "end_date": "2026-12-31", "progress": "0", "status": StrategicAction.Status.NOT_STARTED, "requires_financial_resource": "NAO", "activity-risks-TOTAL_FORMS": "2", "activity-risks-INITIAL_FORMS": "0"}
         for index in range(2):
             prefix = f"activity-risks-{index}-"
@@ -3065,3 +3088,199 @@ class IndicatorDocumentReferenceTests(TestCase):
             reference_period='[TESTE] 2026', baseline_value='0', baseline_date=date(2024, 12, 31),
             period_end=date(2026, 12, 31), measured_value='70')
         self.assertEqual(_indicator_signal(strict, year='2026')['label'], 'Atenção')
+
+
+class ResultsDependentFiltersTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser(username="filter-admin", password="test")
+        self.client.force_login(self.user)
+        organization = Organization.objects.create(name="Organização", acronym="ORG")
+        self.units = [OrganizationalUnit.objects.create(organization=organization, name=f"Setor {n}", acronym=f"S{n}") for n in range(2)]
+        self.plan = Plan.objects.create(name="Plano", acronym="PEI", plan_type=Plan.PlanType.PEI, start_date=date(2025, 1, 1), end_date=date(2034, 12, 31))
+        self.objectives, self.targets, self.indicators = [], [], []
+        for n, unit in enumerate(self.units):
+            objective = PlanArtifact.objects.create(plan=self.plan, artifact_type=PlanArtifact.ArtifactType.OBJECTIVE, code=f"OE{n}", title=f"Objetivo {n}")
+            target = StrategicTarget.objects.create(artifact=objective, code=f"MT{n}", description=f"Meta {n}")
+            indicator = Indicator.objects.create(code=f"IE{n}", name=f"Indicador {n}", responsible_unit=unit)
+            indicator.artifacts.add(objective)
+            indicator.targets.add(target)
+            self.objectives.append(objective)
+            self.targets.append(target)
+            self.indicators.append(indicator)
+
+    def test_unit_narrows_objective_and_target_choices(self):
+        response = self.client.get("/indicadores/", {"unit": self.units[0].pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context["objectives"]), [self.objectives[0]])
+        self.assertEqual(list(response.context["filter_targets"]), [self.targets[0]])
+        self.assertEqual([row["indicator"] for row in response.context["indicator_rows"]], [self.indicators[0]])
+
+    def test_target_overrides_conflicting_objective_and_selects_linked_indicators(self):
+        response = self.client.get("/metas/", {"target": self.targets[0].pk, "objective": self.objectives[1].pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["selected_objective"], str(self.objectives[0].pk))
+        self.assertEqual(response.context["selected_target"], str(self.targets[0].pk))
+        self.assertEqual([row["indicator"] for row in response.context["indicator_rows"]], [self.indicators[0]])
+
+    def test_incompatible_unit_discards_stale_target_and_objective(self):
+        response = self.client.get("/indicadores/", {"unit": self.units[1].pk, "target": self.targets[0].pk, "objective": self.objectives[0].pk})
+        self.assertEqual(response.context["selected_target"], "")
+        self.assertEqual(response.context["selected_objective"], "")
+        self.assertEqual([row["indicator"] for row in response.context["indicator_rows"]], [self.indicators[1]])
+
+    def test_indicator_filter_and_index_below_summary(self):
+        response = self.client.get("/indicadores/", {"indicator": self.indicators[0].pk})
+        self.assertEqual(response.context["selected_indicator"], str(self.indicators[0].pk))
+        self.assertEqual([row["indicator"] for row in response.context["indicator_rows"]], [self.indicators[0]])
+        self.assertEqual(len(response.context["filter_indicators"]), 2)
+        html = response.content.decode()
+        self.assertLess(html.index('name="indicator"'), html.index('aria-label="Resumo dos indicadores"'))
+        self.assertLess(html.index('aria-label="Resumo dos indicadores"'), html.index('Navegar por metas e indicadores'))
+        self.assertContains(response, '<details class="results-page-map">')
+        self.assertNotContains(response, '<details class="results-page-map" open>')
+        self.assertNotContains(response, 'Encontre uma meta ou indicador')
+
+    def test_new_measurement_uses_baseline_from_indicator(self):
+        from .forms import IndicatorMeasurementForm, IndicatorDefinitionForm
+        self.assertNotIn("baseline_value", IndicatorMeasurementForm().fields)
+        self.assertIn("baseline", IndicatorDefinitionForm().fields)
+        indicator = self.indicators[0]
+        indicator.baseline = "40"
+        indicator.save(update_fields=["baseline"])
+        response = self.client.post(f"/indicadores/{indicator.pk}/", {
+            "description": "Nova aferição", "measured_by": self.user.pk,
+            "baseline_value": "999", "baseline_date": "2025-12-31",
+            "measurement_date": "2026-06-30", "measured_value": "63",
+        })
+        self.assertEqual(response.status_code, 302)
+        measurement = indicator.measurements.get()
+        self.assertEqual(measurement.baseline_value, "40")
+        response = self.client.post(f"/indicadores/{indicator.pk}/", {
+            "measurement_id": measurement.pk, "measured_by": self.user.pk,
+            "baseline_value": "888", "baseline_date": "2025-12-31",
+            "measurement_date": "2026-06-30", "measured_value": "65",
+        })
+        self.assertEqual(response.status_code, 302)
+        measurement.refresh_from_db()
+        self.assertEqual(measurement.baseline_value, "40")
+
+    def test_inline_indicator_definition_saves_and_validates(self):
+        indicator = self.indicators[0]
+        response = self.client.get('/indicadores/')
+        self.assertContains(response, 'data-inline-indicator-form')
+        self.assertContains(response, 'data-edit-indicator')
+        data = {'operation': 'edit_definition', 'inline': '1',
+                f'indicator-{indicator.pk}-baseline': '31.5',
+                f'indicator-{indicator.pk}-formula': 'A / B',
+                f'indicator-{indicator.pk}-direction': Indicator.Direction.HIGHER_IS_BETTER}
+        response = self.client.post(f'/indicadores/{indicator.pk}/', data)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['ok'])
+        indicator.refresh_from_db()
+        self.assertEqual(indicator.baseline, '31.5')
+        data[f'indicator-{indicator.pk}-direction'] = 'invalid'
+        response = self.client.post(f'/indicadores/{indicator.pk}/', data)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('errors', response.json())
+
+    def test_measurement_form_has_one_date_and_preserves_existing_baseline(self):
+        from .forms import IndicatorMeasurementForm
+        measurement = IndicatorMeasurement.objects.create(indicator=self.indicators[0],
+            recorded_by=self.user, measured_value='10', reference_period='Antigo',
+            baseline_value='5', baseline_date=date(2024, 12, 31),
+            period_start=date(2026, 1, 1), period_end=date(2026, 6, 30))
+        form = IndicatorMeasurementForm(instance=measurement)
+        self.assertEqual(form.initial['measurement_date'], date(2026, 6, 30))
+        for field in ['baseline_value', 'baseline_date', 'period_start', 'period_end']:
+            self.assertNotIn(field, form.fields)
+        response = self.client.post(f'/indicadores/{self.indicators[0].pk}/', {
+            'measurement_id': measurement.pk, 'measured_by': self.user.pk,
+            'measurement_date': '2026-07-15', 'measured_value': '20'})
+        self.assertEqual(response.status_code, 302)
+        measurement.refresh_from_db()
+        self.assertEqual(measurement.period_end, date(2026, 7, 15))
+        self.assertEqual(measurement.reference_period, '15/07/2026')
+        self.assertEqual(measurement.baseline_date, date(2024, 12, 31))
+
+    def test_period_card_and_quarter_filter_apply_to_history_charts_and_targets(self):
+        indicator = self.indicators[0]
+        for when, value in [(date(2026, 3, 31), '10'), (date(2026, 4, 1), '20'), (date(2026, 6, 30), '30'), (date(2026, 7, 1), '40'), (date(2025, 6, 30), '50')]:
+            IndicatorMeasurement.objects.create(indicator=indicator, recorded_by=self.user,
+                measured_value=value, baseline_value='0', baseline_date=date(2025, 1, 1),
+                reference_period=str(when), period_end=when, expected_value=100)
+        total = self.client.get('/indicadores/')
+        self.assertEqual(total.context['period_kind'], 'Total')
+        self.assertEqual(len(total.context['indicator_rows'][0]['measurements']), 5)
+        annual = self.client.get('/indicadores/', {'year': '2026'})
+        self.assertEqual(annual.context['period_kind'], 'Anual')
+        self.assertEqual(len(annual.context['indicator_rows'][0]['measurements']), 4)
+        response = self.client.get('/indicadores/', {'year': '2026', 'quarter': '2'})
+        self.assertEqual(response.context['period_kind'], 'Trimestral')
+        self.assertEqual(response.context['period_label'], '2º trimestre de 2026')
+        row = response.context['indicator_rows'][0]
+        self.assertEqual({item.measured_value for item in row['measurements']}, {'20', '30'})
+        self.assertEqual(row['signal']['measurement'].measured_value, '30')
+        execution = next(item for item in response.context['target_rows'] if item['target'] == self.targets[0])
+        self.assertEqual(execution['indicators'][0]['signal']['measurement'].measured_value, '30')
+        self.assertContains(response, 'name="quarter"')
+        self.assertContains(response, '2º trimestre de 2026')
+
+    def test_quarter_defaults_to_current_year_and_evaluates_at_quarter_end(self):
+        from .views import _indicator_signal
+        response = self.client.get('/indicadores/', {'quarter': '2'})
+        from django.utils import timezone
+        self.assertEqual(response.context['selected_quarter'], '2')
+        self.assertEqual(response.context['selected_year'], str(timezone.localdate().year))
+        self.assertEqual(response.context['period_kind'], 'Trimestral')
+        self.assertNotContains(response, 'disabled title="Selecione um ano')
+        target = self.targets[0]
+        target.target_value = '100'
+        target.save()
+        indicator = self.indicators[0]
+        IndicatorMeasurement.objects.create(indicator=indicator, recorded_by=self.user,
+            measured_value='20', baseline_value='0', baseline_date=date(2025, 1, 1),
+            reference_period='Junho', period_end=date(2026, 6, 15), expected_value=100)
+        signal = _indicator_signal(indicator, year='2026', quarter='2')
+        self.assertEqual(signal['evaluation_date'], date(2026, 6, 30))
+        invalid = self.client.get('/indicadores/', {'year': '2026', 'quarter': '8'})
+        self.assertEqual(invalid.context['period_kind'], 'Anual')
+
+    def test_navigation_groups_indicators_under_unique_expandable_targets(self):
+        extra = Indicator.objects.create(code='IE extra', name='Outro indicador', responsible_unit=self.units[0])
+        extra.artifacts.add(self.objectives[0])
+        extra.targets.add(self.targets[0])
+        response = self.client.get('/indicadores/')
+        groups = response.context['navigation_targets']
+        group = next(item for item in groups if item['target'] == self.targets[0])
+        self.assertEqual({item.pk for item in group['indicators']}, {self.indicators[0].pk, extra.pk})
+        self.assertEqual(sum(item['target'] == self.targets[0] for item in groups), 1)
+        self.assertContains(response, '<summary><strong>MT0</strong> · Meta 0</summary>', html=True)
+        self.assertContains(response, f'<a href="#indicador-{extra.pk}">IE extra · Outro indicador</a>', html=True)
+
+    def test_indicator_detail_edits_inside_facts_without_dialog(self):
+        response = self.client.get(f'/indicadores/{self.indicators[0].pk}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-edit-indicator')
+        self.assertContains(response, 'data-inline-indicator-form')
+        self.assertContains(response, f'name="indicator-{self.indicators[0].pk}-baseline"')
+        self.assertNotContains(response, 'id="definition-form"')
+        self.assertNotContains(response, 'data-open-definition-form')
+        self.assertNotContains(response, 'definition.showModal()')
+
+    def test_activity_follow_up_shows_related_action_and_objective_results(self):
+        action = StrategicAction.objects.create(artifact=self.objectives[0], coordinating_unit=self.units[0], code='AE 1', title='Ação')
+        plan = ActionPlan.objects.create(action=action, manager=self.user)
+        activity = Activity.objects.create(action_plan=plan, executor=self.user, title='Atividade', weight=100, end_date=date(2026, 12, 31))
+        self.targets[0].action = action
+        self.targets[0].save()
+        general = StrategicTarget.objects.create(artifact=self.objectives[0], code='MT geral', description='Meta geral')
+        other_action = StrategicAction.objects.create(artifact=self.objectives[0], coordinating_unit=self.units[0], code='AE 2', title='Outra ação')
+        unrelated = StrategicTarget.objects.create(artifact=self.objectives[0], action=other_action, code='MT outra', description='Outra meta')
+        response = self.client.get(f'/planos-de-acao/{action.pk}/atividades/{activity.pk}/acompanhar/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({row['target'].pk for row in response.context['related_results']}, {self.targets[0].pk, general.pk})
+        group = next(row for row in response.context['related_results'] if row['target'] == self.targets[0])
+        self.assertEqual(group['indicators'], [self.indicators[0]])
+        self.assertContains(response, 'Metas e indicadores relacionados')
+        self.assertContains(response, f'&amp;indicator={self.indicators[0].pk}#indicador-{self.indicators[0].pk}')
+        self.assertNotContains(response, unrelated.description)

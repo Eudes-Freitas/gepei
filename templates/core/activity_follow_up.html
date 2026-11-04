@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Acompanhamento da atividade | GEPEI{% endblock %}
 {% block content %}
+<div class="workspace-page">
   <a class="back-link" href="{% url 'action_plan_detail' action.id %}">← Voltar ao plano de ação</a>
-  <section class="action-detail-heading">
+  <section class="action-detail-heading workspace-heading">
     <div>
       <p class="eyebrow">{{ action.code }} · Acompanhamento da atividade</p>
       <h1>{{ activity.title }}</h1>
       <p>{{ activity.get_status_display }} · {{ activity.progress|floatformat:"-1" }}% executado · conclusão em {{ activity.end_date|date:"d/m/Y" }}</p>
     </div>
-      <div class="heading-actions">{% if perms.core.view_risk %}<a class="button button-secondary" href="{% url 'risk_map' action.id %}">Riscos e aceites</a>{% endif %}{% if perms.core.change_activity %}<a class="button button-secondary" href="{% url 'activity_edit' action.id activity.id %}">Editar atividade</a>{% endif %}</div>
   </section>
 
   <section class="metrics follow-up-metrics">
@@ -17,6 +17,14 @@
     <article class="metric-card metric-warning"><span>Impedimentos</span><strong>{% if can_view.blockers %}{{ blockers|length }}{% else %}🔒{% endif %}</strong></article>
     <article class="metric-card metric-danger"><span>Riscos</span><strong>{% if can_view.risks %}{{ risks|length }}{% else %}🔒{% endif %}</strong></article>
   </section>
+
+  <nav class="workspace-nav activity-workspace-nav" aria-label="Seções da atividade">
+    <a href="#execucao">Execução</a>
+    <a href="#evidencias">Evidências</a>
+    <a href="#impedimentos">Impedimentos</a>
+    <a href="#riscos">Riscos</a>
+    {% if perms.core.view_strategictarget %}<a href="#metas-indicadores" data-open-related-results>Metas e indicadores</a>{% endif %}
+  </nav>
 
   <section class="panel" id="execucao">
     <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Execução da atividade</h2></div><span class="chip chip-{{ activity.status|lower }}">{{ activity.get_status_display }}</span></div>
@@ -28,6 +36,20 @@
       <button class="button button-primary" type="submit">Atualizar execução</button>
     </form>{% endif %}
   </section>
+
+  {% if perms.core.view_strategictarget %}
+  <details class="panel activity-related-results" id="metas-indicadores">
+    <summary>Metas e indicadores relacionados</summary>
+    <p class="form-hint">Metas vinculadas à ação estratégica desta atividade e metas gerais do seu objetivo ou projeto.</p>
+    {% for item in related_results %}
+    <div class="activity-related-result">
+      <a href="{% url 'target_overview' %}?target={{ item.target.pk }}"><strong>{{ item.target.code|default:"Meta" }}</strong> · {{ item.target.description }}</a>
+      <small class="muted-text">{% if item.target.action_id %}Vinculada à ação {{ action.code }}{% else %}Meta geral do objetivo ou projeto{% endif %}</small>
+      {% if perms.core.view_indicator %}<ul>{% for indicator in item.indicators %}<li><a href="{% url 'indicator_overview' %}?target={{ item.target.pk }}&amp;indicator={{ indicator.pk }}#indicador-{{ indicator.pk }}">{{ indicator.code|default:"Indicador" }} · {{ indicator.name }}</a></li>{% empty %}<li class="muted-text">Nenhum indicador disponível para esta meta.</li>{% endfor %}</ul>{% endif %}
+    </div>
+    {% empty %}<p class="muted-text">Nenhuma meta relacionada à ação ou ao objetivo desta atividade.</p>{% endfor %}
+  </details>
+  {% endif %}
 
   <section class="follow-up-grid">
     <article class="panel follow-up-panel" id="evidencias">
@@ -159,4 +181,10 @@
       </details>{% endif %}{% endif %}
     </article>
   </section>
+<script>
+  document.querySelectorAll('[data-open-related-results]').forEach(function (link) {
+    link.addEventListener('click', function () { document.getElementById('metas-indicadores').open = true; });
+  });
+</script>
+</div>
 {% endblock %}

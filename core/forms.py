@@ -103,16 +103,14 @@ class IndicatorDefinitionForm(forms.ModelForm):
 
 
 class IndicatorMeasurementForm(forms.ModelForm):
+    measurement_date = forms.DateField(label="Data da aferição", widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}))
+
     class Meta:
         model = IndicatorMeasurement
         fields = [
             "description",
             "measured_by",
-            "baseline_value",
-            "baseline_date",
             "measured_value",
-            "period_start",
-            "period_end",
             "source_reference",
             "evidence_attachment",
             "note",
@@ -120,49 +118,38 @@ class IndicatorMeasurementForm(forms.ModelForm):
         labels = {
             "description": "Descrição da aferição",
             "measured_by": "Responsável pela aferição",
-            "baseline_value": "Linha de base",
-            "baseline_date": "Data da linha de base",
             "measured_value": "Resultado aferido",
-            "period_start": "Período de aferição — início",
-            "period_end": "Período de aferição — fim",
             "source_reference": "Referência da fonte",
             "evidence_attachment": "Anexar evidência da aferição",
             "note": "Observações",
         }
         widgets = {
             "note": forms.Textarea(attrs={"rows": 3}),
-            "baseline_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
-            "period_start": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
-            "period_end": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        for name in ["measured_by", "baseline_value", "baseline_date", "period_start", "period_end"]:
+        for name in ["measured_by"]:
             self.fields[name].required = True
+        self.initial.setdefault("measurement_date", self.instance.period_end)
+        self.order_fields(["description", "measured_by", "measurement_date", "measured_value", "source_reference", "evidence_attachment", "note"])
         measured_by = self.fields["measured_by"]
         measured_by.queryset = get_user_model().objects.filter(is_active=True).order_by("first_name", "last_name", "username")
         measured_by.label_from_instance = lambda user: user.get_full_name() or user.username
         measured_by.empty_label = "Selecione quem realizou a aferição"
         measured_by.help_text = "O setor da pessoa selecionada será registrado como setor responsável pela aferição."
-        self.fields["baseline_value"].help_text = "Valor de partida (linha de base) usado como comparação para este resultado."
         self.fields["description"].help_text = "Nome curto para identificar esta aferição na lista."
-        self.fields["baseline_date"].help_text = "Data em que a linha de base foi apurada."
         self.fields["measured_value"].help_text = "Informe o valor apurado. Use apenas o número para calcular o semáforo."
-        self.fields["period_start"].help_text = "Primeiro dia do período a que o resultado se refere."
-        self.fields["period_end"].help_text = "Último dia do período a que o resultado se refere."
         self.fields["source_reference"].help_text = "Informe planilha, processo SEI, sistema ou documento que comprove o resultado."
         self.fields["evidence_attachment"].help_text = "Anexe a planilha, relatório, PDF, imagem ou outro arquivo comprobatório, quando houver."
 
     def clean(self):
         cleaned = super().clean()
-        start, end = cleaned.get("period_start"), cleaned.get("period_end")
-        if start and end:
-            if end < start:
-                self.add_error("period_end", "O fim do período não pode ser anterior ao início.")
-            else:
-                # O texto do período continua sendo guardado para exibição e para as aferições antigas.
-                self.instance.reference_period = f"{start:%d/%m/%Y} a {end:%d/%m/%Y}"
+        when = cleaned.get("measurement_date")
+        if when:
+            self.instance.period_start = when
+            self.instance.period_end = when
+            self.instance.reference_period = f"{when:%d/%m/%Y}"
         return cleaned
 
 class ReportCycleForm(forms.ModelForm):
@@ -715,7 +702,8 @@ class ActivityPlanningRiskForm(RiskIdentificationForm):
 
 
 ActivityPlanningRiskFormSet = forms.formset_factory(
-    ActivityPlanningRiskForm, extra=0, can_delete=True, max_num=20, validate_max=True,
+    ActivityPlanningRiskForm, extra=0, can_delete=True, min_num=1, validate_min=True,
+    max_num=20, validate_max=True,
 )
 
 

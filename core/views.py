@@ -1,3 +1,5 @@
+from calendar import monthrange
+
 import unicodedata
 import re
 from datetime import date, datetime
@@ -144,10 +146,17 @@ def _final_progress(indicator, measurement, target=None):
 
 def _selected_results_year(request):
     value = request.GET.get("year", "")
+    if not value and request.GET.get("quarter") in ("1", "2", "3", "4"):
+        value = str(timezone.localdate().year)
     return value if value.isascii() and value.isdigit() and len(value) == 4 and int(value) > 0 else ""
 
 
-def _results_measurements(indicator, year=""):
+def _selected_results_quarter(request):
+    value = request.GET.get("quarter", "")
+    return value if _selected_results_year(request) and value in ("1", "2", "3", "4") else ""
+
+
+def _results_measurements(indicator, year="", quarter=""):
     measurements = list(indicator.measurements.all())
     if not year:
         return measurements
@@ -155,12 +164,14 @@ def _results_measurements(indicator, year=""):
     def matches(measurement):
         period_date = measurement.period_end or measurement.period_start
         if period_date:
-            return period_date.year == selected
+            return period_date.year == selected and (not quarter or (period_date.month - 1) // 3 + 1 == int(quarter))
+        if quarter:
+            return False
         return str(selected) in re.findall(r"(?<!\d)\d{4}(?!\d)", measurement.reference_period)
     return [measurement for measurement in measurements if matches(measurement)]
 
 
-def _indicator_pace(indicator, measurement, measured, target=None, year=""):
+def _indicator_pace(indicator, measurement, measured, target=None, year="", evaluation_date=None):
     """Compara o avanço realizado com a trajetória linear esperada até a data de avaliação."""
     baseline = _decimal_from_measurement(measurement.baseline_value)
     final = _decimal_from_measurement(target.target_value) if target else _final_target_value(indicator)
@@ -172,7 +183,7 @@ def _indicator_pace(indicator, measurement, measured, target=None, year=""):
         indicator.direction == Indicator.Direction.LOWER_IS_BETTER and final > baseline
     ):
         return {"code": "gray", "label": "Meta incompatível com o sentido do indicador", "achievement": None}
-    evaluation_date = min(end, date(int(year), 12, 31)) if year else end
+    evaluation_date = min(end, evaluation_date or (date(int(year), 12, 31) if year else end))
     if evaluation_date <= start:
         return {"code": "gray", "label": "Período não iniciado", "achievement": None, "evaluation_date": evaluation_date}
     elapsed = Decimal((evaluation_date - start).days) / Decimal((end - start).days)
@@ -187,8 +198,11 @@ def _indicator_pace(indicator, measurement, measured, target=None, year=""):
     }
 
 
-def _indicator_signal(indicator, target=None, year="", evaluation_date=None):
-    measurements = _results_measurements(indicator, year)
+def _indicator_signal(indicator, target=None, year="", evaluation_date=None, quarter=""):
+    measurements = _results_measurements(indicator, year, quarter)
+    if year and quarter:
+        month = int(quarter) * 3
+        evaluation_date = date(int(year), month, monthrange(int(year), month)[1])
     latest = measurements[0] if measurements else None
     if not latest:
         return {"code": "gray", "label": "Sem aferição", "achievement": None, "measurement": None}
@@ -203,7 +217,7 @@ def _indicator_signal(indicator, target=None, year="", evaluation_date=None):
         when = evaluation_date or date(int(year) if year else max(map(int, indicator.reference_parameters["projections"])), 12, 31)
         pace = document_pace(indicator, latest, measurements, when, aggregate=not year and evaluation_date is None)
     else:
-        pace = _indicator_pace(indicator, latest, measured, target=target, year=year) if measured is not None and indicator.direction != Indicator.Direction.RANGE else None
+        pace = _indicator_pace(indicator, latest, measured, target=target, year=year, evaluation_date=evaluation_date) if measured is not None and indicator.direction != Indicator.Direction.RANGE else None
     if pace is not None and pace.get("code") == "gray":
         return {**pace, "measurement": latest}
     if measured is None or (expected is None and pace is None):
@@ -301,7 +315,7 @@ def _scoped_targets(user, plans, unit_id=""):
     ).distinct()
 
 
-def _target_execution(target, user=None, unit_id="", year=""):
+def _target_execution(target, user=None, unit_id="", year="", quarter=""):
     """Execução da meta: situação, atingimento e progresso até a meta final a partir dos seus indicadores."""
     indicators = []
     visible_ids = user_unit_ids(user, for_view=True) if user else None
@@ -310,7 +324,7 @@ def _target_execution(target, user=None, unit_id="", year=""):
             continue
         if unit_id.isdigit() and int(unit_id) not in indicator.responsible_unit_ids:
             continue
-        signal = _indicator_signal(indicator, target=target, year=year)
+        signal = _indicator_signal(indicator, target=target, year=year, quarter=quarter)
         indicators.append(
             {"indicator": indicator, "signal": signal, "progress": _final_progress(indicator, signal["measurement"], target=target)}
         )
@@ -808,7 +822,49 @@ def target_overview(request):
     return _results_overview(request)
 
 
+def _results_filter_options(request):
+    """Resolve dependent choices before building either results context."""
+    params = request.GET.copy()
+    plans = Plan.objects.filter(active=True)
+    if params.get("plan", "").isdigit():
+        plans = plans.filter(pk=params["plan"])
+    unit = selected_unit_for_request(request)
+    indicators = view_scope_by_unit(
+        Indicator.objects.filter(artifacts__plan__in=plans), request.user,
+        "responsible_unit_id", include_unassigned=True,
+    ).distinct() if request.user.has_perm("core.view_indicator") else Indicator.objects.none()
+    if unit.isdigit():
+        indicators = indicators.filter(Q(responsible_unit_id=unit) | Q(responsible_units__id=unit)).distinct()
+    targets = _scoped_targets(request.user, plans, unit) if request.user.has_perm("core.view_strategictarget") else StrategicTarget.objects.none()
+    objectives = PlanArtifact.objects.filter(
+        plan__in=plans, artifact_type=PlanArtifact.ArtifactType.OBJECTIVE,
+    ).filter(Q(indicators__in=indicators) | Q(targets__in=targets)).distinct().order_by("code", "title")
+    target_id = params.get("target", "")
+    target = targets.filter(pk=target_id).first() if target_id.isdigit() else None
+    if target:
+        params["objective"] = str(target.artifact_id)
+    else:
+        params.pop("target", None)
+    objective_id = params.get("objective", "")
+    if objective_id.isdigit() and objectives.filter(pk=objective_id).exists():
+        targets = targets.filter(artifact_id=objective_id)
+        indicators = indicators.filter(artifacts__id=objective_id)
+    else:
+        params.pop("objective", None)
+    if target:
+        indicators = indicators.filter(targets=target)
+    indicator_id = params.get("indicator", "")
+    if not (indicator_id.isdigit() and indicators.filter(pk=indicator_id).exists()):
+        params.pop("indicator", None)
+    request.GET = params
+    return {"objectives": objectives, "filter_targets": targets.order_by("code", "description"),
+            "filter_indicators": indicators.order_by("code", "name"),
+            "selected_indicator": params.get("indicator", ""),
+            "selected_target": params.get("target", "")}
+
+
 def _results_overview(request):
+    filter_options = _results_filter_options(request)
     context = {"units": view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user)}
     if request.user.has_perm("core.view_strategictarget"):
         target_context = _target_overview_context(request)
@@ -817,7 +873,9 @@ def _results_overview(request):
         context.update(target_context)
     if request.user.has_perm("core.view_indicator"):
         context.update(_indicator_overview_context(request))
+    context.update(filter_options)
     selected_year = _selected_results_year(request)
+    selected_quarter = _selected_results_quarter(request)
     year_plans = Plan.objects.filter(active=True)
     if request.GET.get("plan", "").isdigit():
         year_plans = year_plans.filter(pk=request.GET["plan"])
@@ -826,6 +884,9 @@ def _results_overview(request):
         years.update(range(available_plan.start_date.year, available_plan.end_date.year + 1))
     if selected_year:
         years.add(int(selected_year))
+    context["selected_quarter"] = selected_quarter
+    context["period_kind"] = "Trimestral" if selected_quarter else "Anual" if selected_year else "Total"
+    context["period_label"] = f"{selected_quarter}º trimestre de {selected_year}" if selected_quarter else selected_year or "Todo o plano"
     context["selected_year"] = selected_year
     context["available_years"] = sorted(years, reverse=True)
     can_measure = request.user.has_perm("core.view_indicatormeasurement")
@@ -839,10 +900,12 @@ def _results_overview(request):
     writable_indicators = set(scope_by_unit(Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True).values_list("pk", flat=True))
     for row in context.get("indicator_rows", []):
         row["indicator"].can_write = row["indicator"].id in writable_indicators
+        if row["indicator"].can_write and request.user.has_perm("core.change_indicator"):
+            row["definition_form"] = IndicatorDefinitionForm(instance=row["indicator"], prefix=f"indicator-{row['indicator'].pk}")
         row["targets"] = [visible_targets[item.id] for item in row["indicator"].targets.all() if item.id in visible_targets]
         linked_ids.update(item.id for item in row["targets"])
-        row["measurements"] = _results_measurements(row["indicator"], selected_year) if can_measure else []
-        row["chart"] = _measurement_chart(row["indicator"], year=selected_year) if can_measure else None
+        row["measurements"] = _results_measurements(row["indicator"], selected_year, selected_quarter) if can_measure else []
+        row["chart"] = _measurement_chart(row["indicator"], year=selected_year, quarter=selected_quarter) if can_measure else None
         row["chart_data_id"] = f"target-chart-data-{row['indicator'].id}"
         measurement = row["signal"]["measurement"]
         measured = _decimal_from_measurement(measurement.measured_value) if measurement and can_measure else None
@@ -855,6 +918,12 @@ def _results_overview(request):
             "period": measurement.reference_period if measurement else "",
         } if can_measure and measurement else None
     context["standalone_targets"] = [item for pk, item in visible_targets.items() if pk not in linked_ids]
+    navigation_targets = {pk: {"target": target, "indicators": []} for pk, target in visible_targets.items()}
+    for row in context.get("indicator_rows", []):
+        for target in row["targets"]:
+            navigation_targets[target.pk]["indicators"].append(row["indicator"])
+    context["navigation_targets"] = list(navigation_targets.values())
+    context["navigation_unlinked_indicators"] = [row["indicator"] for row in context.get("indicator_rows", []) if not row["targets"]]
     context["inline_charts"] = bool(context.get("indicator_rows")) and can_measure
     return render(request, "core/indicator_overview.html", context)
 
@@ -867,6 +936,7 @@ def _indicator_overview_context(request):
     selected_objective = request.GET.get("objective", "")
     selected_status = _selected_result_status(request, "indicator")
     selected_year = _selected_results_year(request)
+    selected_quarter = _selected_results_quarter(request)
     plan = plans.filter(pk=selected_plan).first() if selected_plan.isdigit() else plans.first()
 
     indicators = Indicator.objects.none()
@@ -890,10 +960,12 @@ def _indicator_overview_context(request):
 
     if request.GET.get("target", "").isdigit():
         indicators = indicators.filter(targets__id=request.GET["target"])
+    if request.GET.get("indicator", "").isdigit():
+        indicators = indicators.filter(pk=request.GET["indicator"])
     indicator_rows = []
     signal_counts = {"green": 0, "yellow": 0, "orange": 0, "red": 0, "gray": 0}
     for indicator in indicators:
-        signal = _indicator_signal(indicator, year=selected_year)
+        signal = _indicator_signal(indicator, year=selected_year, quarter=selected_quarter)
         signal_counts[signal["code"]] += 1
         indicator_rows.append({"indicator": indicator, "signal": signal})
     if selected_status == "none":
@@ -924,6 +996,7 @@ def _target_overview_context(request):
     plans = Plan.objects.filter(active=True).order_by("start_date", "acronym")
     selected_plan = request.GET.get("plan", "")
     selected_year = _selected_results_year(request)
+    selected_quarter = _selected_results_quarter(request)
     selected_objective = request.GET.get("objective", "")
     plan = plans.filter(pk=selected_plan).first() if selected_plan.isdigit() else plans.first()
 
@@ -946,10 +1019,10 @@ def _target_overview_context(request):
         indicators = view_scope_by_unit(Indicator.objects.filter(artifacts__plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans).distinct(), request.user, "responsible_unit_id", include_unassigned=True)
         if selected_unit_for_request(request).isdigit():
             indicators = indicators.filter(Q(responsible_unit_id=selected_unit_for_request(request)) | Q(responsible_units__id=selected_unit_for_request(request))).distinct()
-        signals = {item.id: _indicator_signal(item, year=selected_year)["code"] for item in indicators.prefetch_related("measurements")}
+        signals = {item.id: _indicator_signal(item, year=selected_year, quarter=selected_quarter)["code"] for item in indicators.prefetch_related("measurements")}
         targets = [target for target in targets if _signal_matches(_target_signal(target, signals), selected_status)]
 
-    target_rows = [_target_execution(target, request.user, selected_unit_for_request(request), year=selected_year) for target in targets]
+    target_rows = [_target_execution(target, request.user, selected_unit_for_request(request), year=selected_year, quarter=selected_quarter) for target in targets]
     status_counts = {code: sum(1 for row in target_rows if row["code"] == code) for code in (*SIGNAL_STYLE, "none")}
     progress_rows = [row for row in target_rows if row["progress"] is not None]
     progress_chart = {
@@ -963,7 +1036,7 @@ def _target_overview_context(request):
     focused_charts = []
     if request.GET.get("target", "").isdigit() and len(target_rows) == 1:
         for item in target_rows[0]["indicators"]:
-            chart = _measurement_chart(item["indicator"], year=selected_year) if request.user.has_perm("core.view_indicatormeasurement") else None
+            chart = _measurement_chart(item["indicator"], year=selected_year, quarter=selected_quarter) if request.user.has_perm("core.view_indicatormeasurement") else None
             focused_charts.append({"element_id": f"target-chart-data-{item['indicator'].id}", "chart": chart})
 
     write_ids = user_unit_ids(request.user)
@@ -1036,7 +1109,7 @@ def _target_overview_context(request):
     }
 
 
-def _measurement_chart(indicator, year=""):
+def _measurement_chart(indicator, year="", quarter=""):
     """Geometria (SVG) do gráfico de linha.
 
     Parte da linha de base (na data da linha de base) e liga cada resultado aferido ao fim do seu
@@ -1044,7 +1117,7 @@ def _measurement_chart(indicator, year=""):
     """
     entries = []
     baseline = None
-    for measurement in _results_measurements(indicator, year):
+    for measurement in _results_measurements(indicator, year, quarter):
         basal = _decimal_from_measurement(measurement.baseline_value)
         if basal is not None and measurement.baseline_date and (
             baseline is None or measurement.baseline_date < baseline[0]
@@ -1134,16 +1207,21 @@ def indicator_detail(request, indicator_id):
     can_edit_definition = writable and request.user.has_perm("core.change_indicator")
     can_edit_measurement = writable and request.user.has_perm("core.change_indicatormeasurement")
     editing_measurement = None
-    definition_form = IndicatorDefinitionForm(instance=indicator) if can_edit_definition else None
+    definition_form = IndicatorDefinitionForm(instance=indicator, prefix=f"indicator-{indicator.pk}") if can_edit_definition else None
     form = None
     if request.method == "POST" and request.POST.get("operation") == "edit_definition":
         if not can_edit_definition:
             raise PermissionDenied
-        definition_form = IndicatorDefinitionForm(request.POST, instance=indicator)
+        inline = request.POST.get("inline") == "1"
+        definition_form = IndicatorDefinitionForm(request.POST, instance=indicator, prefix=f"indicator-{indicator.pk}" if inline else None)
         if definition_form.is_valid():
             definition_form.save()
+            if inline:
+                return JsonResponse({"ok": True})
             messages.success(request, "Ficha do indicador atualizada.")
             return redirect("indicator_detail", indicator_id=indicator.id)
+        if inline:
+            return JsonResponse({"errors": definition_form.errors}, status=400)
     elif request.method == "POST":
         editing = None
         if request.POST.get("measurement_id", "").isdigit():
@@ -1157,6 +1235,11 @@ def indicator_detail(request, indicator_id):
             measurement = form.save(commit=False)
             measurement.indicator = indicator
             if editing is None:
+                measurement.baseline_value = indicator.baseline
+                previous = next((item for item in indicator.measurements.all() if item.baseline_date), None)
+                plan = next((artifact.plan for artifact in indicator.artifacts.all()), None)
+                reference_date = indicator.reference_parameters.get("baseline_date")
+                measurement.baseline_date = date.fromisoformat(reference_date) if reference_date else (previous.baseline_date if previous else plan.start_date if plan else None)
                 measurement.recorded_by = request.user
             profile = getattr(measurement.measured_by, "profile", None)
             measurement.measured_unit = profile.unit if profile else None
@@ -1176,7 +1259,7 @@ def indicator_detail(request, indicator_id):
         form = IndicatorMeasurementForm(instance=editing_measurement)
     if form is None:
         form = IndicatorMeasurementForm(
-            initial={"baseline_value": indicator.baseline, "baseline_date": indicator.reference_parameters.get("baseline_date"), "measured_by": request.user.pk}
+            initial={"baseline_date": indicator.reference_parameters.get("baseline_date"), "measured_by": request.user.pk}
         )
     signal = _indicator_signal(indicator)
     can_view_measurements = request.user.has_perm("core.view_indicatormeasurement")
@@ -1775,12 +1858,12 @@ def action_plan_detail(request, action_id):
     if action_plan:
         if request.method == "POST" and request.POST.get("operation") == "add_activity":
             _require_permission(request.user, "add_activity")
-            has_risk_data = any(key.startswith("activity-risks-") for key in request.POST)
-            risks_valid = True
-            if has_risk_data:
-                _require_permission(request.user, "add_risk")
-                activity_risk_formset = ActivityPlanningRiskFormSet(request.POST, prefix="activity-risks")
-                risks_valid = activity_risk_formset.is_valid()
+            _require_permission(request.user, "add_risk")
+            activity_risk_formset = ActivityPlanningRiskFormSet(
+                request.POST, prefix="activity-risks",
+                error_messages={"too_few_forms": "Informe pelo menos um risco para cadastrar a atividade."},
+            )
+            risks_valid = activity_risk_formset.is_valid()
             form = ActivityForm(request.POST, action_plan=action_plan)
             if form.is_valid():
                 current_total = action_plan.activities.aggregate(total=Sum("weight"))["total"] or Decimal("0")
@@ -1797,10 +1880,9 @@ def action_plan_detail(request, action_id):
                     activity.save()
                     rebalanced = _rebalance_activity_weights(action_plan, activity)
                     _sync_action_progress(action, action_plan)
-                    if has_risk_data:
-                        for risk_form in activity_risk_formset:
-                            if risk_form.cleaned_data and not risk_form.cleaned_data.get("DELETE"):
-                                _save_new_risk(request.user, risk_form, action, activity=activity)
+                    for risk_form in activity_risk_formset:
+                        if risk_form.cleaned_data and not risk_form.cleaned_data.get("DELETE"):
+                            _save_new_risk(request.user, risk_form, action, activity=activity)
                 if rebalanced:
                     messages.success(request, "Atividade incluída. Os pesos anteriores foram redistribuídos para totalizar 100%.")
                 else:
@@ -2284,12 +2366,30 @@ def activity_follow_up(request, action_id, activity_id):
     for evidence in evidences:
         evidence.attachment_available = bool(evidence.attachment and evidence.attachment.storage.exists(evidence.attachment.name))
 
+    related_results = []
+    if request.user.has_perm("core.view_strategictarget"):
+        artifact_ids = []
+        artifact = action.artifact
+        while artifact:
+            artifact_ids.append(artifact.pk)
+            artifact = artifact.parent
+        targets = _scoped_targets(request.user, Plan.objects.filter(pk=action.artifact.plan_id)).filter(
+            Q(action=action) | Q(action__isnull=True, artifact_id__in=artifact_ids)
+        ).order_by("code", "description")
+        visible_indicators = view_scope_by_unit(
+            Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True,
+        ) if request.user.has_perm("core.view_indicator") else Indicator.objects.none()
+        visible_ids = set(visible_indicators.values_list("pk", flat=True))
+        for target in targets:
+            related_results.append({"target": target, "indicators": [item for item in target.indicators.all() if item.pk in visible_ids]})
+
     return render(
         request,
         "core/activity_follow_up.html",
         {
             "action": action,
             "activity": activity,
+            "related_results": related_results,
             "progress_form": progress_form,
             "can_view": can_view,
             "evidences": evidences,

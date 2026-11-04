@@ -16,7 +16,7 @@
         <article class="panel report-cycle-card">
           <div class="panel-heading"><div><p class="eyebrow">{{ row.cycle.plan.acronym }} · {{ row.cycle.period_start|date:"d/m/Y" }} a {{ row.cycle.period_end|date:"d/m/Y" }}</p><h2>{{ row.cycle.name }}</h2></div><span class="chip chip-report-{{ row.cycle.status|lower }}">{{ row.cycle.get_status_display }}</span></div>
           <div class="report-cycle-progress"><span><strong>{{ row.submitted_count }}</strong> de {{ row.report_count }} enviados</span><span><strong>{{ row.approved_count }}</strong> aprovados</span><span>Prazo: <strong>{{ row.cycle.due_date|date:"d/m/Y" }}</strong></span></div>
-          <div class="card-footer"><span>{{ row.report_count }} unidade{{ row.report_count|pluralize:"s" }} participante{{ row.report_count|pluralize:"s" }}</span><a class="button button-secondary" href="{% url 'report_cycle_detail' row.cycle.id %}?unit={{ selected_unit }}">Visualizar</a></div>
+          <div class="card-footer"><span>{{ row.report_count }} unidade{{ row.report_count|pluralize:"s" }} participante{{ row.report_count|pluralize:"s" }}</span><a class="row-icon" href="{% url 'report_cycle_detail' row.cycle.id %}?unit={{ selected_unit }}" title="Visualizar" aria-label="Visualizar">{% include "core/_record_icon.html" with icon="view" %}</a></div>
         </article>
       {% empty %}
         <div class="empty-state large-empty panel"><strong>Nenhum ciclo aberto.</strong><span>Crie o primeiro ciclo para preparar os relatórios das unidades participantes.</span></div>

@@ -1,7 +1,7 @@
 {% if activity_risk_formset %}
 <section data-activity-risk-section>
   <h3>Riscos da atividade</h3>
-  <p class="form-hint">Cadastre os riscos previstos para esta atividade. A ação e a atividade serão vinculadas automaticamente ao salvar.</p>
+  <p class="form-hint">Informe pelo menos um risco para cadastrar a atividade. A ação e a atividade serão vinculadas automaticamente ao salvar.</p>
   {{ activity_risk_formset.management_form }}
   {{ activity_risk_formset.non_form_errors }}
   <div class="registered-risks" data-activity-risk-list>
@@ -16,7 +16,7 @@
     var total=section.querySelector('[name="activity-risks-TOTAL_FORMS"]');
     var add=section.querySelector('[data-add-activity-risk]');
     function activeDrafts(){return Array.from(list.querySelectorAll('[data-risk-draft]')).filter(function(d){return !d.hidden;});}
-    function updateButton(){add.textContent=activeDrafts().length?'Cadastrar outro risco':'Cadastrar risco';add.disabled=Number(total.value)>=20;}
+    function updateButton(){var drafts=activeDrafts();add.textContent=drafts.length?'Cadastrar outro risco':'Cadastrar risco';add.disabled=Number(total.value)>=20;drafts.forEach(function(d){d.querySelector('[data-remove-risk-draft]').disabled=drafts.length===1;});}
     function bind(draft){
       var title=draft.querySelector('input[name$="-title"]');
       title.addEventListener('input',function(){draft.querySelector('[data-risk-draft-title]').textContent=title.value||'Novo risco';});

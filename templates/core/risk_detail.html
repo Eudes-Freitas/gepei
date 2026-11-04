@@ -1,14 +1,15 @@
 {% extends "base.html" %}
 {% block title %}{{ risk.title }} | GEPEI{% endblock %}
 {% block content %}
+<div class="workspace-page">
   <a class="back-link" href="{% url 'risk_overview' %}">← Voltar aos riscos</a>
-  <section class="action-detail-heading">
+  <section class="action-detail-heading workspace-heading">
     <div><p class="eyebrow">{{ action.code }} · Ciclo do risco</p><h1>{{ risk.title }}</h1><p>{% if risk.activity %}Atividade: {{ risk.activity.title }}{% else %}Ação estratégica{% endif %} · Responsável pelo tratamento: {% if not can_view.treatments %}Sem permissão{% elif current_treatment %}{{ current_treatment.responsible.get_full_name|default:current_treatment.responsible.username }}{% else %}Não definido{% endif %}</p></div>
     <div class="risk-heading-status"><span class="risk-score {% if risk.level >= 20 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }}</span><span class="chip chip-neutral">{{ risk.get_status_display }}</span></div>
   </section>
 
   <div class="risk-workspace">
-    <nav class="risk-side-menu" aria-label="Seções do risco">
+    <nav class="risk-side-menu workspace-nav" aria-label="Seções do risco">
       <a href="#dados" data-section-link="dados">Dados e momento</a>
       <a href="#analise" data-section-link="analise">Avaliações {% if can_view.assessments %}<span class="risk-count">{{ assessments|length }}</span>{% else %}<span class="risk-lock" title="Sem permissão">🔒</span>{% endif %}</a>
       <a href="#tratamento" data-section-link="tratamento">Tratamento {% if can_view.treatments %}<span class="risk-count">{{ treatments|length }}</span>{% else %}<span class="risk-lock" title="Sem permissão">🔒</span>{% endif %}</a>
@@ -181,4 +182,5 @@
     var hash=location.hash.slice(1);var start=alias[hash]||(find(hash)?hash:'')||byOperation['{{ request.POST.operation|escapejs }}']||'';
     if(start){reveal(start);}
   }());</script>
+</div>
 {% endblock %}
