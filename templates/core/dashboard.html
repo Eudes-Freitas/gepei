@@ -29,6 +29,21 @@
         {% for code, label in actions_status_choices %}<option value="{{ code }}" {% if selected_status == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
       </select>
     </label>
+    <label>Ano
+      <select name="year">
+        <option value="">Todos os anos</option>
+        {% for year in dashboard_years %}<option value="{{ year }}" {% if selected_year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Período
+      <select name="quarter">
+        <option value="">Ano completo</option>
+        <option value="1" {% if selected_quarter == "1" %}selected{% endif %}>1º trimestre</option>
+        <option value="2" {% if selected_quarter == "2" %}selected{% endif %}>2º trimestre</option>
+        <option value="3" {% if selected_quarter == "3" %}selected{% endif %}>3º trimestre</option>
+        <option value="4" {% if selected_quarter == "4" %}selected{% endif %}>4º trimestre</option>
+      </select>
+    </label>
     <button class="button button-primary" type="submit">Aplicar filtros</button>
     <a class="clear-filter" href="{% url 'dashboard' %}">Limpar</a>
   </form>
@@ -42,6 +57,32 @@
     {% else %}
       <div class="dx-kpi dx-red dx-locked"><span class="dx-kpi-label">Riscos altos ou críticos</span><strong>🔒</strong><small>sem permissão para ver riscos</small></div>
     {% endif %}
+  </section>
+
+  <section class="panel sector-execution-panel" aria-label="Ranking de atingimento das metas por setor">
+    <div class="panel-heading"><div><p class="eyebrow">Ranking</p><h2>Atingimento das metas por setor</h2></div><span class="chip chip-neutral">{% if selected_quarter %}{{ selected_quarter }}º trimestre{% elif selected_year %}{{ selected_year }}{% else %}Todo o plano{% endif %}</span></div>
+    <div class="sector-execution-table">
+      <div class="sector-execution-row sector-execution-header"><strong>Setor</strong><strong>Execução do plano de ação</strong><strong>Atingimento das metas</strong></div>
+      {% for item in sector_execution|slice:":5" %}
+        <div class="sector-execution-row">
+          <div><strong>{{ item.name }}</strong><small>{{ item.full_name }}</small></div>
+          <div class="sector-usage">{% if item.action_execution != None %}<span class="sector-usage-ring sector-action-ring" style="--sector-progress:{{ item.action_execution|stringformat:'f' }}%"></span><strong>{{ item.action_execution|floatformat:"-1" }}%</strong>{% else %}<span class="muted-text">Sem plano</span>{% endif %}</div>
+          <div class="sector-usage">{% if item.achievement != None %}<span class="sector-usage-ring" style="--sector-progress:{{ item.achievement|stringformat:'f' }}%"></span><strong>{{ item.achievement|floatformat:"-1" }}%</strong>{% else %}<span class="muted-text">Sem aferição</span>{% endif %}</div>
+        </div>
+      {% empty %}<div class="empty-state">Nenhum setor disponível no recorte.</div>{% endfor %}
+      {% if sector_execution|length > 5 %}
+        <details class="sector-execution-more">
+          <summary>Ver todos os setores ({{ sector_execution|length }})</summary>
+          {% for item in sector_execution|slice:"5:" %}
+            <div class="sector-execution-row">
+              <div><strong>{{ item.name }}</strong><small>{{ item.full_name }}</small></div>
+              <div class="sector-usage">{% if item.action_execution != None %}<span class="sector-usage-ring sector-action-ring" style="--sector-progress:{{ item.action_execution|stringformat:'f' }}%"></span><strong>{{ item.action_execution|floatformat:"-1" }}%</strong>{% else %}<span class="muted-text">Sem plano</span>{% endif %}</div>
+              <div class="sector-usage">{% if item.achievement != None %}<span class="sector-usage-ring" style="--sector-progress:{{ item.achievement|stringformat:'f' }}%"></span><strong>{{ item.achievement|floatformat:"-1" }}%</strong>{% else %}<span class="muted-text">Sem aferição</span>{% endif %}</div>
+            </div>
+          {% endfor %}
+        </details>
+      {% endif %}
+    </div>
   </section>
 
   <section class="dx-grid">
@@ -85,7 +126,7 @@
         <a class="dx-stat" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=measured"><span>Aferidos</span><b>{{ indicator_measured_pct }}%</b><small>{{ indicator_measured }} de {{ indicator_total }} indicadores</small></a>
         <a class="dx-stat dx-stat-green" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=green"><span>Meta alcançada</span><b>{{ indicator_green_pct }}%</b><small>{{ signal_counts.green }} de {{ indicator_measured }} aferidos</small></a>
         <a class="dx-stat dx-stat-red" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=attention"><span>Abaixo da meta</span><b>{{ indicator_attention }}</b><small>próximo da meta, atingimento parcial ou baixo</small></a>
-        <a class="dx-stat dx-stat-gray" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=gray"><span>Não avaliado</span><b>{{ signal_counts.gray }}</b><small>sem resultado ou dado insuficiente</small></a>
+        <a class="dx-stat dx-stat-gray" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=gray"><span>Não aferido</span><b>{{ signal_counts.gray }}</b><small>sem resultado ou dado insuficiente</small></a>
       </div>
       <div class="dx-charts">
         <figure><figcaption>Aferição dos indicadores</figcaption><div id="chart-measured" class="dx-chart" role="img" aria-label="Gráfico de rosca: indicadores aferidos e sem aferição"></div></figure>
@@ -108,7 +149,7 @@
         {% if can_indicators %}
         <a class="dx-stat dx-stat-green" href="{% url 'target_overview' %}?{{ target_query }}&amp;status=green"><span>Meta alcançada</span><b>{{ target_green_pct }}%</b><small>{{ target_counts.green }} de {{ target_measured }} metas aferidas</small></a>
         <a class="dx-stat dx-stat-red" href="{% url 'target_overview' %}?{{ target_query }}&amp;status=attention"><span>Abaixo da meta</span><b>{{ target_attention_count }}</b><small>próximo da meta, atingimento parcial ou baixo</small></a>
-        <a class="dx-stat dx-stat-gray" href="{% url 'target_overview' %}?{{ target_query }}&amp;status=unmeasured"><span>Não avaliado</span><b>{{ target_counts.gray|add:target_counts.none }}</b><small>sem indicador aferido</small></a>
+        <a class="dx-stat dx-stat-gray" href="{% url 'target_overview' %}?{{ target_query }}&amp;status=unmeasured"><span>Não aferido</span><b>{{ target_counts.gray|add:target_counts.none }}</b><small>sem indicador aferido</small></a>
         {% endif %}
       </div>
       {% if can_indicators %}
@@ -142,37 +183,6 @@
   </article>
   {% endif %}
 
-  {% if can_exec %}<section class="panel action-panel" id="acoes">
-    <div class="panel-heading"><div><h2>Acompanhamento das ações estratégicas por setor</h2><small class="panel-subtitle">{% if recent_actions %}Exibindo {{ action_page.start_index }}–{{ action_page.end_index }} de {{ sector_action_count }} ações, pelo prazo mais próximo{% else %}Nenhuma ação no recorte{% endif %}</small></div></div>
-    {% if recent_actions %}
-      <div class="responsive-table"><table>
-        <thead><tr><th>Ação</th><th>Unidade</th><th>Atividades</th><th>Prazo</th><th>Execução</th><th>Situação</th></tr></thead>
-        <tbody>{% for action in recent_actions %}
-          <tr class="row-link" data-href="{% url 'action_plan_detail' action.id %}">
-            <td><a href="{% url 'action_plan_detail' action.id %}"><strong>{{ action.code }}</strong><span>{{ action.title }}</span></a></td>
-            <td><a href="{% url 'action_plan_list' %}?{% if selected_plan %}plan={{ selected_plan }}&amp;{% endif %}{% if selected_status %}status={{ selected_status }}&amp;{% endif %}unit={{ action.coordinating_unit_id }}">{{ action.coordinating_unit.acronym|default:action.coordinating_unit.name }}</a></td>
-            <td>{% if action.activity_count %}<a href="{% url 'action_plan_detail' action.id %}">{{ action.activity_count }} atividade{{ action.activity_count|pluralize:"s" }}</a>{% else %}<span class="financial-empty">Nenhuma</span>{% endif %}</td>
-            <td class="{% if action.due_date and action.due_date < today and action.status != 'CONCLUIDA' and action.status != 'SUSPENSA' %}deadline-overdue{% endif %}">{{ action.due_date|date:"d/m/Y"|default:"A definir" }}</td>
-            <td>{% progress_bar action.progress "table-progress" %}<small>{{ action.progress|floatformat:"-1" }}%</small></td>
-            <td><a class="chip chip-{{ action.status|lower }}" href="{% url 'action_plan_list' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status={{ action.status }}">{{ action.get_status_display }}</a></td>
-          </tr>
-        {% endfor %}</tbody>
-      </table></div>
-      {% if action_page.has_other_pages %}
-        <div class="pagination" role="navigation" aria-label="Paginação das ações">
-          {% if action_page.has_previous %}<a href="?{% if page_query %}{{ page_query }}&amp;{% endif %}page={{ action_page.previous_page_number }}#acoes" rel="prev">‹ Anterior</a>{% else %}<span class="pagination-disabled">‹ Anterior</span>{% endif %}
-          {% for number in action_page_range %}
-            {% if number == action_page.paginator.ELLIPSIS %}<span class="pagination-ellipsis">…</span>
-            {% elif number == action_page.number %}<span class="pagination-current" aria-current="page">{{ number }}</span>
-            {% else %}<a href="?{% if page_query %}{{ page_query }}&amp;{% endif %}page={{ number }}#acoes">{{ number }}</a>{% endif %}
-          {% endfor %}
-          {% if action_page.has_next %}<a href="?{% if page_query %}{{ page_query }}&amp;{% endif %}page={{ action_page.next_page_number }}#acoes" rel="next">Próxima ›</a>{% else %}<span class="pagination-disabled">Próxima ›</span>{% endif %}
-        </div>
-      {% endif %}
-    {% else %}
-      <div class="empty-state large-empty"><strong>O painel está pronto para receber o PEI.</strong><span>Após a carga validada, as ações, os prazos, os avanços e os alertas serão exibidos automaticamente aqui.</span>{% if can_add_actions %}<a class="button button-primary" href="/admin/core/strategicaction/add/">Cadastrar primeira ação</a>{% endif %}</div>
-    {% endif %}
-  </section>{% endif %}
 {% endblock %}
 {% block extra_script %}
   {% if can_indicators or can_targets or can_exec %}
@@ -224,6 +234,12 @@
   </script>
   {% endif %}
   <script>
+    // No painel, metas vêm antes dos indicadores na leitura da página.
+    (function () {
+      var indicators = document.getElementById('indicadores');
+      var targets = document.getElementById('metas');
+      if (indicators && targets) { indicators.parentNode.insertBefore(targets, indicators); }
+    }());
     document.querySelectorAll("tr.row-link").forEach(function (row) {
       row.addEventListener("click", function (event) {
         if (event.target.closest("a")) { return; }

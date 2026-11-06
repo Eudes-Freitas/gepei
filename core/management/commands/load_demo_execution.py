@@ -75,7 +75,7 @@ class Command(BaseCommand):
         self.add_risk_scenario(
             action, user, "[DEMONSTRAÇÃO] Baixa adesão das unidades ao levantamento",
             "Conflito de agenda e atraso na indicação dos participantes.", 3, 4,
-            Risk.Status.IN_TREATMENT, RiskTreatment.Decision.MITIGATE,
+            Risk.Status.NOT_MATERIALIZED, RiskTreatment.Decision.MITIGATE,
             activity=monitored_activity,
             preventive="Acompanhar semanalmente as respostas e comunicar as chefias.",
             contingency="Prorrogar apenas o prazo das unidades justificadamente pendentes.",
@@ -84,7 +84,7 @@ class Command(BaseCommand):
         self.add_risk_scenario(
             action, user, "[DEMONSTRAÇÃO] Pequeno ajuste no cronograma de entrevistas",
             "Possível remarcação de uma reunião setorial.", 1, 2,
-            Risk.Status.IN_TREATMENT, RiskTreatment.Decision.MITIGATE,
+            Risk.Status.NOT_MATERIALIZED, RiskTreatment.Decision.MITIGATE,
             occurrence_timing=Risk.OccurrenceTiming.DATE_OR_MILESTONE,
             expected_occurrence_date=date(2026, 9, 10),
             trigger="Reunião de validação com as unidades participantes.",
@@ -104,7 +104,7 @@ class Command(BaseCommand):
         self.add_risk_scenario(
             action, user, "[DEMONSTRAÇÃO] Indisponibilidade temporária do formulário",
             "Manutenção programada do serviço de formulários.", 2, 3,
-            Risk.Status.CLOSED, RiskTreatment.Decision.ACCEPT,
+            Risk.Status.NOT_MATERIALIZED, RiskTreatment.Decision.ACCEPT,
             preventive="Divulgar previamente a janela de manutenção.",
             contingency="Receber respostas por processo SEI durante a indisponibilidade.",
             accepted=True,
@@ -122,7 +122,7 @@ class Command(BaseCommand):
                 "cause": "Atualizações setoriais não enviadas no período de monitoramento.",
                 "probability": 4,
                 "impact": 4,
-                "status": Risk.Status.IN_TREATMENT,
+                "status": Risk.Status.NOT_MATERIALIZED,
                 "treatment": "Mitigar",
                 "preventive_measure": "Realizar acompanhamento semanal e comunicação às chefias.",
                 "contingency_measure": "Escalonar a pendência à COPIN e ao gestor responsável.",

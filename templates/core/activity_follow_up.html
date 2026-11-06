@@ -19,25 +19,14 @@
   </section>
 
   <nav class="workspace-nav activity-workspace-nav" aria-label="Seções da atividade">
-    <a href="#execucao">Execução</a>
-    <a href="#evidencias">Evidências</a>
+    <a href="#execucao">Execução e evidências</a>
     <a href="#impedimentos">Impedimentos</a>
     <a href="#riscos">Riscos</a>
     {% if perms.core.view_strategictarget %}<a href="#metas-indicadores" data-open-related-results>Metas e indicadores</a>{% endif %}
   </nav>
 
-  <section class="panel" id="execucao">
-    <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Execução da atividade</h2></div><span class="chip chip-{{ activity.status|lower }}">{{ activity.get_status_display }}</span></div>
-    {% if perms.core.change_activity %}<form method="post" class="activity-form">{% csrf_token %}
-      <input type="hidden" name="operation" value="update_progress">
-      <div class="form-field">{{ progress_form.progress.label_tag }}{{ progress_form.progress }}{% if progress_form.progress.errors %}<small class="field-error">{{ progress_form.progress.errors|striptags }}</small>{% endif %}</div>
-      <p class="form-hint">Para chegar a 100% e concluir a atividade, registre uma evidência com anexo.</p>
-      <button class="button button-primary" type="submit">Atualizar execução</button>
-    </form>{% endif %}
-  </section>
-
   {% if perms.core.view_strategictarget %}
-  <details class="panel activity-related-results" id="metas-indicadores">
+  <details class="panel activity-related-results" id="metas-indicadores" data-activity-section="metas-indicadores">
     <summary>Metas e indicadores relacionados</summary>
     <p class="form-hint">Metas vinculadas à ação estratégica desta atividade e metas gerais do seu objetivo ou projeto.</p>
     {% for item in related_results %}
@@ -51,7 +40,17 @@
   {% endif %}
 
   <section class="follow-up-grid">
-    <article class="panel follow-up-panel" id="evidencias">
+    <article class="panel follow-up-panel" id="execucao" data-activity-section="execucao">
+      <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Execução da atividade</h2></div><span class="chip chip-{{ activity.status|lower }}">{{ activity.get_status_display }}</span></div>
+      {% if perms.core.change_activity %}<form method="post" class="activity-form">{% csrf_token %}
+        <input type="hidden" name="operation" value="update_progress">
+        <div class="form-field">{{ progress_form.progress.label_tag }}{{ progress_form.progress }}{% if progress_form.progress.errors %}<small class="field-error">{{ progress_form.progress.errors|striptags }}</small>{% endif %}</div>
+        <p class="form-hint">Para chegar a 100% e concluir a atividade, registre uma evidência com anexo.</p>
+        <button class="button button-primary" type="submit">Salvar execução</button>
+      </form>{% endif %}
+    </article>
+
+    <article class="panel follow-up-panel" id="evidencias" data-activity-section="execucao">
       <div class="panel-heading"><div><p class="eyebrow">Comprovação</p><h2>Evidências</h2></div></div>
       {% if not can_view.evidences %}<div class="empty-state" role="alert"><strong>Sem permissão.</strong><span>Você não tem permissão para visualizar as evidências.</span></div>
       {% else %}{% if evidences %}
@@ -62,8 +61,8 @@
               {% if evidence.description %}<p>{{ evidence.description }}</p>{% endif %}
               {% if evidence.reference %}<small>Referência: {{ evidence.reference }}</small>{% endif %}
               {% if evidence.url %}<a href="{{ evidence.url }}" target="_blank" rel="noopener">Abrir link da evidência</a>{% endif %}
-              {% if evidence.attachment_available %}<a href="{% url 'evidence_file' action.id activity.id evidence.id %}" target="_blank" rel="noopener">Abrir arquivo</a>{% elif evidence.attachment %}<small class="field-error">Arquivo indisponível no servidor. Restaure o original ou anexe-o novamente.</small>{% endif %}
-              </div>{% if perms.core.change_activityevidence and not request.read_only_other_unit %}<div class="record-actions"><a class="icon-button record-action" href="?editar_evidencia={{ evidence.pk }}#evidencias" title="Editar evidência" aria-label="Editar evidência">{% include "core/_record_icon.html" with icon="edit" %}</a></div>{% endif %}
+              {% if evidence.attachment %}{% if not evidence.attachment_available %}<small class="field-error">Arquivo indisponível no servidor. Restaure o original ou anexe-o novamente.</small>{% endif %}{% endif %}
+              </div><div class="record-actions">{% if evidence.attachment_available %}<a class="icon-button record-action" href="{% url 'evidence_file' action.id activity.id evidence.id %}" target="_blank" rel="noopener" title="Abrir arquivo" aria-label="Abrir arquivo">{% include "core/_record_icon.html" with icon="view" %}</a>{% endif %}{% if perms.core.change_activityevidence and not request.read_only_other_unit %}<a class="icon-button record-action" href="?editar_evidencia={{ evidence.pk }}#evidencias" title="Editar evidência" aria-label="Editar evidência">{% include "core/_record_icon.html" with icon="edit" %}</a>{% endif %}{% if perms.core.delete_activityevidence and not request.read_only_other_unit %}<form method="post" onsubmit="return confirm('Remover esta evidência?');">{% csrf_token %}<input type="hidden" name="operation" value="delete_evidence"><input type="hidden" name="evidence_id" value="{{ evidence.pk }}"><button type="submit" class="icon-button record-action text-danger" title="Remover evidência" aria-label="Remover evidência">{% include "core/_record_icon.html" with icon="delete" %}</button></form>{% endif %}</div>
               {% if editing_evidence.pk == evidence.pk %}
               <form method="post" enctype="multipart/form-data" class="activity-form record-editor">{% csrf_token %}
                 <input type="hidden" name="operation" value="edit_evidence"><input type="hidden" name="evidence_id" value="{{ evidence.pk }}">
@@ -76,13 +75,13 @@
         </div>
       {% else %}<div class="empty-state"><span>Nenhuma evidência registrada.</span></div>{% endif %}
       {% if perms.core.add_activityevidence %}<details class="entry-form" open>
-        <summary>Atualizar atividade</summary>
+        <summary>Adicionar atividade</summary>
         <p class="form-hint">O anexo é obrigatório, e a atividade só pode ser concluída depois que houver uma evidência com anexo.</p>
         <form method="post" enctype="multipart/form-data" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_evidence">{% for field in evidence_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}{% if evidence_form.non_field_errors %}<small class="field-error">{{ evidence_form.non_field_errors|striptags }}</small>{% endif %}<button class="button button-primary" type="submit">Registrar evidência</button></form>
       </details>{% endif %}{% endif %}
     </article>
 
-    <article class="panel follow-up-panel" id="impedimentos">
+    <article class="panel follow-up-panel" id="impedimentos" data-activity-section="impedimentos">
       <div class="panel-heading"><div><p class="eyebrow">Desbloqueio</p><h2>Impedimentos</h2></div></div>
       {% if not can_view.blockers %}<div class="empty-state" role="alert"><strong>Sem permissão.</strong><span>Você não tem permissão para visualizar os impedimentos.</span></div>
       {% else %}{% if blockers %}
@@ -111,7 +110,7 @@
       </details>{% endif %}{% endif %}
     </article>
 
-    <article class="panel follow-up-panel" id="riscos">
+    <article class="panel follow-up-panel" id="riscos" data-activity-section="riscos">
       <div class="panel-heading"><div><p class="eyebrow">Prevenção</p><h2>Riscos da atividade</h2></div></div>
       {% if not can_view.risks %}<div class="empty-state" role="alert"><strong>Sem permissão.</strong><span>Você não tem permissão para visualizar os riscos.</span></div>
       {% else %}
@@ -202,9 +201,33 @@
     </article>
   </section>
 <script>
-  document.querySelectorAll('[data-open-related-results]').forEach(function (link) {
-    link.addEventListener('click', function () { document.getElementById('metas-indicadores').open = true; });
-  });
+  (function () {
+    var links = document.querySelectorAll('.activity-workspace-nav a');
+    var sections = document.querySelectorAll('[data-activity-section]');
+    function show(name) {
+      sections.forEach(function (section) {
+        section.hidden = section.dataset.activitySection !== name;
+      });
+      var selected = document.querySelector('.activity-workspace-nav a[href=\"#' + name + '\"]');
+      links.forEach(function (link) {
+        if (link === selected) { link.setAttribute('aria-current', 'true'); }
+        else { link.removeAttribute('aria-current'); }
+      });
+      var section = document.getElementById(name);
+      if (section && section.tagName === 'DETAILS') { section.open = true; }
+    }
+    links.forEach(function (link) {
+      link.addEventListener('click', function (event) {
+        event.preventDefault();
+        var name = link.getAttribute('href').slice(1);
+        history.replaceState(null, '', '#' + name);
+        show(name);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    });
+    var initial = location.hash ? location.hash.slice(1) : 'execucao';
+    show(document.querySelector('[data-activity-section="' + initial + '"]') ? initial : 'execucao');
+  }());
 </script>
 </div>
 {% endblock %}

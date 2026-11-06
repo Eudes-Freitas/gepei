@@ -402,7 +402,7 @@ class IndicatorMeasurement(models.Model):
     def responsible_name(self):
         """Quem realizou a aferição; nas aferições antigas, quem a registrou."""
         user = self.measured_by or self.recorded_by
-        return user.get_full_name() or user.username
+        return user.get_full_name() or user.first_name or user.last_name or "Responsável não informado"
 
     @property
     def responsible_unit_label(self):
@@ -501,11 +501,8 @@ class SectorReport(models.Model):
 
 class Risk(models.Model):
     class Status(models.TextChoices):
-        IDENTIFIED = "IDENTIFICADO", "Identificado"
-        IN_TREATMENT = "EM_TRATAMENTO", "Em tratamento"
-        MONITORING = "EM_MONITORAMENTO", "Em monitoramento"
+        NOT_MATERIALIZED = "NAO_MATERIALIZADO", "Não materializado"
         MATERIALIZED = "MATERIALIZADO", "Materializado"
-        CLOSED = "ENCERRADO", "Encerrado"
 
     class OccurrenceTiming(models.TextChoices):
         ANY_TIME = "QUALQUER_MOMENTO", "Pode ocorrer a qualquer momento"
@@ -521,7 +518,7 @@ class Risk(models.Model):
     cause = models.TextField()
     probability = models.PositiveSmallIntegerField()
     impact = models.PositiveSmallIntegerField()
-    status = models.CharField(max_length=16, choices=Status.choices, default=Status.IDENTIFIED)
+    status = models.CharField(max_length=18, choices=Status.choices, default=Status.NOT_MATERIALIZED)
     treatment = models.CharField(max_length=20, blank=True)
     preventive_measure = models.TextField(blank=True)
     contingency_measure = models.TextField(blank=True)

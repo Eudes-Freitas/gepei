@@ -15,7 +15,6 @@
       <a href="#tratamento" data-section-link="tratamento">Tratamento {% if can_view.treatments %}<span class="risk-count">{{ treatments|length }}</span>{% else %}<span class="risk-lock" title="Sem permissão">🔒</span>{% endif %}</a>
       <a href="#ocorrencia" data-section-link="ocorrencia">Materialização {% if can_view.materializations %}<span class="risk-count">{{ materializations|length }}</span>{% else %}<span class="risk-lock" title="Sem permissão">🔒</span>{% endif %}</a>
       <a href="#alcada" data-section-link="alcada">Aceite {% if not can_view.acceptances %}<span class="risk-lock" title="Sem permissão">🔒</span>{% elif pending_acceptance %}<span class="risk-count risk-count-warn">pendente</span>{% endif %}</a>
-      <div class="risk-side-tools"><button type="button" class="text-button" data-expand-all>Expandir tudo</button><button type="button" class="text-button" data-collapse-all>Recolher tudo</button></div>
     </nav>
 
     <div class="panel risk-sections">
@@ -170,6 +169,7 @@
     function find(name){return document.querySelector('[data-section="'+name+'"]');}
     function reveal(name){
       var section=find(name);if(!section){return;}
+      sections.forEach(function(item){item.hidden=item!==section;});
       if(section.tagName==='DETAILS'){section.open=true;}
       else{var toggle=section.querySelector('[data-locked-toggle]');var notice=section.querySelector('.risk-lock-notice');toggle.setAttribute('aria-expanded','true');notice.hidden=false;}
       links.forEach(function(l){if(l.dataset.sectionLink===name){l.setAttribute('aria-current','true');}else{l.removeAttribute('aria-current');}});
@@ -177,9 +177,15 @@
     }
     links.forEach(function(l){l.addEventListener('click',function(e){e.preventDefault();var name=l.dataset.sectionLink;history.replaceState(null,'','#'+name);reveal(name);});});
     document.querySelectorAll('[data-locked-toggle]').forEach(function(btn){btn.addEventListener('click',function(){var notice=document.getElementById(btn.getAttribute('aria-controls'));var open=btn.getAttribute('aria-expanded')==='true';btn.setAttribute('aria-expanded',open?'false':'true');notice.hidden=open;});});
-    document.querySelector('[data-expand-all]').addEventListener('click',function(){document.querySelectorAll('details.risk-section').forEach(function(d){d.open=true;});});
-    document.querySelector('[data-collapse-all]').addEventListener('click',function(){document.querySelectorAll('details.risk-section').forEach(function(d){d.open=false;});});
-    var hash=location.hash.slice(1);var start=alias[hash]||(find(hash)?hash:'')||byOperation['{{ request.POST.operation|escapejs }}']||'';
+    var sections=document.querySelectorAll('[data-section]');
+    if('IntersectionObserver' in window){
+      var observer=new IntersectionObserver(function(entries){
+        var visible=entries.filter(function(entry){return entry.isIntersecting;}).sort(function(a,b){return b.intersectionRatio-a.intersectionRatio;})[0];
+        if(visible){links.forEach(function(l){if(l.dataset.sectionLink===visible.target.dataset.section){l.setAttribute('aria-current','true');}else{l.removeAttribute('aria-current');}});}
+      },{rootMargin:'-18% 0px -65% 0px',threshold:[0,.25,.5]});
+      sections.forEach(function(section){observer.observe(section);});
+    }
+    var hash=location.hash.slice(1);var start=alias[hash]||(find(hash)?hash:'')||byOperation['{{ request.POST.operation|escapejs }}']||'dados';
     if(start){reveal(start);}
   }());</script>
 </div>
