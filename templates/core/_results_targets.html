@@ -1,7 +1,6 @@
   <section class="metrics metrics-centered indicator-metrics" aria-label="Resumo da execução das metas">
     <article class="metric-card"><span>Metas exibidas</span><strong>{{ target_rows|length }}</strong></article>
     <article class="metric-card metric-blue"><span>Conformes</span><strong>{{ status_counts.green }}</strong></article>
-    <article class="metric-card metric-warning"><span>Exigem atenção</span><strong>{{ target_attention_count }}</strong></article>
     <article class="metric-card"><span>Sem aferição ou indicador</span><strong>{{ status_counts.gray|add:status_counts.none }}</strong></article>
   </section>
 

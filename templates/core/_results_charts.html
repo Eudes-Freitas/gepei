@@ -12,13 +12,15 @@
         var data = JSON.parse(source.textContent);
         var series = [{
           name: 'Resultado aferido',
-          data: data.result.map(function (point) {
-            var item = { y: point.y, custom: point.tip };
+          data: data.result.map(function (point, index) {
+            var item = { y: point.y, custom: { tip: point.tip, description: point.description, responsible: point.responsible } };
+            var expected = data.expected[index];
+            item.dataLabels = { y: expected !== null && point.y < expected ? 26 : -18 };
             if (point.baseline) { item.marker = { symbol: 'diamond', radius: 7, fillColor: '#ffffff', lineColor: '#0b7285', lineWidth: 3 }; }
             return item;
           })
         }];
-        if (data.has_expected) { series.push({ name: 'Meta do período', data: data.expected, dashStyle: 'ShortDash', color: '#6b7280' }); }
+        if (data.has_expected) { series.push({ name: 'Meta do período', data: data.expected.map(function (value, index) { var result = data.result[index] ? data.result[index].y : null; return { y: value, dataLabels: { y: result !== null && value !== null && result < value ? -18 : 26 } }; }), dashStyle: 'ShortDash', color: '#6b7280', dataLabels: { enabled: true, style: { color: '#172b3a', textOutline: 'none' }, formatter: function () { return this.y === null ? '' : Highcharts.numberFormat(this.y, -1); } } }); }
         Highcharts.chart(box, {
           chart: { type: 'line', height: 300, style: font },
           title: { text: null }, credits: { enabled: false },
@@ -26,14 +28,26 @@
           xAxis: { categories: data.categories, title: { text: 'Fim do período de aferição' } },
           yAxis: { title: { text: 'Valor' } },
           tooltip: { shared: true, formatter: function () {
-            var lines = ['<b>' + this.x + '</b>'];
+            var lines = [];
+            var point = this.points[0] ? this.points[0].point : null;
+            var header = '<b>' + this.x + '</b>';
+            if (point && point.custom) {
+              header += point.custom.responsible ? ' - ' + point.custom.responsible : '';
+              lines.push(header);
+              if (point.custom.description) { lines.push(point.custom.description); }
+            } else {
+              lines.push(header);
+            }
             this.points.forEach(function (item) {
-              var extra = item.point.custom ? ' (' + item.point.custom + ')' : '';
-              lines.push(item.series.name + ': <b>' + Highcharts.numberFormat(item.y, -1) + '</b>' + extra);
+              if (item.series.name === 'Meta do período') {
+                lines.push('<b style=\"color:#172b3a\">Meta do período: ' + Highcharts.numberFormat(item.y, -1) + '</b>');
+              } else {
+                lines.push('<span style=\"color:#1769aa\">' + item.series.name + '</span>: <b style=\"color:#1769aa\">' + Highcharts.numberFormat(item.y, -1) + '</b>');
+              }
             });
             return lines.join('<br/>');
           } },
-          plotOptions: { line: { dataLabels: { enabled: true } } },
+          plotOptions: { line: { dataLabels: { enabled: true, style: { color: '#1769aa', textOutline: 'none' } } } },
           series: series
         });
       });

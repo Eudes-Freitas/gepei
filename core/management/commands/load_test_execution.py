@@ -126,7 +126,7 @@ class Command(BaseCommand):
                     ActivityEvidence.objects.filter(pk=evidence.pk).update(created_at=timezone.make_aware(datetime.combine(end, time(12))))
             risk, created = Risk.objects.get_or_create(action=action, title=f'{batch} Atraso simulado de {action.code}', defaults={
                 'activity': activities[1], 'owner': user, 'cause': '[TESTE] Possível atraso na disponibilidade dos dados.',
-                'probability': 1 + index % 5, 'impact': 1 + (index // 5) % 5, 'status': Risk.Status.IN_TREATMENT,
+                'probability': 1 + index % 5, 'impact': 1 + (index // 5) % 5, 'status': Risk.Status.NOT_MATERIALIZED,
                 'occurrence_timing': Risk.OccurrenceTiming.ANY_TIME, 'treatment': 'MITIGAR',
                 'preventive_measure': '[TESTE] Acompanhamento semanal simulado.', 'contingency_measure': '[TESTE] Reprogramar entrega simulada.',
             })

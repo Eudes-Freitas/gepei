@@ -1,7 +1,6 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.utils import timezone
 
 
 class Organization(models.Model):
@@ -221,7 +220,6 @@ class ActivityBlocker(models.Model):
     )
     external_owner_type = models.CharField(max_length=5, choices=ExternalOwnerType.choices, blank=True)
     description = models.TextField()
-    blocked_on = models.DateField(default=timezone.localdate, blank=True, verbose_name="Data do bloqueio")
     expected_resolution_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.OPEN)
     resolution_note = models.TextField(blank=True)
@@ -404,7 +402,7 @@ class IndicatorMeasurement(models.Model):
     def responsible_name(self):
         """Quem realizou a aferição; nas aferições antigas, quem a registrou."""
         user = self.measured_by or self.recorded_by
-        return user.get_full_name() or user.username
+        return user.get_full_name() or user.first_name or user.last_name or "Responsável não informado"
 
     @property
     def responsible_unit_label(self):
@@ -503,11 +501,8 @@ class SectorReport(models.Model):
 
 class Risk(models.Model):
     class Status(models.TextChoices):
-        IDENTIFIED = "IDENTIFICADO", "Identificado"
-        IN_TREATMENT = "EM_TRATAMENTO", "Em monitoramento"
+        NOT_MATERIALIZED = "NAO_MATERIALIZADO", "Não materializado"
         MATERIALIZED = "MATERIALIZADO", "Materializado"
-        NON_MATERIALIZED = "NAO_MATERIALIZADO", "Não materializado"
-        CLOSED = "ENCERRADO", "Encerrado"
 
     class OccurrenceTiming(models.TextChoices):
         ANY_TIME = "QUALQUER_MOMENTO", "Pode ocorrer a qualquer momento"
@@ -523,7 +518,7 @@ class Risk(models.Model):
     cause = models.TextField()
     probability = models.PositiveSmallIntegerField()
     impact = models.PositiveSmallIntegerField()
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.IDENTIFIED)
+    status = models.CharField(max_length=18, choices=Status.choices, default=Status.NOT_MATERIALIZED)
     treatment = models.CharField(max_length=20, blank=True)
     preventive_measure = models.TextField(blank=True)
     contingency_measure = models.TextField(blank=True)
@@ -634,7 +629,6 @@ class RiskMaterialization(models.Model):
     description = models.TextField()
     actual_impact = models.TextField()
     actions_taken = models.TextField()
-    provision_responsible = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="risk_provisions", verbose_name="Responsável pela providência")
     measure_source = models.CharField(max_length=8, choices=MeasureSource.choices, blank=True)
     evidence_reference = models.CharField(max_length=255, blank=True)
     evidence_attachment = models.FileField("Anexo da evidência", upload_to="risk_evidences/%Y/%m/", blank=True)
@@ -648,18 +642,6 @@ class RiskMaterialization(models.Model):
 
     class Meta:
         ordering = ["-occurred_on", "-id"]
-
-
-class RiskNonOccurrence(models.Model):
-    """Registro datado de que nenhum risco, ou um risco específico, ocorreu na atividade."""
-
-    activity = models.ForeignKey(Activity, on_delete=models.CASCADE, related_name="risk_non_occurrences")
-    risk = models.ForeignKey(Risk, null=True, blank=True, on_delete=models.CASCADE, related_name="non_occurrences")
-    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
-    recorded_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["-recorded_at", "-id"]
 
 
 class RiskAcceptance(models.Model):

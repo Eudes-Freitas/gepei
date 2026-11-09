@@ -25,7 +25,7 @@
     <label class="filter-wide">Objetivo estratégico
       <select name="objective"><option value="">Todos os objetivos</option>{% for objective in objectives %}<option value="{{ objective.id }}" {% if selected_objective == objective.id|stringformat:"s" %}selected{% endif %}>{{ objective.code }} · {{ objective.title }}</option>{% endfor %}</select>
     </label>
-<label>Situação<select name="status"><option value="">Todas as situações</option><option value="green" {% if selected_status == "green" %}selected{% endif %}>Meta alcançada</option><option value="yellow" {% if selected_status == "yellow" %}selected{% endif %}>Próximo da meta</option><option value="orange" {% if selected_status == "orange" %}selected{% endif %}>Atingimento parcial</option><option value="red" {% if selected_status == "red" %}selected{% endif %}>Baixo atingimento</option><option value="attention" {% if selected_status == "attention" %}selected{% endif %}>Exigem atenção</option><option value="gray" {% if selected_status == "gray" %}selected{% endif %}>Não avaliado</option><option value="unmeasured" {% if selected_status == "unmeasured" %}selected{% endif %}>Não avaliado</option></select></label>
+<label>Situação<select name="status"><option value="">Todas as situações</option><option value="green" {% if selected_status == "green" %}selected{% endif %}>Meta alcançada</option><option value="yellow" {% if selected_status == "yellow" %}selected{% endif %}>Próximo da meta</option><option value="orange" {% if selected_status == "orange" %}selected{% endif %}>Atingimento parcial</option><option value="red" {% if selected_status == "red" %}selected{% endif %}>Baixo atingimento</option><option value="attention" {% if selected_status == "attention" %}selected{% endif %}>Exigem atenção</option><option value="gray" {% if selected_status == "gray" %}selected{% endif %}>Não aferido</option><option value="unmeasured" {% if selected_status == "unmeasured" %}selected{% endif %}>Não aferido</option></select></label>
     {% if selected_unit %}<input type="hidden" name="unit" value="{{ selected_unit }}">{% endif %}{% if selected_target %}<input type="hidden" name="target" value="{{ selected_target }}">{% endif %}
     <button class="button button-primary" type="submit">Aplicar filtros</button>
     <a class="clear-filter" href="{% url 'target_overview' %}">Limpar</a>
@@ -34,8 +34,6 @@
   <section class="metrics metrics-centered indicator-metrics" aria-label="Resumo da execução das metas">
     <article class="metric-card"><span>Metas exibidas</span><strong>{{ target_rows|length }}</strong></article>
     <article class="metric-card metric-blue"><span>Metas alcançadas</span><strong>{{ status_counts.green }}</strong></article>
-    <article class="metric-card metric-warning"><span>Exigem atenção</span><strong>{{ attention_count }}</strong></article>
-    <article class="metric-card"><span>Não avaliadas</span><strong>{{ status_counts.gray|add:status_counts.none }}</strong></article>
   </section>
 
   {% if focused_charts %}

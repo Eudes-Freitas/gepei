@@ -11,7 +11,6 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.models import Group
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
-from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Avg, Count, F, Max, ProtectedError, Q, Sum
 from django.http import FileResponse, Http404, JsonResponse
@@ -76,7 +75,6 @@ from .models import (
     RiskAcceptance,
     RiskAssessment,
     RiskMaterialization,
-    RiskNonOccurrence,
     RiskTreatment,
     SectorReport,
     StrategicAction,
@@ -183,10 +181,10 @@ def _indicator_pace(indicator, measurement, measured, target=None, year="", eval
     if (indicator.direction == Indicator.Direction.HIGHER_IS_BETTER and final < baseline) or (
         indicator.direction == Indicator.Direction.LOWER_IS_BETTER and final > baseline
     ):
-        return {"code": "gray", "label": "Não avaliado", "achievement": None}
+        return {"code": "gray", "label": "Não aferido", "achievement": None}
     evaluation_date = min(end, evaluation_date or (date(int(year), 12, 31) if year else end))
     if evaluation_date <= start:
-        return {"code": "gray", "label": "Não avaliado", "achievement": None, "evaluation_date": evaluation_date}
+        return {"code": "gray", "label": "Não aferido", "achievement": None, "evaluation_date": evaluation_date}
     elapsed = Decimal((evaluation_date - start).days) / Decimal((end - start).days)
     realized = (measured - baseline) / (final - baseline)
     return {
@@ -206,7 +204,7 @@ def _indicator_signal(indicator, target=None, year="", evaluation_date=None, qua
         evaluation_date = date(int(year), month, monthrange(int(year), month)[1])
     latest = measurements[0] if measurements else None
     if not latest:
-        return {"code": "gray", "label": "Não avaliado", "achievement": None, "measurement": None}
+        return {"code": "gray", "label": "Não aferido", "achievement": None, "measurement": None}
     measured = _decimal_from_measurement(latest.measured_value)
     expected = latest.expected_value
     if target is not None:
@@ -222,9 +220,9 @@ def _indicator_signal(indicator, target=None, year="", evaluation_date=None, qua
     if pace is not None and pace.get("code") == "gray":
         return {**pace, "measurement": latest}
     if measured is None or (expected is None and pace is None):
-        return {"code": "gray", "label": "Não avaliado", "achievement": None, "measurement": latest}
+        return {"code": "gray", "label": "Não aferido", "achievement": None, "measurement": latest}
     if indicator.direction == Indicator.Direction.RANGE:
-        return {"code": "gray", "label": "Não avaliado", "achievement": None, "measurement": latest}
+        return {"code": "gray", "label": "Não aferido", "achievement": None, "measurement": latest}
     if pace is not None:
         achievement = pace["achievement"]
     elif indicator.direction == Indicator.Direction.LOWER_IS_BETTER:
@@ -259,7 +257,7 @@ SIGNAL_STYLE = {
     "yellow": ("Próximo da meta", "#e5a11b"),
     "orange": ("Atingimento parcial", "#e07b1a"),
     "red": ("Baixo atingimento", "#d84a4a"),
-    "gray": ("Não avaliado", "#aebbc8"),
+    "gray": ("Não aferido", "#aebbc8"),
 }
 SIGNAL_SEVERITY = {"green": 1, "yellow": 2, "orange": 3, "red": 4}
 
@@ -518,6 +516,8 @@ def dashboard(request):
     selected_plan = request.GET.get("plan", "")
     selected_unit = selected_unit_for_request(request)
     selected_status = request.GET.get("status", "")
+    selected_year = _selected_results_year(request)
+    selected_quarter = _selected_results_quarter(request)
     if selected_plan.isdigit():
         actions = actions.filter(artifact__plan_id=selected_plan)
     unit_filter = selected_unit.isdigit() and units.filter(pk=selected_unit).exists()
@@ -530,16 +530,6 @@ def dashboard(request):
     actions = actions.order_by("due_date")
     action_count = actions.count()
     sector_actions = actions.exclude(coordinating_unit__unit_type=OrganizationalUnit.UnitType.ORGAN)
-    sector_action_count = sector_actions.count()
-    action_page = Paginator(
-        sector_actions.annotate(activity_count=Count("action_plan__activities")).order_by(
-            F("due_date").asc(nulls_last=True), "code"
-        ),
-        10,
-    ).get_page(request.GET.get("page"))
-    page_query = urlencode(
-        {key: value for key, value in (("plan", selected_plan), ("unit", selected_unit), ("status", selected_status)) if value}
-    )
     deadline_alert = actions.filter(due_date__lt=today).exclude(
         status__in=[StrategicAction.Status.COMPLETED, StrategicAction.Status.SUSPENDED]
     )
@@ -629,6 +619,40 @@ def dashboard(request):
 
     performance = _performance_summary(request.user, dash_plans, base_filters, selected_unit if unit_filter else "")
 
+    sector_indicators = view_scope_by_unit(
+        Indicator.objects.filter(artifacts__plan__in=dash_plans).distinct(),
+        request.user, "responsible_unit_id", include_unassigned=False,
+    ).prefetch_related("responsible_units", "measurements")
+    if unit_filter:
+        sector_indicators = sector_indicators.filter(
+            Q(responsible_unit_id=selected_unit) | Q(responsible_units__id=selected_unit)
+        ).distinct()
+    sector_execution = []
+    for unit in units.filter(pk=selected_unit) if unit_filter else units:
+        unit_actions = actions.filter(coordinating_unit_id=unit.id)
+        action_values = list(unit_actions.values_list("progress", flat=True))
+        values = []
+        for indicator in sector_indicators.filter(
+            Q(responsible_unit_id=unit.id) | Q(responsible_units__id=unit.id)
+        ).distinct():
+            achievement = _indicator_signal(indicator, year=selected_year, quarter=selected_quarter).get("achievement")
+            if achievement is not None:
+                values.append(min(float(achievement), 100.0))
+        sector_execution.append({
+            "name": unit.acronym or unit.name,
+            "full_name": unit.name,
+            "action_execution": round(sum(float(value or 0) for value in action_values) / len(action_values), 1) if action_values else None,
+            "achievement": round(sum(values) / len(values), 1) if values else None,
+        })
+    dashboard_years = sorted(
+        {year for plan in dash_plans for year in range(plan.start_date.year, plan.end_date.year + 1)},
+        reverse=True,
+    )
+    sector_execution.sort(
+        key=lambda item: (item["achievement"] is not None, item["achievement"] or 0),
+        reverse=True,
+    )
+
     context = {
         **performance,
         "plans": plans,
@@ -636,6 +660,10 @@ def dashboard(request):
         "selected_plan": selected_plan,
         "selected_unit": selected_unit,
         "selected_status": selected_status,
+        "selected_year": selected_year,
+        "selected_quarter": selected_quarter,
+        "dashboard_years": dashboard_years,
+        "sector_execution": sector_execution,
         "can_view_risks": can_view_risks,
         "can_plans": request.user.has_perm("core.view_plan"),
         "can_exec": request.user.has_perm("core.view_actionplan"),
@@ -656,11 +684,6 @@ def dashboard(request):
         "critical_risk_count": sum(1 for risk in risks if risk.level >= 15),
         "progress_average": round(float(progress_average), 1),
         "status_summary": status_summary,
-        "recent_actions": action_page.object_list,
-        "action_page": action_page,
-        "action_page_range": action_page.paginator.get_elided_page_range(action_page.number, on_each_side=2, on_ends=1),
-        "page_query": page_query,
-        "sector_action_count": sector_action_count,
         "can_add_actions": request.user.is_staff and request.user.has_perm("core.add_strategicaction"),
         "risk_alerts": risk_alerts,
         "unit_filter": unit_filter,
@@ -1011,8 +1034,6 @@ def _indicator_overview_context(request):
             "indicator_options": indicator_options,
             "indicator_rows": indicator_rows,
             "indicator_count": sum(signal_counts.values()),
-            "measured_count": sum(1 for row in indicator_rows if row["signal"].get("measurement") is not None),
-            "unmeasured_count": sum(1 for row in indicator_rows if row["signal"].get("measurement") is None),
             "updated_count": sum(value for key, value in signal_counts.items() if key != "gray"),
             "attention_count": signal_counts["yellow"] + signal_counts["orange"] + signal_counts["red"],
             "signal_counts": signal_counts,
@@ -1179,6 +1200,8 @@ def _measurement_chart(indicator, year="", quarter=""):
                 "text": measurement.measured_value,
                 "expected": measurement.expected_value,
                 "label": when.strftime("%d/%m/%Y"),
+                "description": measurement.description or measurement.reference_period,
+                "responsible": measurement.responsible_name or "Responsável não informado",
                 "tip": f"{measurement.reference_period}: {measurement.measured_value}",
                 "kind": "measured",
             }
@@ -1203,7 +1226,14 @@ def _measurement_chart(indicator, year="", quarter=""):
     return {
         "categories": [item["label"] for item in entries],
         "result": [
-            {"y": item["value"], "baseline": item["kind"] == "baseline", "tip": item["tip"]} for item in entries
+            {
+                "y": item["value"],
+                "baseline": item["kind"] == "baseline",
+                "tip": item["tip"],
+                "description": item.get("description", ""),
+                "responsible": item.get("responsible", ""),
+            }
+            for item in entries
         ],
         "expected": [float(item["expected"]) if item["expected"] is not None else None for item in entries],
         "has_baseline": baseline is not None,
@@ -1677,7 +1707,7 @@ def _save_new_risk(user, form, action, activity=None):
         if activity is not None:
             risk.activity = activity
         risk.owner = user
-        risk.status = Risk.Status.IDENTIFIED
+        risk.status = Risk.Status.NOT_MATERIALIZED
         decision = form.cleaned_data["treatment_decision"]
         risk.treatment = decision
         risk.save()
@@ -1698,7 +1728,7 @@ def _save_new_risk(user, form, action, activity=None):
                 contingency_measure=risk.contingency_measure,
                 created_by=user,
             )
-            risk.status = Risk.Status.IN_TREATMENT
+            risk.status = Risk.Status.NOT_MATERIALIZED
             risk.save(update_fields=["status"])
     return risk
 
@@ -1791,7 +1821,7 @@ def risk_overview(request):
             "selected_status": selected_status,
             "critical_count": sum(risk.level >= 15 for risk in risks),
             "materialized_count": sum(risk.status == Risk.Status.MATERIALIZED for risk in risks),
-            "monitoring_count": sum(risk.status == Risk.Status.IN_TREATMENT for risk in risks),
+            "not_materialized_count": sum(risk.status == Risk.Status.NOT_MATERIALIZED for risk in risks),
         },
     )
 
@@ -2204,27 +2234,18 @@ def evidence_file(request, action_id, activity_id, evidence_id):
 def activity_follow_up(request, action_id, activity_id):
     activity = _get_activity_for_action(request.user, action_id, activity_id, for_view=request.method == "GET")
     action = activity.action_plan.action
+    registered_risks = [item for item in _registered_risks(request, StrategicAction.objects.filter(pk=action.pk)) if item.activity_id == activity.pk]
     request.read_only_other_unit = not scope_actions(StrategicAction.objects.all(), request.user).filter(pk=action.id).exists()
     operation = request.POST.get("operation") if request.method == "POST" else ""
     follow_up_permissions = {
         "update_progress": "change_activity",
         "add_evidence": "add_activityevidence",
+        "delete_evidence": "delete_activityevidence",
         "add_blocker": "add_activityblocker",
         "add_risk": "add_risk",
     }
     if operation in follow_up_permissions:
         _require_permission(request.user, follow_up_permissions[operation])
-    if operation == "delete_evidence":
-        _require_permission(request.user, "delete_activityevidence")
-        evidence = get_object_or_404(activity.evidences, pk=request.POST.get("evidence_id"))
-        evidence.delete()
-        if activity.progress == 100 and not activity.evidences.exclude(attachment="").exists():
-            activity.progress = Decimal("99")
-            activity.save(update_fields=["progress"])
-        _sync_activity_status(activity)
-        _sync_action_progress(action, activity.action_plan)
-        messages.success(request, "Evidência excluída.")
-        return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "#evidencias")
     can_view = {
         "evidences": request.user.has_perm("core.view_activityevidence"),
         "blockers": request.user.has_perm("core.view_activityblocker"),
@@ -2238,6 +2259,11 @@ def activity_follow_up(request, action_id, activity_id):
     edit_blocker_form = None
     evidence_id = request.POST.get("evidence_id") if operation == "edit_evidence" else request.GET.get("editar_evidencia")
     blocker_id = request.POST.get("blocker_id") if operation == "edit_blocker" else request.GET.get("editar_impedimento")
+    if operation == "delete_evidence":
+        evidence = get_object_or_404(activity.evidences, pk=request.POST.get("evidence_id"))
+        evidence.delete()
+        messages.success(request, "Evidência removida.")
+        return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "#evidencias")
     if operation == "edit_evidence" or evidence_id:
         _require_permission(request.user, "view_activityevidence")
         _require_permission(request.user, "change_activityevidence")
@@ -2282,27 +2308,14 @@ def activity_follow_up(request, action_id, activity_id):
         risk_report_form = ActivityRiskReportForm(request.POST, risks=selectable_risks, can_create=request.user.has_perm("core.add_risk"), prefix="risk-report")
         if risk_report_form.is_valid():
             selected_risk = risk_report_form.cleaned_data["risk"]
-            is_new_risk = selected_risk == "NOVO"
-            if risk_report_form.cleaned_data["materialized"] == "NAO":
-                if activity.progress < 100:
-                    messages.error(request, "Só é possível registrar que o risco não se materializou depois que a atividade atingir 100%.")
-                    return redirect(reverse("activity_follow_up", args=[action.id, activity.id]) + "#riscos")
-                _require_permission(request.user, "change_risk" if selected_risk else "change_activity")
-                RiskNonOccurrence.objects.create(activity=activity, risk=selected_risk, recorded_by=request.user)
-                if selected_risk and selected_risk != "NOVO":
-                    selected_risk.status = Risk.Status.NON_MATERIALIZED
-                    selected_risk.save(update_fields=["status"])
-                messages.success(request, "Não ocorrência registrada no acompanhamento da atividade.")
-                return redirect(reverse("activity_follow_up", args=[action.id, activity.id]) + "#riscos")
             materialized = risk_report_form.cleaned_data["materialized"] == "SIM"
-            _require_permission(request.user, "add_risk" if is_new_risk else "change_risk")
+            _require_permission(request.user, "change_risk" if selected_risk else "add_risk")
             valid = True
-            current_occurrence = selected_risk.materializations.first() if not is_new_risk else None
-            save_occurrence = not is_new_risk and materialized and (current_occurrence is None or risk_report_form.cleaned_data["edit_materialization"])
-            if is_new_risk:
+            current_occurrence = selected_risk.materializations.first() if selected_risk else None
+            save_occurrence = materialized and (current_occurrence is None or risk_report_form.cleaned_data["edit_materialization"])
+            if selected_risk is None:
                 unforeseen_form = UnforeseenActivityRiskForm(request.POST, prefix="unforeseen")
                 valid = unforeseen_form.is_valid()
-                _require_permission(request.user, "add_riskmaterialization")
             if save_occurrence:
                 _require_permission(request.user, "change_riskmaterialization" if current_occurrence else "add_riskmaterialization")
                 if current_occurrence:
@@ -2318,11 +2331,11 @@ def activity_follow_up(request, action_id, activity_id):
                     elif measure_source == RiskMaterialization.MeasureSource.NEW and not occurrence_form.cleaned_data.get("actions_taken", "").strip():
                         occurrence_form.add_error("actions_taken", "Descreva a nova providência adotada.")
                         valid = False
-            if materialized and (is_new_risk or selected_risk.status != Risk.Status.MATERIALIZED or action.status == StrategicAction.Status.NOT_STARTED) and not action.can_materialize_risks:
+            if materialized and (selected_risk is None or selected_risk.status != Risk.Status.MATERIALIZED or action.status == StrategicAction.Status.NOT_STARTED) and not action.can_materialize_risks:
                 risk_report_form.add_error("materialized", "Só é possível materializar um risco com plano de ação em andamento.")
                 valid = False
             if valid:
-                if is_new_risk:
+                if selected_risk is None:
                     selected_risk = unforeseen_form.save(commit=False)
                     selected_risk.action = action
                     selected_risk.activity = activity
@@ -2333,26 +2346,13 @@ def activity_follow_up(request, action_id, activity_id):
                     if selected_risk.treatment:
                         decisions = {"Aceitar": "ACEITAR", "Mitigar": "MITIGAR", "Evitar": "EVITAR", "Transferir": "TRANSFERIR"}
                         RiskTreatment.objects.create(risk=selected_risk, decision=decisions[selected_risk.treatment], responsible=unforeseen_form.cleaned_data["treatment_responsible"], preventive_measure=selected_risk.preventive_measure, contingency_measure=selected_risk.contingency_measure, created_by=request.user)
-                        selected_risk.status = Risk.Status.IN_TREATMENT
-                    RiskMaterialization.objects.create(
-                        risk=selected_risk,
-                        occurred_on=unforeseen_form.cleaned_data["occurred_on"],
-                        description=selected_risk.title,
-                        actual_impact=unforeseen_form.cleaned_data["actual_impact"],
-                        actions_taken=unforeseen_form.cleaned_data["actions_taken"],
-                        provision_responsible=unforeseen_form.cleaned_data["treatment_responsible"],
-                        recorded_by=request.user,
-                    )
+                        selected_risk.status = Risk.Status.NOT_MATERIALIZED
                 else:
                     selected_risk = Risk.objects.select_for_update().get(pk=selected_risk.pk)
                     selected_risk.activity = activity
                 if save_occurrence:
                     occurrence = occurrence_form.save(commit=False)
                     occurrence.risk = selected_risk
-                    if occurrence.measure_source == RiskMaterialization.MeasureSource.PLANNED and not occurrence.provision_responsible_id:
-                        planned_treatment = selected_risk.treatments.first()
-                        if planned_treatment:
-                            occurrence.provision_responsible = planned_treatment.responsible
                     if not occurrence.pk:
                         occurrence.recorded_by = request.user
                     occurrence.save()
@@ -2360,6 +2360,10 @@ def activity_follow_up(request, action_id, activity_id):
                     selected_risk.status = Risk.Status.MATERIALIZED
                 selected_risk.save()
                 messages.success(request, "Risco registrado no acompanhamento da atividade.")
+                if unforeseen_form.is_bound and unforeseen_form.cleaned_data.get("register_another"):
+                    response = _next_risk_registration(request, registered_risks, selected_risk)
+                    response["Location"] += "#riscos"
+                    return response
                 return redirect(reverse("activity_follow_up", args=[action.id, activity.id]) + "#riscos")
 
 
@@ -2378,11 +2382,9 @@ def activity_follow_up(request, action_id, activity_id):
             evidence.activity = activity
             evidence.created_by = request.user
             evidence.save()
-            if activity.risks.exists() or activity.risk_non_occurrences.exists():
-                activity.progress = Decimal("100")
-            else:
-                activity.progress = min(activity.progress, Decimal("99"))
-            _sync_activity_status(activity)
+            activity.progress = Decimal("100")
+            activity.status = StrategicAction.Status.COMPLETED
+            activity.save(update_fields=["progress", "status"])
             _sync_action_progress(action, activity.action_plan)
             messages.success(request, "Evidência registrada. Atividade concluída com 100% de execução.")
             return redirect("activity_follow_up", action_id=action.id, activity_id=activity.id)
@@ -2441,7 +2443,6 @@ def activity_follow_up(request, action_id, activity_id):
         treatment = next(iter(item.treatments.all()), None)
         risk_prefill[str(item.id)] = {
             "planned_measure": treatment.preventive_measure or treatment.contingency_measure if treatment else "",
-            "planned_responsible_id": treatment.responsible_id if treatment else None,
             "materialized": "SIM" if latest or item.status == Risk.Status.MATERIALIZED else "NAO",
             "has_occurrence": latest is not None,
             "can_view": can_view_occurrence,
@@ -2453,7 +2454,6 @@ def activity_follow_up(request, action_id, activity_id):
                 "actual_impact": latest.actual_impact,
                 "actions_taken": latest.actions_taken,
                 "measure_source": latest.measure_source,
-                "provision_responsible": latest.provision_responsible_id or "",
                 "evidence_reference": latest.evidence_reference,
             } if latest and can_view_occurrence else {},
         }
@@ -2490,8 +2490,7 @@ def activity_follow_up(request, action_id, activity_id):
             "can_view": can_view,
             "evidences": evidences,
             "blockers": activity.blockers.select_related("resolution_owner", "created_by") if can_view["blockers"] else [],
-            "risks": activity.risks.select_related("owner").prefetch_related("treatments", "materializations__provision_responsible") if can_view["risks"] else [],
-            "risk_non_occurrences": activity.risk_non_occurrences.select_related("risk", "recorded_by") if can_view["risks"] else [],
+            "risks": activity.risks.select_related("owner").prefetch_related("treatments") if can_view["risks"] else [],
             "evidence_form": evidence_form,
             "editing_evidence": editing_evidence,
             "editing_blocker": editing_blocker,
@@ -2502,6 +2501,8 @@ def activity_follow_up(request, action_id, activity_id):
             "risk_report_form": risk_report_form,
             "risk_prefill": risk_prefill,
             "unforeseen_form": unforeseen_form,
+            "registered_risks": registered_risks,
+            "registered_risk_ids": ",".join(str(item.pk) for item in registered_risks),
             "occurrence_form": occurrence_form,
         },
     )
@@ -2562,15 +2563,15 @@ def _get_risk_for_action(user, action_id, risk_id, for_view=False):
 
 
 def _refresh_risk_status(risk):
-    if risk.status in (Risk.Status.MATERIALIZED, Risk.Status.NON_MATERIALIZED, Risk.Status.CLOSED):
+    if risk.status == Risk.Status.MATERIALIZED:
         return
     acceptance = risk.acceptances.first()
     if acceptance:
-        risk.status = Risk.Status.IN_TREATMENT
+        risk.status = Risk.Status.NOT_MATERIALIZED
     elif risk.treatments.exists():
-        risk.status = Risk.Status.IN_TREATMENT
+        risk.status = Risk.Status.NOT_MATERIALIZED
     else:
-        risk.status = Risk.Status.IDENTIFIED
+        risk.status = Risk.Status.NOT_MATERIALIZED
 
 
 @login_required
@@ -2610,17 +2611,14 @@ def risk_detail(request, action_id, risk_id):
             permission = "change_riskacceptance"
         _require_permission(request.user, permission)
     if operation == "delete_risk":
-        activity_id = risk.activity_id if request.POST.get("return_to") == "activity" else None
         risk.delete()
         messages.success(request, "Risco e registros vinculados excluídos.")
-        if activity_id:
-            return redirect(reverse("activity_follow_up", args=[action.id, activity_id]) + "#riscos")
         return redirect("risk_overview")
     if operation == "delete_materialization":
         materialization = get_object_or_404(risk.materializations, pk=request.POST.get("materialization_id"))
         materialization.delete()
         if risk.status == Risk.Status.MATERIALIZED and not risk.materializations.exists():
-            risk.status = Risk.Status.IDENTIFIED
+            risk.status = Risk.Status.NOT_MATERIALIZED
             _refresh_risk_status(risk)
             risk.save(update_fields=["status"])
         messages.success(request, "Materialização excluída.")
@@ -2741,14 +2739,14 @@ def risk_detail(request, action_id, risk_id):
             acceptance.recorded_by = request.user
             acceptance.save()
             if acceptance.decision == RiskAcceptance.Decision.ACCEPTED_WITH_RESERVATIONS:
-                risk.status = Risk.Status.IN_TREATMENT
+                risk.status = Risk.Status.NOT_MATERIALIZED
                 risk.save(update_fields=["status"])
             elif acceptance.decision == RiskAcceptance.Decision.ACCEPTED:
                 if risk.status != Risk.Status.MATERIALIZED:
-                    risk.status = Risk.Status.IN_TREATMENT
+                    risk.status = Risk.Status.NOT_MATERIALIZED
                     risk.save(update_fields=["status"])
             elif risk.status != Risk.Status.MATERIALIZED:
-                risk.status = Risk.Status.IN_TREATMENT
+                risk.status = Risk.Status.NOT_MATERIALIZED
                 risk.save(update_fields=["status"])
             messages.success(request, "Decisão de aceite registrada.")
             return redirect("risk_detail", action_id=action.id, risk_id=risk.id)

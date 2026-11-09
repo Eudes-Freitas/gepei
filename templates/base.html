@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}GEPEI{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'css/gepei.css' %}?v=20261104-integracao-1">
+  <link rel="stylesheet" href="{% static 'css/gepei.css' %}?v=20261106-acoes-2">
   <script>
     // Cancelamento nativo (Esc) não deve descartar um modal aberto.
     document.addEventListener('cancel', function (event) {
@@ -13,6 +13,37 @@
         event.preventDefault();
       }
     }, true);
+
+    // Links de retorno devem desfazer a navegação atual, preservando filtros,
+    // paginação, modo de exibição e âncora da tela anterior. O href continua
+    // sendo o fallback para acessos diretos ou histórico de outra origem.
+    document.addEventListener('click', function (event) {
+      var link = event.target.closest('a.back-link');
+      if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      var referrer;
+      try { referrer = document.referrer ? new URL(document.referrer) : null; } catch (error) { referrer = null; }
+      if (referrer && referrer.origin === window.location.origin && window.history.length > 1) {
+        event.preventDefault();
+        window.history.back();
+      }
+    });
+
+    // Destaca filtros preenchidos, tanto após carregar uma URL filtrada quanto
+    // enquanto o usuário altera os campos antes de aplicar.
+    function updateActiveFilter(field) {
+      var label = field.closest('.dashboard-filters label');
+      if (!label || field.type === 'hidden') return;
+      label.classList.toggle('filter-active', field.type === 'checkbox' ? field.checked : Boolean(field.value));
+    }
+    document.addEventListener('DOMContentLoaded', function () {
+      document.querySelectorAll('.dashboard-filters select, .dashboard-filters input').forEach(function (field) {
+        updateActiveFilter(field);
+        field.addEventListener('change', function () { updateActiveFilter(field); });
+        field.addEventListener('input', function () { updateActiveFilter(field); });
+      });
+    });
   </script>
 </head>
 <body>
