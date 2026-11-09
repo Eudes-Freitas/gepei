@@ -1,0 +1,274 @@
+// GEPEI — Modelo lógico consolidado para dbdiagram.io
+// Identificadores sem acentos para facilitar a criação do banco.
+
+Table usuario {
+  id int [pk, increment]
+  nome_usuario varchar(150) [not null, unique]
+  senha varchar(255) [not null]
+  nome varchar(150)
+  sobrenome varchar(150)
+  email varchar(254)
+  ativo boolean [not null, default: true]
+  grupo_id int [not null]
+  criado_em datetime
+  ultimo_acesso datetime
+}
+
+Table grupo {
+  id int [pk, increment]
+  nome varchar(100) [not null, unique]
+  permissoes text [note: 'Lista ou JSON com permissoes do grupo']
+}
+
+Table unidade_organizacional {
+  id int [pk, increment]
+  nome varchar(180) [not null]
+  sigla varchar(30)
+  tipo_unidade varchar(30)
+  ativo boolean [not null, default: true]
+}
+
+Table perfil_usuario {
+  id int [pk, increment]
+  usuario_id int [not null, unique]
+  unidade_id int [not null]
+  funcao varchar(120)
+}
+
+Table plano {
+  id int [pk, increment]
+  nome varchar(180) [not null]
+  sigla varchar(30)
+  tipo_plano varchar(30)
+  inicio date [not null]
+  fim date [not null]
+  ativo boolean [not null, default: true]
+}
+
+Table item_plano {
+  id int [pk, increment]
+  plano_id int [not null]
+  item_pai_id int
+  tipo_item varchar(30) [not null, note: 'DIMENSAO, EIXO, OBJETIVO, PROJETO, ACAO, META ou FATOR_CRITICO']
+  codigo varchar(30)
+  titulo varchar(255) [not null]
+  descricao text
+  situacao varchar(30)
+  progresso decimal(5,2)
+  prazo date
+  valor_alvo varchar(120)
+  unidade_medida varchar(80)
+  periodo_referencia varchar(120)
+  unidade_coordenadora_id int
+  fontes_financiamento text
+}
+
+Table plano_acao {
+  id int [pk, increment]
+  acao_id int [not null, unique]
+  gestor_id int [not null]
+  criado_em datetime
+}
+
+Table atividade {
+  id int [pk, increment]
+  plano_acao_id int [not null]
+  executor_id int [not null]
+  unidade_responsavel_financeira_id int
+  titulo varchar(255) [not null]
+  descricao text
+  ordem int
+  peso decimal(5,2)
+  progresso decimal(5,2)
+  situacao varchar(30)
+  entrega_esperada varchar(255)
+  inicio date
+  fim date
+  exige_recurso_financeiro boolean [default: false]
+  custo_previsto decimal(14,2)
+  custo_pago decimal(14,2)
+  fonte_recurso varchar(160)
+  referencia_financeira varchar(255)
+}
+
+Table evidencia {
+  id int [pk, increment]
+  tipo_origem varchar(30) [not null, note: 'ATIVIDADE, INDICADOR, RISCO ou RELATORIO']
+  origem_id int [not null]
+  titulo varchar(255) [not null]
+  descricao text
+  tipo_evidencia varchar(30)
+  referencia varchar(255)
+  endereco varchar(500)
+  anexo varchar(500)
+  criado_por_id int [not null]
+  criado_em datetime
+}
+
+Table indicador {
+  id int [pk, increment]
+  codigo varchar(30)
+  nome varchar(255) [not null]
+  descricao text
+  formula text
+  unidade_medida varchar(80)
+  fonte_dados varchar(255)
+  periodicidade varchar(30)
+  direcao varchar(30)
+  linha_base varchar(120)
+  tipo_indicador varchar(30)
+  unidade_responsavel_id int
+  parametros_referencia text
+}
+
+Table medicao_indicador {
+  id int [pk, increment]
+  indicador_id int [not null]
+  periodo_referencia varchar(120) [not null]
+  inicio_periodo date
+  fim_periodo date
+  valor_medido varchar(120) [not null]
+  valor_esperado decimal(14,4)
+  valor_linha_base varchar(120)
+  data_linha_base date
+  referencia_fonte varchar(255)
+  observacao text
+  medido_por_id int
+  unidade_medidora_id int
+  registrado_por_id int [not null]
+  registrado_em datetime
+}
+
+Table vinculo_indicador {
+  id int [pk, increment]
+  indicador_id int [not null]
+  item_plano_id int
+  unidade_id int
+  tipo_vinculo varchar(30) [not null, note: 'ITEM_PLANO, UNIDADE ou META']
+}
+
+Table risco {
+  id int [pk, increment]
+  acao_id int [not null]
+  atividade_id int [not null]
+  responsavel_id int [not null]
+  titulo varchar(255) [not null]
+  causa text
+  probabilidade int [not null]
+  impacto int [not null]
+  situacao varchar(30)
+  tratamento varchar(30)
+  medida_preventiva text
+  medida_contingencia text
+  momento_ocorrencia varchar(30)
+  inicio_exposicao date
+  fim_exposicao date
+  ocorrencia_prevista date
+  descricao_gatilho text
+  nao_previsto boolean [default: false]
+}
+
+Table evento_risco {
+  id int [pk, increment]
+  risco_id int [not null]
+  tipo_evento varchar(30) [not null, note: 'AVALIACAO, TRATAMENTO, ACEITE, MATERIALIZACAO, NAO_OCORRENCIA ou REMEDIACAO']
+  probabilidade int
+  impacto int
+  decisao varchar(30)
+  justificativa text
+  responsavel_id int
+  autoridade_id int
+  ocorrido_em date
+  prazo date
+  descricao text
+  impacto_real text
+  providencias text
+  proxima_reavaliacao date
+  criado_por_id int [not null]
+  criado_em datetime
+}
+
+Table relatorio {
+  id int [pk, increment]
+  plano_id int [not null]
+  unidade_id int [not null]
+  preparado_por_id int [not null]
+  validador_id int
+  tipo_relatorio varchar(30) [not null, note: 'SETORIAL, TRIMESTRAL, SEMESTRAL ou ANUAL']
+  ano int
+  trimestre int
+  periodo varchar(120)
+  inicio_periodo date [not null]
+  fim_periodo date [not null]
+  situacao varchar(30)
+  resumo_executivo text
+  complementos text
+  proximos_passos text
+  decisao_gestao_necessaria text
+  fotografia_dados text
+  enviado_em datetime
+  validado_em datetime
+  atualizado_em datetime
+}
+
+Table registro_auditoria {
+  id int [pk, increment]
+  usuario_id int [not null]
+  entidade varchar(100) [not null]
+  entidade_id int [not null]
+  campo varchar(100)
+  valor_anterior text
+  valor_novo text
+  acao varchar(30) [not null]
+  justificativa text
+  criado_em datetime
+}
+
+Table vinculo_plano {
+  id int [pk, increment]
+  item_origem_id int [not null]
+  item_destino_id int [not null]
+  tipo_vinculo varchar(40) [not null]
+  natureza varchar(20)
+  percentual_contribuicao decimal(5,2)
+  valido_desde date
+  valido_ate date
+  observacao text
+  criado_por_id int [not null]
+  criado_em datetime
+}
+
+Ref: grupo.id < usuario.grupo_id
+Ref: usuario.id - perfil_usuario.usuario_id
+Ref: unidade_organizacional.id < perfil_usuario.unidade_id
+Ref: plano.id < item_plano.plano_id
+Ref: item_plano.id < item_plano.item_pai_id
+Ref: item_plano.id - plano_acao.acao_id
+Ref: usuario.id < plano_acao.gestor_id
+Ref: plano_acao.id < atividade.plano_acao_id
+Ref: usuario.id < atividade.executor_id
+Ref: unidade_organizacional.id < atividade.unidade_responsavel_financeira_id
+Ref: unidade_organizacional.id < item_plano.unidade_coordenadora_id
+Ref: usuario.id < evidencia.criado_por_id
+Ref: indicador.id < medicao_indicador.indicador_id
+Ref: usuario.id < medicao_indicador.registrado_por_id
+Ref: usuario.id < medicao_indicador.medido_por_id
+Ref: unidade_organizacional.id < medicao_indicador.unidade_medidora_id
+Ref: indicador.id < vinculo_indicador.indicador_id
+Ref: item_plano.id < vinculo_indicador.item_plano_id
+Ref: unidade_organizacional.id < vinculo_indicador.unidade_id
+Ref: item_plano.id < risco.acao_id
+Ref: atividade.id < risco.atividade_id
+Ref: usuario.id < risco.responsavel_id
+Ref: risco.id < evento_risco.risco_id
+Ref: usuario.id < evento_risco.responsavel_id
+Ref: usuario.id < evento_risco.autoridade_id
+Ref: usuario.id < evento_risco.criado_por_id
+Ref: plano.id < relatorio.plano_id
+Ref: unidade_organizacional.id < relatorio.unidade_id
+Ref: usuario.id < relatorio.preparado_por_id
+Ref: usuario.id < relatorio.validador_id
+Ref: usuario.id < registro_auditoria.usuario_id
+Ref: item_plano.id < vinculo_plano.item_origem_id
+Ref: item_plano.id < vinculo_plano.item_destino_id
+Ref: usuario.id < vinculo_plano.criado_por_id

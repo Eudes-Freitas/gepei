@@ -76,6 +76,7 @@ from .models import (
     RiskAcceptance,
     RiskAssessment,
     RiskMaterialization,
+    RiskNonOccurrence,
     RiskTreatment,
     SectorReport,
     StrategicAction,
@@ -1010,6 +1011,8 @@ def _indicator_overview_context(request):
             "indicator_options": indicator_options,
             "indicator_rows": indicator_rows,
             "indicator_count": sum(signal_counts.values()),
+            "measured_count": sum(1 for row in indicator_rows if row["signal"].get("measurement") is not None),
+            "unmeasured_count": sum(1 for row in indicator_rows if row["signal"].get("measurement") is None),
             "updated_count": sum(value for key, value in signal_counts.items() if key != "gray"),
             "attention_count": signal_counts["yellow"] + signal_counts["orange"] + signal_counts["red"],
             "signal_counts": signal_counts,
@@ -1788,7 +1791,7 @@ def risk_overview(request):
             "selected_status": selected_status,
             "critical_count": sum(risk.level >= 15 for risk in risks),
             "materialized_count": sum(risk.status == Risk.Status.MATERIALIZED for risk in risks),
-            "monitoring_count": sum(risk.status == Risk.Status.MONITORING for risk in risks),
+            "monitoring_count": sum(risk.status == Risk.Status.IN_TREATMENT for risk in risks),
         },
     )
 
@@ -2201,7 +2204,6 @@ def evidence_file(request, action_id, activity_id, evidence_id):
 def activity_follow_up(request, action_id, activity_id):
     activity = _get_activity_for_action(request.user, action_id, activity_id, for_view=request.method == "GET")
     action = activity.action_plan.action
-    registered_risks = [item for item in _registered_risks(request, StrategicAction.objects.filter(pk=action.pk)) if item.activity_id == activity.pk]
     request.read_only_other_unit = not scope_actions(StrategicAction.objects.all(), request.user).filter(pk=action.id).exists()
     operation = request.POST.get("operation") if request.method == "POST" else ""
     follow_up_permissions = {
@@ -2212,6 +2214,17 @@ def activity_follow_up(request, action_id, activity_id):
     }
     if operation in follow_up_permissions:
         _require_permission(request.user, follow_up_permissions[operation])
+    if operation == "delete_evidence":
+        _require_permission(request.user, "delete_activityevidence")
+        evidence = get_object_or_404(activity.evidences, pk=request.POST.get("evidence_id"))
+        evidence.delete()
+        if activity.progress == 100 and not activity.evidences.exclude(attachment="").exists():
+            activity.progress = Decimal("99")
+            activity.save(update_fields=["progress"])
+        _sync_activity_status(activity)
+        _sync_action_progress(action, activity.action_plan)
+        messages.success(request, "Evidência excluída.")
+        return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "#evidencias")
     can_view = {
         "evidences": request.user.has_perm("core.view_activityevidence"),
         "blockers": request.user.has_perm("core.view_activityblocker"),
@@ -2269,14 +2282,27 @@ def activity_follow_up(request, action_id, activity_id):
         risk_report_form = ActivityRiskReportForm(request.POST, risks=selectable_risks, can_create=request.user.has_perm("core.add_risk"), prefix="risk-report")
         if risk_report_form.is_valid():
             selected_risk = risk_report_form.cleaned_data["risk"]
+            is_new_risk = selected_risk == "NOVO"
+            if risk_report_form.cleaned_data["materialized"] == "NAO":
+                if activity.progress < 100:
+                    messages.error(request, "Só é possível registrar que o risco não se materializou depois que a atividade atingir 100%.")
+                    return redirect(reverse("activity_follow_up", args=[action.id, activity.id]) + "#riscos")
+                _require_permission(request.user, "change_risk" if selected_risk else "change_activity")
+                RiskNonOccurrence.objects.create(activity=activity, risk=selected_risk, recorded_by=request.user)
+                if selected_risk and selected_risk != "NOVO":
+                    selected_risk.status = Risk.Status.NON_MATERIALIZED
+                    selected_risk.save(update_fields=["status"])
+                messages.success(request, "Não ocorrência registrada no acompanhamento da atividade.")
+                return redirect(reverse("activity_follow_up", args=[action.id, activity.id]) + "#riscos")
             materialized = risk_report_form.cleaned_data["materialized"] == "SIM"
-            _require_permission(request.user, "change_risk" if selected_risk else "add_risk")
+            _require_permission(request.user, "add_risk" if is_new_risk else "change_risk")
             valid = True
-            current_occurrence = selected_risk.materializations.first() if selected_risk else None
-            save_occurrence = materialized and (current_occurrence is None or risk_report_form.cleaned_data["edit_materialization"])
-            if selected_risk is None:
+            current_occurrence = selected_risk.materializations.first() if not is_new_risk else None
+            save_occurrence = not is_new_risk and materialized and (current_occurrence is None or risk_report_form.cleaned_data["edit_materialization"])
+            if is_new_risk:
                 unforeseen_form = UnforeseenActivityRiskForm(request.POST, prefix="unforeseen")
                 valid = unforeseen_form.is_valid()
+                _require_permission(request.user, "add_riskmaterialization")
             if save_occurrence:
                 _require_permission(request.user, "change_riskmaterialization" if current_occurrence else "add_riskmaterialization")
                 if current_occurrence:
@@ -2292,11 +2318,11 @@ def activity_follow_up(request, action_id, activity_id):
                     elif measure_source == RiskMaterialization.MeasureSource.NEW and not occurrence_form.cleaned_data.get("actions_taken", "").strip():
                         occurrence_form.add_error("actions_taken", "Descreva a nova providência adotada.")
                         valid = False
-            if materialized and (selected_risk is None or selected_risk.status != Risk.Status.MATERIALIZED or action.status == StrategicAction.Status.NOT_STARTED) and not action.can_materialize_risks:
+            if materialized and (is_new_risk or selected_risk.status != Risk.Status.MATERIALIZED or action.status == StrategicAction.Status.NOT_STARTED) and not action.can_materialize_risks:
                 risk_report_form.add_error("materialized", "Só é possível materializar um risco com plano de ação em andamento.")
                 valid = False
             if valid:
-                if selected_risk is None:
+                if is_new_risk:
                     selected_risk = unforeseen_form.save(commit=False)
                     selected_risk.action = action
                     selected_risk.activity = activity
@@ -2308,12 +2334,25 @@ def activity_follow_up(request, action_id, activity_id):
                         decisions = {"Aceitar": "ACEITAR", "Mitigar": "MITIGAR", "Evitar": "EVITAR", "Transferir": "TRANSFERIR"}
                         RiskTreatment.objects.create(risk=selected_risk, decision=decisions[selected_risk.treatment], responsible=unforeseen_form.cleaned_data["treatment_responsible"], preventive_measure=selected_risk.preventive_measure, contingency_measure=selected_risk.contingency_measure, created_by=request.user)
                         selected_risk.status = Risk.Status.IN_TREATMENT
+                    RiskMaterialization.objects.create(
+                        risk=selected_risk,
+                        occurred_on=unforeseen_form.cleaned_data["occurred_on"],
+                        description=selected_risk.title,
+                        actual_impact=unforeseen_form.cleaned_data["actual_impact"],
+                        actions_taken=unforeseen_form.cleaned_data["actions_taken"],
+                        provision_responsible=unforeseen_form.cleaned_data["treatment_responsible"],
+                        recorded_by=request.user,
+                    )
                 else:
                     selected_risk = Risk.objects.select_for_update().get(pk=selected_risk.pk)
                     selected_risk.activity = activity
                 if save_occurrence:
                     occurrence = occurrence_form.save(commit=False)
                     occurrence.risk = selected_risk
+                    if occurrence.measure_source == RiskMaterialization.MeasureSource.PLANNED and not occurrence.provision_responsible_id:
+                        planned_treatment = selected_risk.treatments.first()
+                        if planned_treatment:
+                            occurrence.provision_responsible = planned_treatment.responsible
                     if not occurrence.pk:
                         occurrence.recorded_by = request.user
                     occurrence.save()
@@ -2321,10 +2360,6 @@ def activity_follow_up(request, action_id, activity_id):
                     selected_risk.status = Risk.Status.MATERIALIZED
                 selected_risk.save()
                 messages.success(request, "Risco registrado no acompanhamento da atividade.")
-                if unforeseen_form.is_bound and unforeseen_form.cleaned_data.get("register_another"):
-                    response = _next_risk_registration(request, registered_risks, selected_risk)
-                    response["Location"] += "#riscos"
-                    return response
                 return redirect(reverse("activity_follow_up", args=[action.id, activity.id]) + "#riscos")
 
 
@@ -2343,9 +2378,11 @@ def activity_follow_up(request, action_id, activity_id):
             evidence.activity = activity
             evidence.created_by = request.user
             evidence.save()
-            activity.progress = Decimal("100")
-            activity.status = StrategicAction.Status.COMPLETED
-            activity.save(update_fields=["progress", "status"])
+            if activity.risks.exists() or activity.risk_non_occurrences.exists():
+                activity.progress = Decimal("100")
+            else:
+                activity.progress = min(activity.progress, Decimal("99"))
+            _sync_activity_status(activity)
             _sync_action_progress(action, activity.action_plan)
             messages.success(request, "Evidência registrada. Atividade concluída com 100% de execução.")
             return redirect("activity_follow_up", action_id=action.id, activity_id=activity.id)
@@ -2404,6 +2441,7 @@ def activity_follow_up(request, action_id, activity_id):
         treatment = next(iter(item.treatments.all()), None)
         risk_prefill[str(item.id)] = {
             "planned_measure": treatment.preventive_measure or treatment.contingency_measure if treatment else "",
+            "planned_responsible_id": treatment.responsible_id if treatment else None,
             "materialized": "SIM" if latest or item.status == Risk.Status.MATERIALIZED else "NAO",
             "has_occurrence": latest is not None,
             "can_view": can_view_occurrence,
@@ -2415,6 +2453,7 @@ def activity_follow_up(request, action_id, activity_id):
                 "actual_impact": latest.actual_impact,
                 "actions_taken": latest.actions_taken,
                 "measure_source": latest.measure_source,
+                "provision_responsible": latest.provision_responsible_id or "",
                 "evidence_reference": latest.evidence_reference,
             } if latest and can_view_occurrence else {},
         }
@@ -2451,7 +2490,8 @@ def activity_follow_up(request, action_id, activity_id):
             "can_view": can_view,
             "evidences": evidences,
             "blockers": activity.blockers.select_related("resolution_owner", "created_by") if can_view["blockers"] else [],
-            "risks": activity.risks.select_related("owner").prefetch_related("treatments") if can_view["risks"] else [],
+            "risks": activity.risks.select_related("owner").prefetch_related("treatments", "materializations__provision_responsible") if can_view["risks"] else [],
+            "risk_non_occurrences": activity.risk_non_occurrences.select_related("risk", "recorded_by") if can_view["risks"] else [],
             "evidence_form": evidence_form,
             "editing_evidence": editing_evidence,
             "editing_blocker": editing_blocker,
@@ -2462,8 +2502,6 @@ def activity_follow_up(request, action_id, activity_id):
             "risk_report_form": risk_report_form,
             "risk_prefill": risk_prefill,
             "unforeseen_form": unforeseen_form,
-            "registered_risks": registered_risks,
-            "registered_risk_ids": ",".join(str(item.pk) for item in registered_risks),
             "occurrence_form": occurrence_form,
         },
     )
@@ -2524,12 +2562,11 @@ def _get_risk_for_action(user, action_id, risk_id, for_view=False):
 
 
 def _refresh_risk_status(risk):
-    if risk.status in (Risk.Status.MATERIALIZED, Risk.Status.CLOSED):
+    if risk.status in (Risk.Status.MATERIALIZED, Risk.Status.NON_MATERIALIZED, Risk.Status.CLOSED):
         return
     acceptance = risk.acceptances.first()
     if acceptance:
-        risk.status = (Risk.Status.MONITORING if acceptance.decision == RiskAcceptance.Decision.ACCEPTED
-                       else Risk.Status.IN_TREATMENT)
+        risk.status = Risk.Status.IN_TREATMENT
     elif risk.treatments.exists():
         risk.status = Risk.Status.IN_TREATMENT
     else:
@@ -2573,8 +2610,11 @@ def risk_detail(request, action_id, risk_id):
             permission = "change_riskacceptance"
         _require_permission(request.user, permission)
     if operation == "delete_risk":
+        activity_id = risk.activity_id if request.POST.get("return_to") == "activity" else None
         risk.delete()
         messages.success(request, "Risco e registros vinculados excluídos.")
+        if activity_id:
+            return redirect(reverse("activity_follow_up", args=[action.id, activity_id]) + "#riscos")
         return redirect("risk_overview")
     if operation == "delete_materialization":
         materialization = get_object_or_404(risk.materializations, pk=request.POST.get("materialization_id"))
@@ -2705,7 +2745,7 @@ def risk_detail(request, action_id, risk_id):
                 risk.save(update_fields=["status"])
             elif acceptance.decision == RiskAcceptance.Decision.ACCEPTED:
                 if risk.status != Risk.Status.MATERIALIZED:
-                    risk.status = Risk.Status.MONITORING
+                    risk.status = Risk.Status.IN_TREATMENT
                     risk.save(update_fields=["status"])
             elif risk.status != Risk.Status.MATERIALIZED:
                 risk.status = Risk.Status.IN_TREATMENT

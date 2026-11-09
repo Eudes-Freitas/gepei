@@ -21,16 +21,7 @@
     {% if user.is_authenticated %}
       <nav>
         <a href="{% url 'dashboard' %}" {% if request.path == '/' %}class="nav-active" aria-current="page"{% endif %}>Painel</a>
-        {% if perms.core.view_plan %}<details class="nav-plans{% if '/pei/' in request.path %} nav-active{% endif %}">
-          <summary {% if '/pei/' in request.path %}aria-current="page"{% endif %}>Planos</summary>
-          <div class="plans-dropdown">
-            {% for navigation_plan in navigation_plans %}
-              {% if navigation_plan.active %}<a href="{% url 'pei_overview' %}?plan={{ navigation_plan.id }}" {% if request.GET.plan == navigation_plan.id|stringformat:"s" %}aria-current="page"{% endif %}>{{ navigation_plan.acronym }} · {{ navigation_plan.name }}</a>{% else %}<span class="plans-inactive">{{ navigation_plan.acronym }} · {{ navigation_plan.name }} <small>Inativo</small></span>{% endif %}
-            {% empty %}
-              <span class="plans-empty">Nenhum plano cadastrado.</span>
-            {% endfor %}
-          </div>
-        </details>{% endif %}
+        {% if perms.core.view_plan %}<a href="{% url 'pei_overview' %}" {% if '/pei/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Planos</a>{% endif %}
         {% if perms.core.view_actionplan %}<a href="{% url 'action_plan_list' %}" {% if '/planos-de-acao/' in request.path and '/riscos/' not in request.path %}class="nav-active" aria-current="page"{% endif %}>Execução</a>{% endif %}
         {% if perms.core.view_risk %}<a href="{% url 'risk_overview' %}" {% if '/riscos/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Riscos</a>{% endif %}
         {% if perms.core.view_strategictarget or perms.core.view_indicator %}<a href="{% if perms.core.view_indicator %}{% url 'indicator_overview' %}{% else %}{% url 'target_overview' %}{% endif %}" {% if '/metas/' in request.path or '/indicadores/' in request.path %}class="nav-active" aria-current="page"{% endif %}>Metas e indicadores</a>{% endif %}

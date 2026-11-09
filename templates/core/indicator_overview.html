@@ -81,9 +81,8 @@
     <article class="metric-card"><span>Período</span><strong class="metric-text-value">{{ period_kind }}</strong><small>{{ period_label }}</small></article>
     {% if perms.core.view_strategictarget %}<article class="metric-card"><span>Metas exibidas</span><strong>{{ displayed_target_count }}</strong></article>{% endif %}
     <article class="metric-card"><span>Indicadores</span><strong>{{ indicator_count }}</strong></article>
-    <article class="metric-card metric-blue"><span>Com situação calculada</span><strong>{{ updated_count }}</strong></article>
-    <article class="metric-card metric-warning"><span>Exigem atenção</span><strong>{{ attention_count }}</strong></article>
-    <article class="metric-card"><span>Não avaliados</span><strong>{{ signal_counts.gray }}</strong></article>
+    <article class="metric-card metric-blue"><span>Aferidos</span><strong>{{ measured_count }}</strong></article>
+    <article class="metric-card"><span>Sem aferições</span><strong>{{ unmeasured_count }}</strong></article>
   </section>
 
   {% include "core/_results_page_map.html" %}

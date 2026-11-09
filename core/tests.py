@@ -26,6 +26,7 @@ from .models import (
     RiskAcceptance,
     RiskAssessment,
     RiskMaterialization,
+    RiskNonOccurrence,
     RiskRemediationSubmission,
     RiskTreatment,
     SectorReport,
@@ -1275,36 +1276,43 @@ class DashboardAndRiskTests(TestCase):
         response = self.client.get(url)
         self.assertContains(response, "Qual risco?")
         self.assertContains(response, "O risco se materializou?")
-        self.assertContains(response, 'data-risk-report-details hidden')
-        self.assertContains(response, "Quando o risco ocorreu?")
+        self.assertContains(response, 'data-risk-report-details')
+        self.assertContains(response, "Data em que ocorreu")
         self.assertNotContains(response, 'name="unforeseen-preventive_measure"')
-        self.assertTrue(response.context["unforeseen_form"].fields["trigger_description"].required)
+        self.assertNotContains(response, 'name="unforeseen-occurrence_timing"')
+        self.assertNotContains(response, "Cadastrar outro risco")
+        self.assertContains(response, "O risco se materializou?")
+        self.assertContains(response, "Nenhum risco selecionado")
         self.assertContains(response, "Cadastrar risco não previsto")
         self.assertEqual(self.client.post(url, {"operation": "report_risk", "risk-report-risk": risk.pk}).status_code, 200)
         response = self.client.post(url, {"operation": "report_risk", "risk-report-risk": risk.pk, "risk-report-materialized": "NAO"})
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(RiskNonOccurrence.objects.filter(activity=activity, risk=risk).count(), 1)
+        self.assertContains(self.client.get(url), "Não ocorreu")
+        RiskNonOccurrence.objects.filter(activity=activity, risk=risk).update(recorded_at="2026-10-16T12:00:00Z")
+        from .quarterly_reports import _snapshot
+        self.assertEqual(_snapshot(self.artifact.plan, self.unit, 2026, 4)["risk_non_occurrences"][0]["risk"], risk.title)
+        self.assertEqual(self.client.post(url, {"operation": "report_risk", "risk-report-risk": "", "risk-report-materialized": "NAO"}).status_code, 302)
+        self.assertTrue(RiskNonOccurrence.objects.filter(activity=activity, risk__isnull=True).exists())
         self.assertEqual(Risk.objects.count(), 1)
         risk.refresh_from_db()
         self.assertEqual(risk.activity, activity)
         self.assertFalse(risk.materializations.exists())
-        data = {"operation": "report_risk", "risk-report-risk": "", "risk-report-materialized": "SIM",
-                "unforeseen-title": "Risco não previsto no planejamento", "unforeseen-cause": "Evento inesperado", "unforeseen-treatment_responsible": self.user.pk, "unforeseen-occurrence_timing": Risk.OccurrenceTiming.ANY_TIME,
-                "unforeseen-probability": 3, "unforeseen-impact": 4, "unforeseen-treatment": "Mitigar", "unforeseen-trigger_description": "Evento identificado"}
+        data = {"operation": "report_risk", "risk-report-risk": "NOVO", "risk-report-materialized": "SIM",
+                "unforeseen-title": "Risco não previsto no planejamento", "unforeseen-cause": "Evento inesperado", "unforeseen-treatment_responsible": self.user.pk,
+                "unforeseen-probability": 3, "unforeseen-impact": 4, "unforeseen-treatment": "Mitigar"}
         self.assertEqual(self.client.post(url, data).status_code, 200)
         self.assertEqual(Risk.objects.count(), 1)  # No partial save without occurrence details.
-        data.update({"occurrence-occurred_on": "2026-10-16", "occurrence-description": "Evento ocorrido", "occurrence-actual_impact": "Entrega adiada", "occurrence-actions_taken": "Equipe acionada"})
-        data["unforeseen-register_another"] = "on"
+        data.update({"unforeseen-occurred_on": "2026-10-16", "unforeseen-actual_impact": "Entrega adiada", "unforeseen-actions_taken": "Equipe acionada"})
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, 302)
         unforeseen = Risk.objects.get(is_unforeseen=True)
-        self.assertEqual(response["Location"], url + f"?new=1&registered={unforeseen.pk}#riscos")
+        self.assertEqual(response["Location"], url + "#riscos")
         page = self.client.get(response["Location"])
-        self.assertEqual([item.pk for item in page.context["registered_risks"]], [unforeseen.pk])
-        self.assertContains(page, '<details class="registered-risk">')
-        self.assertContains(page, 'data-next-risk')
         self.assertEqual(unforeseen.activity, activity)
         self.assertEqual(unforeseen.status, Risk.Status.MATERIALIZED)
         self.assertEqual(unforeseen.materializations.count(), 1)
+        self.assertEqual(unforeseen.materializations.first().provision_responsible, self.user)
         self.assertEqual(unforeseen.assessments.count(), 1)
         other_action = StrategicAction.objects.create(artifact=self.artifact, coordinating_unit=self.unit, code="AE OUTRO RISCO", title="Outra ação")
         foreign = self.create_risk(action=other_action, owner=self.user, title="Risco de outra ação", cause="Teste", probability=1, impact=1)
@@ -1313,7 +1321,21 @@ class DashboardAndRiskTests(TestCase):
         foreign.refresh_from_db()
         self.assertEqual(foreign.activity.action_plan.action_id, other_action.pk)
         self.user.user_permissions.remove(Permission.objects.get(codename="change_risk"))
-        self.assertEqual(self.client.post(url, {"operation": "report_risk", "risk-report-risk": risk.pk, "risk-report-materialized": "NAO"}).status_code, 200)
+        self.assertEqual(self.client.post(url, {"operation": "report_risk", "risk-report-risk": risk.pk, "risk-report-materialized": "NAO"}).status_code, 403)
+
+    def test_activity_risk_card_can_delete_and_return_to_activity(self):
+        self.client.force_login(self.user)
+        plan = ActionPlan.objects.create(action=self.action, manager=self.user)
+        activity = Activity.objects.create(action_plan=plan, executor=self.user, title="Atividade", weight=100, end_date=date(2026, 12, 31))
+        risk = self.create_risk(action=self.action, activity=activity, owner=self.user, title="Risco registrado", cause="Causa", probability=2, impact=3)
+        url = f"/planos-de-acao/{self.action.pk}/atividades/{activity.pk}/acompanhar/"
+        page = self.client.get(url)
+        self.assertContains(page, 'aria-label="Editar risco"')
+        self.assertContains(page, 'aria-label="Excluir risco"')
+        self.assertContains(page, 'class="activity-related-result activity-risk-result"')
+        response = self.client.post(f"/planos-de-acao/{self.action.pk}/riscos/{risk.pk}/", {"operation": "delete_risk", "return_to": "activity"})
+        self.assertRedirects(response, url + "#riscos")
+        self.assertFalse(Risk.objects.filter(pk=risk.pk).exists())
 
     def test_evidence_download_handles_missing_files_and_permissions(self):
         self.client.force_login(self.user)
@@ -1327,6 +1349,8 @@ class DashboardAndRiskTests(TestCase):
             self.assertEqual(b"".join(response.streaming_content), b"comprovacao")
             response.close()
             evidence.attachment.storage.delete(evidence.attachment.name)
+            follow_up = self.client.get(f"/planos-de-acao/{self.action.pk}/atividades/{activity.pk}/acompanhar/")
+            self.assertContains(follow_up, 'aria-label="Visualizar documento da evidência"')
             self.assertEqual(self.client.get(url).status_code, 302)
             page = self.client.get(f"/planos-de-acao/{self.action.pk}/atividades/{activity.pk}/acompanhar/")
             self.assertContains(page, "Arquivo indisponível no servidor")
@@ -1355,6 +1379,7 @@ class DashboardAndRiskTests(TestCase):
         response = self.client.get(url)
         self.assertContains(response, "Tratamento previsto")
         self.assertContains(response, "Acionar equipe responsável")
+        self.assertEqual(response.context["risk_prefill"][str(risk.pk)]["planned_responsible_id"], self.user.pk)
         payload = {
             "operation": "report_risk", "risk-report-risk": risk.pk,
             "risk-report-materialized": "SIM", "occurrence-occurred_on": "2026-10-16",
@@ -1368,6 +1393,7 @@ class DashboardAndRiskTests(TestCase):
         occurrence = risk.materializations.get()
         self.assertEqual(occurrence.actions_taken, "Acionar equipe e registrar ata")
         self.assertEqual(occurrence.measure_source, "PREVISTA")
+        self.assertEqual(occurrence.provision_responsible, self.user)
         response = self.client.post(url, {
             **payload, "risk-report-edit_materialization": "on",
             "occurrence-measure_source": "NOVA", "occurrence-actions_taken": "Criar força tarefa",
@@ -1738,6 +1764,9 @@ class DashboardAndRiskTests(TestCase):
         own_url = f"/relatorios/trimestrais/{own.pk}/excluir/"
         foreign_url = f"/relatorios/trimestrais/{foreign.pk}/excluir/"
         self.assertContains(self.client.get("/relatorios/"), f'action="{own_url}"', html=False)
+        self.assertContains(self.client.get("/relatorios/"), f'data-delete-report="{own.pk}" title="Excluir relatório" aria-label="Excluir relatório"')
+        self.assertContains(self.client.get("/relatorios/"), 'title="Ver relatório" aria-label="Ver relatório"')
+        self.assertContains(self.client.get("/relatorios/"), 'title="Editar relatório" aria-label="Editar relatório"')
         self.assertContains(self.client.get(f"/relatorios/trimestrais/{own.pk}/"), "Excluir relatório")
         self.assertEqual(self.client.get(own_url).status_code, 405)
         self.assertEqual(self.client.post(foreign_url).status_code, 404)
@@ -2659,6 +2688,44 @@ class DashboardAndRiskTests(TestCase):
             self.assertEqual(self.client.post(url, evidence_payload).status_code, 403)
             self.assertEqual(self.client.post(url, blocker_payload).status_code, 403)
 
+    def test_follow_up_evidence_actions_and_deletion_reopen_activity(self):
+        self.client.force_login(self.user)
+        plan = ActionPlan.objects.create(action=self.action, manager=self.user)
+        activity = Activity.objects.create(action_plan=plan, executor=self.user, title="Atividade", weight=100, progress=100, status=StrategicAction.Status.COMPLETED, end_date=date(2026, 12, 31))
+        other = Activity.objects.create(action_plan=plan, executor=self.user, title="Outra", weight=0, end_date=date(2026, 12, 31))
+        url = f"/planos-de-acao/{self.action.pk}/atividades/{activity.pk}/acompanhar/"
+        with tempfile.TemporaryDirectory() as root, override_settings(MEDIA_ROOT=root):
+            evidence = ActivityEvidence.objects.create(activity=activity, created_by=self.user, title="Documento", evidence_type="ANEXO", attachment=SimpleUploadedFile("documento.txt", b"conteudo"))
+            page = self.client.get(url)
+            self.assertContains(page, 'aria-label="Visualizar documento da evidência"')
+            self.assertContains(page, 'aria-label="Excluir evidência"')
+            self.assertContains(page, "Atualizar percentual")
+            other_evidence = ActivityEvidence.objects.create(activity=other, created_by=self.user, title="Outro documento", evidence_type="ANEXO", attachment=SimpleUploadedFile("outro.txt", b"outro"))
+            self.assertEqual(self.client.post(url, {"operation": "delete_evidence", "evidence_id": other_evidence.pk}).status_code, 404)
+            self.user.user_permissions.remove(Permission.objects.get(codename="delete_activityevidence"))
+            self.assertEqual(self.client.post(url, {"operation": "delete_evidence", "evidence_id": evidence.pk}).status_code, 403)
+            self.user.user_permissions.add(Permission.objects.get(codename="delete_activityevidence"))
+            self.assertRedirects(self.client.post(url, {"operation": "delete_evidence", "evidence_id": evidence.pk}), url + "#evidencias")
+            self.assertFalse(ActivityEvidence.objects.filter(pk=evidence.pk).exists())
+            activity.refresh_from_db()
+            self.assertEqual(activity.progress, 99)
+            self.assertNotEqual(activity.status, StrategicAction.Status.COMPLETED)
+
+    def test_activity_progress_accepts_only_up_to_three_integer_digits(self):
+        self.client.force_login(self.user)
+        plan = ActionPlan.objects.create(action=self.action, manager=self.user)
+        activity = Activity.objects.create(action_plan=plan, executor=self.user, title="Atividade", weight=100, end_date=date(2026, 12, 31))
+        url = f"/planos-de-acao/{self.action.pk}/atividades/{activity.pk}/acompanhar/"
+        page = self.client.get(url)
+        self.assertContains(page, 'maxlength="3"')
+        for value in ("1234", "12.5", "101", "abc"):
+            self.assertEqual(self.client.post(url, {"operation": "update_progress", "progress-progress": value}).status_code, 200)
+            activity.refresh_from_db()
+            self.assertEqual(activity.progress, 0)
+        self.assertEqual(self.client.post(url, {"operation": "update_progress", "progress-progress": "99"}).status_code, 302)
+        activity.refresh_from_db()
+        self.assertEqual(activity.progress, 99)
+
     def test_active_blockers_pause_activity_until_all_are_resolved(self):
         plan = ActionPlan.objects.create(action=self.action, manager=self.user)
         activity = Activity.objects.create(action_plan=plan, executor=self.user,
@@ -2726,6 +2793,9 @@ class DashboardAndRiskTests(TestCase):
             end_date=date(2026, 6, 30),
         )
         follow_up_url = f"/planos-de-acao/{self.action.id}/atividades/{activity.id}/acompanhar/"
+        initial_page = self.client.get(follow_up_url)
+        self.assertContains(initial_page, 'aria-controls="new-evidence-fields" aria-expanded="false"')
+        self.assertContains(initial_page, 'id="new-evidence-fields" hidden')
 
         evidence_data = {
             "operation": "add_evidence",
@@ -2737,6 +2807,7 @@ class DashboardAndRiskTests(TestCase):
         }
         response = self.client.post(follow_up_url, evidence_data)
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'aria-controls="new-evidence-fields" aria-expanded="true"')
         self.assertEqual(ActivityEvidence.objects.filter(activity=activity).count(), 0)
 
         with tempfile.TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
@@ -2752,6 +2823,7 @@ class DashboardAndRiskTests(TestCase):
             {
                 "operation": "add_blocker",
                 "blocker-description": "Unidade não enviou os dados.",
+                "blocker-blocked_on": "2026-05-18",
                 "blocker-resolution_owner_choice": f"user:{self.user.id}",
                 "blocker-expected_resolution_date": "2026-06-10",
                 "blocker-status": ActivityBlocker.Status.PARTIALLY_RESOLVED,
@@ -2761,7 +2833,9 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(ActivityBlocker.objects.filter(activity=activity).count(), 1)
         blocker = ActivityBlocker.objects.get(activity=activity)
+        self.assertEqual(blocker.blocked_on, date(2026, 5, 18))
         self.assertEqual(blocker.get_status_display(), "Parcialmente resolvido")
+        self.assertContains(self.client.get(follow_up_url), "Data do bloqueio: 18/05/2026")
         self.assertContains(self.client.get(follow_up_url), "Parcialmente resolvido")
 
         response = self.client.post(

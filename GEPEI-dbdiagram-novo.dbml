@@ -1,0 +1,69 @@
+// Modelo consolidado. kind preserva os subtipos originais.
+Table auth_user { id int [pk]; username text; password text; first_name text; last_name text; email text; group_id int; is_superuser boolean; is_staff boolean; is_active boolean; last_login datetime; date_joined datetime }
+Table auth_group { id int [pk]; name text }
+Table auth_permission { id int [pk]; group_id int; codename text; name text }
+Table django_content_type { id int [pk]; app_label text; model text }
+Table django_admin_log { id int [pk]; object_id text; object_repr text; action_flag int; change_message text; content_type_id int; user_id int; action_time datetime }
+Table django_migrations { id int [pk]; app text; name text; applied datetime }
+Table django_session { session_key text [pk]; session_data text; expire_date datetime }
+
+Table organization { id int [pk]; name text; acronym text; active boolean }
+Table organizational_unit {
+  id int [pk]
+  name text
+  acronym text
+  unit_type text
+  organization_id int
+}
+Table user_profile { id int [pk]; user_id int; unit_id int }
+Table plan { id int [pk]; name text; acronym text; plan_type text; start_date date; end_date date; active boolean }
+
+// planartifact + strategicaction + strategictarget + criticalsuccessfactor
+Table plan_item { id int [pk]; kind text; code text; title text; description text; parent_id int; plan_id int; status text; progress decimal; coordinating_unit_id int; funding_sources text; due_date date; target_value text; unit_of_measure text; reference_period text; action_id int; artifact_id int }
+Table action_plan { id int [pk]; created_at datetime; manager_id int; action_id int }
+Table activity { id int [pk]; title text; weight decimal; progress decimal; status text; expected_delivery text; action_plan_id int; executor_id int; description text; start_date date; end_date date; position int; planned_cost decimal; disbursed_cost decimal; funding_source text; funding_source_other text; financial_reference text; financial_responsible_unit_id int; requires_financial_resource boolean }
+// activityblocker + activityevidence
+Table activity_record { id int [pk]; activity_id int; kind text; title text; description text; status text; expected_resolution_date date; resolution_note text; created_at datetime; created_by_id int; resolution_owner_id int; external_owner_type text; blocked_on date; evidence_type text; reference text; url text; attachment text }
+
+Table indicator { id int [pk]; code text; name text; description text; formula text; unit_of_measure text; data_source text; frequency text; direction text; baseline text; responsible_unit_id int; indicator_type text; reference_parameters text }
+Table indicator_measurement { id int [pk]; indicator_id int; reference_period text; measured_value text; source_reference text; note text; recorded_at datetime; recorded_by_id int; expected_value decimal; evidence_attachment text; baseline_value text; baseline_date date; period_start date; period_end date; measured_by_id int; measured_unit_id int; description text }
+// indicator_artifacts + indicator_responsible_units + indicator_targets
+Table indicator_link { id int [pk]; indicator_id int; link_kind text; plan_item_id int; organizational_unit_id int }
+
+Table risk { id int [pk]; title text; cause text; probability int; impact int; treatment text; preventive_measure text; contingency_measure text; activity_id int; owner_id int; action_id int; occurrence_timing text; exposure_start_date date; exposure_end_date date; expected_occurrence_date date; trigger_description text; is_unforeseen boolean; status text }
+// riskassessment + risktreatment + riskacceptance + riskmaterialization + risknonoccurrence + riskremediationsubmission
+Table risk_event { id int [pk]; risk_id int; kind text; assessment_type text; probability int; impact int; notes text; decision text; justification text; due_date date; preventive_measure text; contingency_measure text; created_at datetime; assessed_at datetime; recorded_at datetime; occurred_on date; description text; actual_impact text; actions_taken text; evidence_reference text; evidence_attachment text; measure_source text; completion_summary text; submitted_at datetime; authority_id int; recorded_by_id int; author_id int; created_by_id int; submitted_by_id int; remediation_responsible_id int; provision_responsible_id int; responsible_id int; acceptance_id int; activity_id int; reevaluation_due_date date }
+
+Table report_cycle { id int [pk]; name text; period_start date; period_end date; status text; created_at datetime; closed_at datetime; created_by_id int; plan_id int }
+// sectorreport + quarterlysectorreport
+Table report { id int [pk]; kind text; status text; executive_summary text; complements text; next_steps text; management_decision_needed text; validator_comment text; resubmission_due_date date; snapshot text; submitted_at datetime; validated_at datetime; updated_at datetime; cycle_id int; prepared_by_id int; unit_id int; validator_id int; year int; quarter int; consolidated_at datetime; consolidated_by_id int; plan_id int }
+Table audit_log { id int [pk]; entity_name text; entity_id int; field_name text; old_value text; new_value text; action text; justification text; user_id int; created_at datetime }
+Table notification { id int [pk]; recipient_id int; notification_type text; message text; entity_name text; entity_id int; channel text; status text; issued_at datetime; read_at datetime; sent_at datetime; error_message text }
+Table plan_link { id int [pk]; source_item_id int; target_item_id int; link_kind text; nature text; contribution_percent decimal; valid_from date; valid_until date; note text; created_by_id int; created_at datetime }
+
+Ref: organizational_unit.organization_id > organization.id
+Ref: auth_user.group_id > auth_group.id
+Ref: auth_permission.group_id > auth_group.id
+Ref: user_profile.user_id > auth_user.id
+Ref: user_profile.unit_id > organizational_unit.id
+Ref: plan_item.plan_id > plan.id
+Ref: plan_item.parent_id > plan_item.id
+Ref: action_plan.action_id > plan_item.id
+Ref: activity.action_plan_id > action_plan.id
+Ref: activity_record.activity_id > activity.id
+Ref: indicator_measurement.indicator_id > indicator.id
+Ref: indicator_link.indicator_id > indicator.id
+Ref: indicator_link.plan_item_id > plan_item.id
+Ref: indicator_link.organizational_unit_id > organizational_unit.id
+Ref: risk.activity_id > activity.id
+Ref: risk.action_id > plan_item.id
+Ref: risk_event.risk_id > risk.id
+Ref: report_cycle.plan_id > plan.id
+Ref: report.cycle_id > report_cycle.id
+Ref: report.plan_id > plan.id
+Ref: report.unit_id > organizational_unit.id
+Ref: audit_log.user_id > auth_user.id
+Ref: notification.recipient_id > auth_user.id
+Ref: plan_link.source_item_id > plan_item.id
+Ref: plan_link.target_item_id > plan_item.id
+Ref: plan_link.created_by_id > auth_user.id

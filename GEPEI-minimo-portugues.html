@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GEPEI — Modelo lógico consolidado</title>
+  <style>
+    :root{--ink:#172033;--muted:#5e6b82;--line:#cbd5e1;--blue:#1459a6;--soft:#eef5ff;--bg:#f7f9fc}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 Arial,sans-serif}
+    header{padding:28px 36px;background:#0b2852;color:white} h1{margin:0 0 5px;font-size:25px} header p{margin:0;color:#d7e6ff}
+    main{max-width:1500px;margin:auto;padding:24px 30px} h2{margin:28px 0 12px;color:#0b376f;font-size:18px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+    .table{background:white;border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 2px 6px #17203312}
+    .table h3{margin:0;padding:10px 12px;background:var(--blue);color:white;font-size:15px}.table ul{margin:0;padding:10px 25px 12px}.table li{margin:3px 0}.pk{font-weight:bold;color:#0b376f}.fk{color:#7a3e00}
+    table{width:100%;border-collapse:collapse;background:white;border:1px solid var(--line);font-size:13px} th,td{padding:9px 10px;border:1px solid var(--line);text-align:left;vertical-align:top} th{background:#dfeeff;color:#0b376f}
+    code{background:#eaf0f8;padding:2px 4px;border-radius:3px}.note{color:var(--muted);margin-top:4px}.legend{display:flex;gap:18px;flex-wrap:wrap;color:var(--muted);margin:10px 0}.diagrama{background:white;border:1px solid var(--line);border-radius:8px;padding:18px;overflow:auto;box-shadow:0 2px 6px #17203312}.diagrama pre{min-width:1100px;margin:0;color:#172033;font:12px/1.5 Consolas,monospace;white-space:pre-wrap}
+    @media print{header{background:#0b2852!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.table{break-inside:avoid}table{font-size:10px}main{padding:10px}}
+  </style>
+</head>
+<body>
+<header><h1>GEPEI — Modelo lógico consolidado</h1><p>Modelo em português com relacionamentos e cardinalidades</p></header>
+<main>
+  <p class="note">A cardinalidade <strong>1:N</strong> significa que um registro da primeira tabela pode se relacionar com vários registros da segunda. Os campos em azul são chaves primárias; os campos em laranja são referências.</p>
+  <div class="legend"><span>🔑 chave primária</span><span>🔗 chave estrangeira</span><span>1:N relacionamento um-para-muitos</span></div>
+  <h2>Diagrama de relacionamentos — notação pé de galinha</h2>
+  <div class="diagrama"><pre class="mermaid">erDiagram
+    ORGANIZACAO ||--o{ UNIDADE_ORGANIZACIONAL : possui
+    GRUPO ||--o{ USUARIO : atribui
+    GRUPO ||--o{ PERMISSAO : concede
+    TIPO_CONTEUDO ||--o{ PERMISSAO : classifica
+    USUARIO ||--o{ PERFIL_USUARIO : possui
+    UNIDADE_ORGANIZACIONAL ||--o{ PERFIL_USUARIO : vincula
+    PLANO ||--o{ ITEM_PLANO : contem
+    ITEM_PLANO ||--o{ ITEM_PLANO : hierarquia
+    ITEM_PLANO ||--o| PLANO_ACAO : executa
+    PLANO_ACAO ||--o{ ATIVIDADE : contem
+    ATIVIDADE ||--o{ REGISTRO_ATIVIDADE : registra
+    INDICADOR ||--o{ MEDICAO_INDICADOR : possui
+    INDICADOR ||--o{ VINCULO_INDICADOR : relaciona
+    ITEM_PLANO ||--o{ VINCULO_INDICADOR : mede
+    ITEM_PLANO ||--o{ RISCO : possui
+    ATIVIDADE ||--o{ RISCO : afeta
+    RISCO ||--o{ EVENTO_RISCO : registra
+    PLANO ||--o{ CICLO_RELATORIO : organiza
+    CICLO_RELATORIO ||--o{ RELATORIO : recebe
+    PLANO ||--o{ RELATORIO : referencia
+    UNIDADE_ORGANIZACIONAL ||--o{ RELATORIO : prepara
+    ITEM_PLANO ||--o{ VINCULO_PLANO : relaciona
+    USUARIO ||--o{ REGISTRO_AUDITORIA : realiza
+    USUARIO ||--o{ NOTIFICACAO : recebe</pre></div>
+
+  <h2>Tabelas</h2>
+  <div class="grid">
+    <article class="table"><h3>usuario</h3><ul><li class="pk">id</li><li>nome_usuario, senha, nome, sobrenome</li><li>email, ativo, ultimo_acesso, criado_em</li><li class="fk">grupo_id</li></ul></article>
+    <article class="table"><h3>grupo</h3><ul><li class="pk">id</li><li>nome</li></ul></article>
+    <article class="table"><h3>permissao</h3><ul><li class="pk">id</li><li>codigo, nome</li><li class="fk">grupo_id, tipo_conteudo_id</li></ul></article>
+    <article class="table"><h3>tipo_conteudo</h3><ul><li class="pk">id</li><li>aplicativo, modelo</li></ul></article>
+    <article class="table"><h3>organizacao</h3><ul><li class="pk">id</li><li>nome, sigla, ativo</li></ul></article>
+    <article class="table"><h3>unidade_organizacional</h3><ul><li class="pk">id</li><li>nome, sigla, tipo_unidade</li><li class="fk">organizacao_id</li></ul></article>
+    <article class="table"><h3>perfil_usuario</h3><ul><li class="pk">id</li><li class="fk">usuario_id, unidade_id</li></ul></article>
+    <article class="table"><h3>plano</h3><ul><li class="pk">id</li><li>nome, sigla, tipo_plano</li><li>inicio, fim, ativo</li></ul></article>
+    <article class="table"><h3>item_plano</h3><ul><li class="pk">id</li><li>tipo_item, codigo, titulo, descricao</li><li class="fk">item_pai_id, plano_id</li><li>situacao, progresso, prazo, valor_alvo</li></ul></article>
+    <article class="table"><h3>plano_acao</h3><ul><li class="pk">id</li><li class="fk">acao_id, gestor_id</li><li>criado_em</li></ul></article>
+    <article class="table"><h3>atividade</h3><ul><li class="pk">id</li><li>titulo, descricao, ordem, peso, progresso</li><li class="fk">plano_acao_id, executor_id</li><li>inicio, fim, custos e recursos</li></ul></article>
+    <article class="table"><h3>registro_atividade</h3><ul><li class="pk">id</li><li class="fk">atividade_id, criado_por_id</li><li>tipo_registro, situacao, descricao</li><li>bloqueio, resolução e evidência</li></ul></article>
+    <article class="table"><h3>indicador</h3><ul><li class="pk">id</li><li>codigo, nome, formula, unidade_medida</li><li>periodicidade, direcao, linha_base</li><li class="fk">unidade_responsavel_id</li></ul></article>
+    <article class="table"><h3>medicao_indicador</h3><ul><li class="pk">id</li><li class="fk">indicador_id, registrado_por_id</li><li>periodo_referencia, valor_medido, valor_esperado</li><li>datas, fonte e evidência</li></ul></article>
+    <article class="table"><h3>vinculo_indicador</h3><ul><li class="pk">id</li><li class="fk">indicador_id, item_plano_id, unidade_organizacional_id</li><li>tipo_vinculo</li></ul></article>
+    <article class="table"><h3>risco</h3><ul><li class="pk">id</li><li>titulo, causa, probabilidade, impacto, situacao</li><li class="fk">atividade_id, acao_id, responsavel_id</li><li>tratamento e medidas</li></ul></article>
+    <article class="table"><h3>evento_risco</h3><ul><li class="pk">id</li><li class="fk">risco_id</li><li>tipo_evento, avaliação, tratamento, aceite</li><li>materialização, remediação e evidências</li></ul></article>
+    <article class="table"><h3>ciclo_relatorio</h3><ul><li class="pk">id</li><li class="fk">plano_id, criado_por_id</li><li>nome, inicio_periodo, fim_periodo, situacao</li></ul></article>
+    <article class="table"><h3>relatorio</h3><ul><li class="pk">id</li><li class="fk">ciclo_id, plano_id, unidade_id, validador_id</li><li>tipo_relatorio, situacao, resumos, fotografia</li><li>ano, trimestre e consolidação</li></ul></article>
+    <article class="table"><h3>registro_auditoria</h3><ul><li class="pk">id</li><li class="fk">usuario_id</li><li>entidade, campo, valores, acao, justificativa</li></ul></article>
+    <article class="table"><h3>notificacao</h3><ul><li class="pk">id</li><li class="fk">destinatario_id</li><li>tipo, mensagem, canal, situacao</li><li>emissão, leitura e envio</li></ul></article>
+    <article class="table"><h3>vinculo_plano</h3><ul><li class="pk">id</li><li class="fk">item_origem_id, item_destino_id, criado_por_id</li><li>tipo_vinculo, natureza, validade, percentual</li></ul></article>
+    <article class="table"><h3>registro_administrativo</h3><ul><li class="pk">id</li><li class="fk">tipo_conteudo_id, usuario_id</li><li>objeto_id, descricao, tipo_acao, realizado_em</li></ul></article>
+    <article class="table"><h3>migracao / sessao</h3><ul><li>infraestrutura do sistema</li><li>migracao: id, aplicativo, nome, aplicada_em</li><li>sessao: chave, dados, expira_em</li></ul></article>
+  </div>
+
+  <h2>Relacionamentos e cardinalidades</h2>
+  <table><thead><tr><th>Origem</th><th>Destino</th><th>Cardinalidade</th><th>Chave estrangeira / regra</th></tr></thead><tbody>
+    <tr><td>organizacao</td><td>unidade_organizacional</td><td>1:N</td><td>unidade_organizacional.organizacao_id</td></tr>
+    <tr><td>grupo</td><td>usuario</td><td>1:N</td><td>usuario.grupo_id</td></tr>
+    <tr><td>grupo</td><td>permissao</td><td>1:N</td><td>permissao.grupo_id</td></tr>
+    <tr><td>tipo_conteudo</td><td>permissao / registro_administrativo</td><td>1:N</td><td>tipo_conteudo_id</td></tr>
+    <tr><td>usuario</td><td>perfil_usuario / auditoria / notificacao</td><td>1:N</td><td>usuario_id ou destinatario_id</td></tr>
+    <tr><td>unidade_organizacional</td><td>perfil_usuario</td><td>1:N</td><td>perfil_usuario.unidade_id</td></tr>
+    <tr><td>plano</td><td>item_plano / ciclo_relatorio / relatorio</td><td>1:N</td><td>plano_id</td></tr>
+    <tr><td>item_plano</td><td>item_plano</td><td>1:N</td><td>item_pai_id — hierarquia autorreferente</td></tr>
+    <tr><td>item_plano</td><td>plano_acao / risco / vinculos</td><td>1:N</td><td>acao_id, acao_id, item_origem/destino_id</td></tr>
+    <tr><td>plano_acao</td><td>atividade</td><td>1:N</td><td>atividade.plano_acao_id</td></tr>
+    <tr><td>atividade</td><td>registro_atividade / risco</td><td>1:N</td><td>atividade_id</td></tr>
+    <tr><td>indicador</td><td>medicao_indicador / vinculo_indicador</td><td>1:N</td><td>indicador_id</td></tr>
+    <tr><td>risco</td><td>evento_risco</td><td>1:N</td><td>evento_risco.risco_id</td></tr>
+    <tr><td>ciclo_relatorio</td><td>relatorio</td><td>1:N</td><td>relatorio.ciclo_id</td></tr>
+  </tbody></table>
+</main>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'base', er: { useMaxWidth: false, layoutDirection: 'LR' } });
+</script>
+</body>
+</html>

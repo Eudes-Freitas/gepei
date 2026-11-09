@@ -1,0 +1,56 @@
+// Modelo lógico consolidado do GEPEI. Identificadores em português, sem acentos.
+Table usuario { id int [pk]; nome_usuario text; senha text; nome text; sobrenome text; email text; grupo_id int; superusuario boolean; equipe_tecnica boolean; ativo boolean; ultimo_acesso datetime; criado_em datetime }
+Table grupo { id int [pk]; nome text }
+Table permissao { id int [pk]; grupo_id int; codigo text; nome text; tipo_conteudo_id int }
+Table tipo_conteudo { id int [pk]; aplicativo text; modelo text }
+Table registro_administrativo { id int [pk]; objeto_id text; descricao text; tipo_acao int; tipo_conteudo_id int; usuario_id int; realizado_em datetime }
+Table migracao { id int [pk]; aplicativo text; nome text; aplicada_em datetime }
+Table sessao { chave text [pk]; dados text; expira_em datetime }
+Table organizacao { id int [pk]; nome text; sigla text; ativo boolean }
+Table unidade_organizacional { id int [pk]; nome text; sigla text; tipo_unidade text; organizacao_id int }
+Table perfil_usuario { id int [pk]; usuario_id int; unidade_id int }
+Table plano { id int [pk]; nome text; sigla text; tipo_plano text; inicio date; fim date; ativo boolean }
+Table item_plano { id int [pk]; tipo_item text; codigo text; titulo text; descricao text; item_pai_id int; plano_id int; situacao text; progresso decimal; unidade_coordenadora_id int; fontes_financiamento text; prazo date; valor_alvo text; unidade_medida text; periodo_referencia text; acao_id int; artefato_id int }
+Table plano_acao { id int [pk]; criado_em datetime; gestor_id int; acao_id int }
+Table atividade { id int [pk]; titulo text; peso decimal; progresso decimal; situacao text; entrega_esperada text; plano_acao_id int; executor_id int; descricao text; inicio date; fim date; ordem int; custo_previsto decimal; custo_pago decimal; fonte_recurso text; outra_fonte_recurso text; referencia_financeira text; unidade_responsavel_financeira_id int; exige_recurso_financeiro boolean }
+Table registro_atividade { id int [pk]; atividade_id int; tipo_registro text; titulo text; descricao text; situacao text; prazo_resolucao date; nota_resolucao text; criado_em datetime; criado_por_id int; responsavel_resolucao_id int; tipo_responsavel_externo text; bloqueado_em date; tipo_evidencia text; referencia text; endereco text; anexo text }
+Table indicador { id int [pk]; codigo text; nome text; descricao text; formula text; unidade_medida text; fonte_dados text; periodicidade text; direcao text; linha_base text; unidade_responsavel_id int; tipo_indicador text; parametros_referencia text }
+Table medicao_indicador { id int [pk]; indicador_id int; periodo_referencia text; valor_medido text; referencia_fonte text; observacao text; registrado_em datetime; registrado_por_id int; valor_esperado decimal; anexo_evidencia text; valor_linha_base text; data_linha_base date; inicio_periodo date; fim_periodo date; medido_por_id int; unidade_medidora_id int; descricao text }
+Table vinculo_indicador { id int [pk]; indicador_id int; tipo_vinculo text; item_plano_id int; unidade_organizacional_id int }
+Table risco { id int [pk]; titulo text; causa text; probabilidade int; impacto int; tratamento text; medida_preventiva text; medida_contingencia text; atividade_id int; responsavel_id int; acao_id int; momento_ocorrencia text; inicio_exposicao date; fim_exposicao date; ocorrencia_prevista date; descricao_gatilho text; nao_previsto boolean; situacao text }
+Table evento_risco { id int [pk]; risco_id int; tipo_evento text; tipo_avaliacao text; probabilidade int; impacto int; observacoes text; decisao text; justificativa text; prazo date; medida_preventiva text; medida_contingencia text; criado_em datetime; avaliado_em datetime; registrado_em datetime; ocorrido_em date; descricao text; impacto_real text; providencias text; referencia_evidencia text; anexo_evidencia text; fonte_medicao text; resumo_conclusao text; enviado_em datetime; autoridade_id int; registrado_por_id int; autor_id int; criado_por_id int; enviado_por_id int; responsavel_remediacao_id int; responsavel_providencia_id int; responsavel_id int; aceite_id int; atividade_id int; proxima_reavaliacao date }
+Table ciclo_relatorio { id int [pk]; nome text; inicio_periodo date; fim_periodo date; situacao text; criado_em datetime; encerrado_em datetime; criado_por_id int; plano_id int }
+Table relatorio { id int [pk]; tipo_relatorio text; situacao text; resumo_executivo text; complementos text; proximos_passos text; decisao_gestao_necessaria text; comentario_validador text; prazo_reenvio date; fotografia_dados text; enviado_em datetime; validado_em datetime; atualizado_em datetime; ciclo_id int; preparado_por_id int; unidade_id int; validador_id int; ano int; trimestre int; consolidado_em datetime; consolidado_por_id int; plano_id int }
+Table registro_auditoria { id int [pk]; entidade text; entidade_id int; campo text; valor_anterior text; valor_novo text; acao text; justificativa text; usuario_id int; criado_em datetime }
+Table notificacao { id int [pk]; destinatario_id int; tipo_notificacao text; mensagem text; entidade text; entidade_id int; canal text; situacao text; emitida_em datetime; lida_em datetime; enviada_em datetime; mensagem_erro text }
+Table vinculo_plano { id int [pk]; item_origem_id int; item_destino_id int; tipo_vinculo text; natureza text; percentual_contribuicao decimal; valido_desde date; valido_ate date; observacao text; criado_por_id int; criado_em datetime }
+Ref: unidade_organizacional.organizacao_id > organizacao.id
+Ref: usuario.grupo_id > grupo.id
+Ref: permissao.grupo_id > grupo.id
+Ref: permissao.tipo_conteudo_id > tipo_conteudo.id
+Ref: perfil_usuario.usuario_id > usuario.id
+Ref: perfil_usuario.unidade_id > unidade_organizacional.id
+Ref: registro_administrativo.tipo_conteudo_id > tipo_conteudo.id
+Ref: registro_administrativo.usuario_id > usuario.id
+Ref: item_plano.plano_id > plano.id
+Ref: item_plano.item_pai_id > item_plano.id
+Ref: plano_acao.acao_id > item_plano.id
+Ref: atividade.plano_acao_id > plano_acao.id
+Ref: registro_atividade.atividade_id > atividade.id
+Ref: indicador.unidade_responsavel_id > unidade_organizacional.id
+Ref: medicao_indicador.indicador_id > indicador.id
+Ref: vinculo_indicador.indicador_id > indicador.id
+Ref: vinculo_indicador.item_plano_id > item_plano.id
+Ref: vinculo_indicador.unidade_organizacional_id > unidade_organizacional.id
+Ref: risco.atividade_id > atividade.id
+Ref: risco.acao_id > item_plano.id
+Ref: evento_risco.risco_id > risco.id
+Ref: ciclo_relatorio.plano_id > plano.id
+Ref: relatorio.ciclo_id > ciclo_relatorio.id
+Ref: relatorio.plano_id > plano.id
+Ref: relatorio.unidade_id > unidade_organizacional.id
+Ref: registro_auditoria.usuario_id > usuario.id
+Ref: notificacao.destinatario_id > usuario.id
+Ref: vinculo_plano.item_origem_id > item_plano.id
+Ref: vinculo_plano.item_destino_id > item_plano.id
+Ref: vinculo_plano.criado_por_id > usuario.id

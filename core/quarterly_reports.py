@@ -16,7 +16,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .forms import QuarterlyReportForm
-from .models import Activity, ActivityBlocker, ActivityEvidence, Indicator, OrganizationalUnit, Plan, PlanArtifact, QuarterlySectorReport, Risk, StrategicAction, StrategicTarget
+from .models import Activity, ActivityBlocker, ActivityEvidence, Indicator, OrganizationalUnit, Plan, PlanArtifact, QuarterlySectorReport, Risk, RiskNonOccurrence, StrategicAction, StrategicTarget
 from .permissions import scope_units, selected_unit_for_request, user_unit_ids, view_scope_units
 
 
@@ -109,6 +109,7 @@ def _snapshot(plan, unit, year, quarter):
                             "period": target.reference_period, "objective": target.artifact.code,
                             "progress": round(sum(values) / len(values), 1) if values else None})
     risks = Risk.objects.filter(action__in=actions).select_related("action", "activity")
+    risk_non_occurrences = RiskNonOccurrence.objects.filter(activity__in=activities, recorded_at__date__range=(start, end)).select_related("activity", "risk")
     evidences = ActivityEvidence.objects.filter(activity__in=activities, created_at__date__range=(start, end)).select_related("activity")
     blockers = ActivityBlocker.objects.filter(activity__in=activities)
     return {
@@ -122,6 +123,7 @@ def _snapshot(plan, unit, year, quarter):
         "actions": [{"id": a.pk, "code": a.code, "title": a.title, "objective": action_objective_codes.get(a.pk, ""), "status": a.get_status_display(), "progress": str(a.progress), "due_date": a.due_date.isoformat() if a.due_date else ""} for a in actions],
         "activities": [{"id": a.pk, "action_id": a.action_plan.action_id, "action": a.action_plan.action.code, "title": a.title, "status": a.get_status_display(), "progress": str(a.progress), "executor": a.executor.get_full_name() or a.executor.username} for a in activities],
         "risks": [{"id": r.pk, "title": r.title, "action": r.action.code, "status": r.get_status_display(), "level": r.level, "cause": r.cause, "control": r.preventive_measure} for r in risks],
+        "risk_non_occurrences": [{"id": item.pk, "activity": item.activity.title, "risk": item.risk.title if item.risk else "Todos os riscos", "recorded_at": item.recorded_at.isoformat(), "recorded_on": timezone.localtime(item.recorded_at).strftime("%d/%m/%Y")} for item in risk_non_occurrences],
         "blockers": [{"id": b.pk, "description": b.description, "status": b.get_status_display()} for b in blockers],
         "evidences": [{"id": e.pk, "activity_id": e.activity_id, "title": e.title, "activity": e.activity.title, "reference": e.reference, "url": e.url, "file": e.attachment.name} for e in evidences],
         "planned_cost": str(sum(a.planned_cost or 0 for a in activities)), "disbursed_cost": str(sum(a.disbursed_cost or 0 for a in activities)),

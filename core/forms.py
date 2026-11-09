@@ -4,6 +4,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.db import transaction
+from django.utils import timezone
 
 from .models import (
     ActionPlan,
@@ -411,14 +412,26 @@ class ActivityProgressForm(forms.ModelForm):
         model = Activity
         fields = ["progress"]
         labels = {"progress": "Percentual executado (%)"}
-        widgets = {"progress": forms.NumberInput(attrs={"min": "0", "max": "100", "step": "0.01"})}
+        widgets = {"progress": forms.TextInput(attrs={"inputmode": "numeric", "pattern": "[0-9]{1,3}", "maxlength": "3", "autocomplete": "off"})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.is_bound and self.instance.pk:
+            self.initial["progress"] = int(self.instance.progress)
 
     def clean_progress(self):
         progress = self.cleaned_data["progress"]
+        raw = str(self.data.get(self.add_prefix("progress"), "")) if self.is_bound else str(progress)
+        if not raw.isascii() or not raw.isdecimal() or len(raw) > 3:
+            raise forms.ValidationError("Informe apenas números inteiros, com até três dígitos.")
         if not 0 <= progress <= 100:
             raise forms.ValidationError("Informe um percentual entre 0 e 100%.")
+        if progress != progress.to_integral_value():
+            raise forms.ValidationError("Informe um percentual inteiro, com até três dígitos.")
         if progress == 100 and not self.instance.evidences.exclude(attachment="").exists():
             raise forms.ValidationError("Para concluir a atividade, registre ao menos uma evidência com anexo.")
+        if progress == 100 and not (self.instance.risks.exists() or self.instance.risk_non_occurrences.exists()):
+            raise forms.ValidationError("Para concluir a atividade, informe se houve ou não ocorrência de risco.")
         return progress
 
 
@@ -447,9 +460,10 @@ class ActivityBlockerForm(forms.ModelForm):
 
     class Meta:
         model = ActivityBlocker
-        fields = ["description", "expected_resolution_date", "status", "resolution_note"]
+        fields = ["description", "blocked_on", "expected_resolution_date", "status", "resolution_note"]
         labels = {
             "description": "Impedimento identificado",
+            "blocked_on": "Data do bloqueio",
             "expected_resolution_date": "Previsão de desbloqueio",
             "status": "Situação",
             "resolution_note": "Providência ou solução adotada",
@@ -457,6 +471,7 @@ class ActivityBlockerForm(forms.ModelForm):
         widgets = {
             "description": forms.Textarea(attrs={"rows": 3}),
             "resolution_note": forms.Textarea(attrs={"rows": 2}),
+            "blocked_on": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "expected_resolution_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
         }
 
@@ -483,10 +498,12 @@ class ActivityBlockerForm(forms.ModelForm):
                 self.initial["resolution_owner_choice"] = f"external:{self.instance.external_owner_type}"
             elif self.instance.resolution_owner_id:
                 self.initial["resolution_owner_choice"] = f"user:{self.instance.resolution_owner_id}"
-        self.order_fields(["description", "resolution_owner_choice", "expected_resolution_date", "status", "resolution_note"])
+        self.order_fields(["description", "blocked_on", "expected_resolution_date", "resolution_owner_choice", "status", "resolution_note"])
 
     def save(self, commit=True):
         blocker = super().save(commit=False)
+        if not blocker.blocked_on:
+            blocker.blocked_on = timezone.localdate()
         choice = self.cleaned_data["resolution_owner_choice"]
         if choice.startswith("user:"):
             blocker.resolution_owner_id = int(choice.split(":", 1)[1])
@@ -825,12 +842,13 @@ class RiskTreatmentForm(forms.ModelForm):
 class RiskMaterializationForm(forms.ModelForm):
     class Meta:
         model = RiskMaterialization
-        fields = ["occurred_on", "description", "actual_impact", "measure_source", "actions_taken", "evidence_reference", "evidence_attachment"]
+        fields = ["occurred_on", "description", "actual_impact", "measure_source", "actions_taken", "provision_responsible", "evidence_reference", "evidence_attachment"]
         labels = {
             "occurred_on": "Data em que ocorreu (registro posterior)",
             "description": "O que ocorreu",
             "actual_impact": "Impacto ocorrido",
             "actions_taken": "Providências adotadas",
+            "provision_responsible": "Responsável pela providência",
             "measure_source": "Qual providência foi adotada?",
             "evidence_reference": "Referência da evidência",
             "evidence_attachment": "Anexo da evidência do risco (opcional)",
@@ -1080,8 +1098,15 @@ class GroupForm(forms.Form):
         return name
 
 
+class RiskSelectionField(forms.ModelChoiceField):
+    def to_python(self, value):
+        if value == "NOVO":
+            return "NOVO"
+        return super().to_python(value)
+
+
 class ActivityRiskReportForm(forms.Form):
-    risk = forms.ModelChoiceField(queryset=Risk.objects.none(), required=False, label="Qual risco?", empty_label="Cadastrar risco não previsto")
+    risk = RiskSelectionField(queryset=Risk.objects.none(), required=False, label="Qual risco?", empty_label="Nenhum risco selecionado")
     materialized = forms.ChoiceField(label="O risco se materializou?", required=False, choices=(("", "Selecione"), ("SIM", "Sim"), ("NAO", "Não")))
 
     edit_materialization = forms.BooleanField(required=False, label="Atualizar o registro desta ocorrência")
@@ -1090,36 +1115,40 @@ class ActivityRiskReportForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.fields["risk"].queryset = risks
         self.fields["risk"].label_from_instance = lambda risk: risk.title
+        self.fields["risk"].choices = [
+            ("", "Nenhum risco selecionado"),
+            *([("NOVO", "Cadastrar risco não previsto")] if can_create else []),
+            *((str(risk.pk), risk.title) for risk in risks),
+        ]
         if not can_create:
-            self.fields["risk"].required = True
-            self.fields["risk"].empty_label = "Selecione um risco"
+            self.fields["risk"].empty_label = "Nenhum risco selecionado"
 
     def clean(self):
         data = super().clean()
         risk = data.get("risk")
-        if data.get("materialized") != "SIM":
-            self.add_error("materialized", "Selecione Sim para informar a materialização do risco.")
-        if risk and risk.status == Risk.Status.MATERIALIZED and data.get("materialized") == "NAO":
-            self.add_error("materialized", "Este risco já está materializado. Selecione Sim; o histórico de ocorrências será mantido.")
+        if data.get("materialized") not in ("SIM", "NAO"):
+            self.add_error("materialized", "Selecione Sim ou Não para registrar o acompanhamento do risco.")
+        if data.get("materialized") == "SIM" and risk is None:
+            self.add_error("risk", "Selecione um risco previsto ou cadastre um risco não previsto.")
+        if data.get("materialized") == "NAO" and risk == "NOVO":
+            self.add_error("risk", "Para registrar um risco não previsto, selecione Sim.")
         return data
 
 
 class UnforeseenActivityRiskForm(ActivityRiskForm):
+    occurred_on = forms.DateField(label="Data em que ocorreu", widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}))
+    actual_impact = forms.CharField(label="Impacto ocorrido", widget=forms.Textarea(attrs={"rows": 2}))
+    actions_taken = forms.CharField(label="Providências adotadas", widget=forms.Textarea(attrs={"rows": 2}))
+
     class Meta(ActivityRiskForm.Meta):
-        fields = [field for field in ActivityRiskForm.Meta.fields if field not in ("status", "preventive_measure")]
+        fields = [field for field in ActivityRiskForm.Meta.fields if field not in ("status", "preventive_measure", "occurrence_timing", "exposure_start_date", "exposure_end_date", "trigger_description")]
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["occurrence_timing"].label = "Quando o risco ocorreu?"
-        self.fields["occurrence_timing"].choices = [
-            ("", "Selecione quando ocorreu"),
-            (Risk.OccurrenceTiming.ANY_TIME, "Em um momento específico"),
-            (Risk.OccurrenceTiming.EXPOSURE_WINDOW, "Durante um período"),
-            (Risk.OccurrenceTiming.DATE_OR_MILESTONE, "Em uma data ou marco"),
-            (Risk.OccurrenceTiming.UNKNOWN, "Momento não identificado"),
-        ]
-        self.fields["trigger_description"].label = "Marco, sinal ou condição da ocorrência"
-        self.fields["trigger_description"].required = True
+        forms.ModelForm.__init__(self, *args, **kwargs)
+        self.fields.pop("register_another", None)
+        self.fields["treatment_responsible"].label = "Responsável pela providência"
+        self.fields["treatment_responsible"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
+        self.order_fields(["title", "cause", "occurred_on", "probability", "impact", "actual_impact", "treatment", "treatment_responsible", "actions_taken", "contingency_measure"])
 
 
 class QuarterlyReportForm(forms.Form):

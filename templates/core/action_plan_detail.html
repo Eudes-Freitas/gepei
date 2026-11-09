@@ -12,7 +12,7 @@
   {% else %}
     <section class="metrics action-detail-metrics action-plan-metrics">
       <article class="metric-card metric-blue"><span>Execução da ação</span><strong>{{ action.progress|floatformat:"-1" }}%</strong></article>
-      <article class="metric-card"><span>Atividades</span><strong>{{ activities|length }}</strong></article>
+      <article class="metric-card"><span>Atividades Cadastradas</span><strong>{{ activities|length }}</strong></article>
       <article class="metric-card {% if remaining_weight > 0 %}metric-warning{% endif %}"><span>Peso distribuído</span><strong>{{ allocated_weight|floatformat:"-1" }}%</strong></article>
       <article class="metric-card"><span>Responsável pelo plano</span><strong class="manager-name">{{ action_plan.manager.get_full_name|default:action_plan.manager.username }}</strong></article>
       {% if perms.core.view_strategictarget or perms.core.view_indicator %}<a class="metric-card metric-link" href="{% if perms.core.view_indicator %}{{ indicators_url }}{% else %}{{ targets_url }}{% endif %}" title="Ver metas e indicadores do objetivo estratégico"><span>Metas e indicadores</span><strong class="combined-results-count">{% if perms.core.view_strategictarget %}{{ objective_target_count }} meta{{ objective_target_count|pluralize:"s" }}{% endif %}{% if perms.core.view_strategictarget and perms.core.view_indicator %}<br>{% endif %}{% if perms.core.view_indicator %}{{ objective_indicator_count }} indicador{{ objective_indicator_count|pluralize:"es" }}{% endif %}</strong></a>{% endif %}
