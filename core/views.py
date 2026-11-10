@@ -361,12 +361,22 @@ def _target_achievement_chart(execution):
         if value is not None:
             values.append(value)
         points.append({
-            "name": item["indicator"].code or item["indicator"].name,
+            "name": f"{item['indicator'].code} · {item['indicator'].name}" if item["indicator"].code else item["indicator"].name,
             "indicator_id": item["indicator"].id,
             "y": value,
             "raw": raw,
+            "remaining": None,
+            "measured": None,
+            "unit": item["indicator"].unit_of_measure,
             "color": SIGNAL_STYLE[item["signal"]["code"]][1],
         })
+        expected_value = _decimal_from_measurement(item["signal"].get("expected_value"))
+        measurement = item["signal"].get("measurement")
+        measured_value = _decimal_from_measurement(measurement.measured_value) if measurement else None
+        if expected_value is not None and measured_value is not None:
+            points[-1]["remaining"] = float(max(Decimal("0"), expected_value - measured_value))
+        if measured_value is not None:
+            points[-1]["measured"] = float(measured_value)
     total = round(sum(values) / len(values), 1) if values else None
     palette = ["#1769aa", "#16834a", "#7357c9", "#e5a11b", "#0b8994", "#c55783"]
     pie_points = [
@@ -376,7 +386,11 @@ def _target_achievement_chart(execution):
     if values:
         remaining = max(0, 100 - sum(point["y"] for point in pie_points))
         if remaining > 0:
-            pie_points.append({"name": "Falta atingir", "y": remaining, "achievement": None, "indicator_id": None, "color": "#e1e7ef"})
+            remaining_values = [point["remaining"] for point in points if point["remaining"] is not None]
+            remaining_absolute = sum(remaining_values) if remaining_values else None
+            units = {point["unit"] for point in points if point["remaining"] is not None and point["unit"]}
+            remaining_unit = next(iter(units), "") if len(units) == 1 else ""
+            pie_points.append({"name": "Falta atingir", "y": remaining, "achievement": None, "remaining": remaining_absolute, "unit": remaining_unit, "indicator_id": None, "color": "#e1e7ef"})
     else:
         pie_points = [{"name": "Sem aferição", "y": 100, "achievement": None, "indicator_id": None, "color": "#e1e7ef"}]
     return {

@@ -229,5 +229,6 @@
     show(document.querySelector('[data-activity-section="' + initial + '"]') ? initial : 'execucao');
   }());
 </script>
+<script>(function(){document.querySelectorAll('[name$="has_expected_resolution"]').forEach(function(toggle){var form=toggle.closest('form'),date=form&&form.querySelector('[name$="expected_resolution_date"]'),field=date&&date.closest('.form-field');function update(){var yes=toggle.value==='sim';if(field){field.hidden=!yes;}if(date){date.required=yes;if(!yes){date.value='';}}}toggle.addEventListener('change',update);update();});}());</script>
 </div>
 {% endblock %}

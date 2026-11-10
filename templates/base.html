@@ -7,6 +7,18 @@
   <title>{% block title %}GEPEI{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'css/gepei.css' %}?v=20261110-risk-table-9">
   <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      document.querySelectorAll('input[required], select[required], textarea[required]').forEach(function (field) {
+        if (!field.id) return;
+        var label = document.querySelector('label[for="' + CSS.escape(field.id) + '"]');
+        if (!label || label.querySelector('.required-marker')) return;
+        var marker = document.createElement('span');
+        marker.className = 'required-marker';
+        marker.textContent = ' *';
+        marker.setAttribute('aria-hidden', 'true');
+        label.appendChild(marker);
+      });
+    });
     // Cancelamento nativo (Esc) não deve descartar um modal aberto.
     document.addEventListener('cancel', function (event) {
       if (event.target instanceof HTMLDialogElement) {

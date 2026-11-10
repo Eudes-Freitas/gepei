@@ -1,5 +1,6 @@
 :root { --blue-950:#07264f; --blue-900:#0a3872; --blue-700:#0f63b6; --blue-100:#eaf3ff; --accent:#087f8c; --accent-dark:#066772; --ink:#142033; --muted:#667085; --surface:#fff; --border:#dce5f1; --background:#f4f7fb; --green:#16834a; --yellow:#bd7b00; --orange:#bd5600; --red:#bf2626; --gray:#98a2b3; }
 * { box-sizing:border-box; }
+.required-marker { color:#bf2626; font-weight:900; }
 body { margin:0; background:var(--background); color:var(--ink); font-family:Inter,Arial,sans-serif; font-size:15px; }
 a { color:var(--blue-700); text-decoration:none; } a:hover { text-decoration:underline; }
 .topbar { background:var(--blue-950); box-shadow:0 2px 12px rgba(7,38,79,.22); color:#fff; position:sticky; top:0; z-index:30; display:flex; justify-content:space-between; align-items:center; gap:1rem; padding:1rem max(1rem,calc((100% - 1200px)/2)); }

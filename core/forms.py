@@ -457,6 +457,12 @@ class ActivityEvidenceForm(forms.ModelForm):
 
 class ActivityBlockerForm(forms.ModelForm):
     resolution_owner_choice = forms.ChoiceField(label="Responsável pela solução")
+    has_expected_resolution = forms.TypedChoiceField(
+        label="Possui previsão de desbloqueio?",
+        choices=(("nao", "Não"), ("sim", "Sim")),
+        coerce=lambda value: value == "sim",
+        empty_value=False,
+    )
 
     class Meta:
         model = ActivityBlocker
@@ -487,6 +493,10 @@ class ActivityBlockerForm(forms.ModelForm):
             else:
                 kwargs["data"] = data
         super().__init__(*args, **kwargs)
+        self.initial["has_expected_resolution"] = bool(self.instance.expected_resolution_date)
+        self.fields["expected_resolution_date"].required = False
+        self.fields["resolution_note"].required = True
+        self.fields["resolution_note"].help_text = "Informe a providência ou solução adotada."
         users = get_user_model().objects.filter(is_active=True).order_by("first_name", "last_name", "username")
         self.fields["resolution_owner_choice"].choices = [
             ("", "Selecione o responsável"),
@@ -498,7 +508,17 @@ class ActivityBlockerForm(forms.ModelForm):
                 self.initial["resolution_owner_choice"] = f"external:{self.instance.external_owner_type}"
             elif self.instance.resolution_owner_id:
                 self.initial["resolution_owner_choice"] = f"user:{self.instance.resolution_owner_id}"
-        self.order_fields(["description", "blocked_on", "expected_resolution_date", "resolution_owner_choice", "status", "resolution_note"])
+        self.order_fields(["description", "blocked_on", "has_expected_resolution", "expected_resolution_date", "resolution_owner_choice", "status", "resolution_note"])
+
+    def clean(self):
+        cleaned = super().clean()
+        if not cleaned.get("resolution_note"):
+            self.add_error("resolution_note", "Informe a providência ou solução adotada.")
+        if cleaned.get("has_expected_resolution") and not cleaned.get("expected_resolution_date"):
+            self.add_error("expected_resolution_date", "Informe a previsão de desbloqueio.")
+        if not cleaned.get("has_expected_resolution"):
+            cleaned["expected_resolution_date"] = None
+        return cleaned
 
     def save(self, commit=True):
         blocker = super().save(commit=False)
