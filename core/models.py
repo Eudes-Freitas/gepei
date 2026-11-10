@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 
 
 class Organization(models.Model):
@@ -220,6 +221,7 @@ class ActivityBlocker(models.Model):
     )
     external_owner_type = models.CharField(max_length=5, choices=ExternalOwnerType.choices, blank=True)
     description = models.TextField()
+    blocked_on = models.DateField(blank=True, default=timezone.localdate, verbose_name="Data do bloqueio")
     expected_resolution_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.OPEN)
     resolution_note = models.TextField(blank=True)
@@ -629,6 +631,14 @@ class RiskMaterialization(models.Model):
     description = models.TextField()
     actual_impact = models.TextField()
     actions_taken = models.TextField()
+    provision_responsible = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="risk_provisions",
+        verbose_name="Responsável pela providência",
+    )
     measure_source = models.CharField(max_length=8, choices=MeasureSource.choices, blank=True)
     evidence_reference = models.CharField(max_length=255, blank=True)
     evidence_attachment = models.FileField("Anexo da evidência", upload_to="risk_evidences/%Y/%m/", blank=True)
@@ -642,6 +652,16 @@ class RiskMaterialization(models.Model):
 
     class Meta:
         ordering = ["-occurred_on", "-id"]
+
+
+class RiskNonOccurrence(models.Model):
+    activity = models.ForeignKey(Activity, on_delete=models.CASCADE, related_name="risk_non_occurrences")
+    risk = models.ForeignKey(Risk, null=True, blank=True, on_delete=models.CASCADE, related_name="non_occurrences")
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    recorded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-recorded_at", "-id"]
 
 
 class RiskAcceptance(models.Model):
@@ -711,4 +731,4 @@ class QuarterlySectorReport(models.Model):
         ordering = ["-year", "-quarter", "unit__name"]
         default_permissions = ("view",)
         permissions = [("consolidate_quarterlysectorreport", "Consolidar relatório trimestral do próprio setor")]
-        constraints = [models.UniqueConstraint(fields=["plan", "unit", "year", "quarter"], name="unique_quarterly_sector_report"), models.CheckConstraint(condition=models.Q(quarter__gte=1, quarter__lte=4), name="valid_report_quarter")]
+        constraints = [models.CheckConstraint(condition=models.Q(quarter__gte=1, quarter__lte=4), name="valid_report_quarter")]

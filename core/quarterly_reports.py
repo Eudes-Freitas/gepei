@@ -104,7 +104,8 @@ def _snapshot(plan, unit, year, quarter):
             progress = _final_progress(current, signal["measurement"], target=target)
             if progress is not None:
                 values.append(progress)
-        target_rows.append({"id": target.pk, "code": target.code, "description": target.description,
+        action_activities = list(target.action.action_plan.activities.all()) if target.action_id and hasattr(target.action, "action_plan") else []
+        target_rows.append({"id": target.pk, "code": target.code, "description": target.description, "action_code": target.action.code if target.action_id else "", "action_title": target.action.title if target.action_id else "", "planned_cost": float(sum((a.planned_cost or 0 for a in action_activities), 0)), "disbursed_cost": float(sum((a.disbursed_cost or 0 for a in action_activities), 0)),
                             "value": target.target_value, "unit": target.unit_of_measure,
                             "period": target.reference_period, "objective": target.artifact.code,
                             "progress": round(sum(values) / len(values), 1) if values else None})
@@ -121,8 +122,8 @@ def _snapshot(plan, unit, year, quarter):
         "targets": target_rows,
         "indicators": indicator_rows,
         "actions": [{"id": a.pk, "code": a.code, "title": a.title, "objective": action_objective_codes.get(a.pk, ""), "status": a.get_status_display(), "progress": str(a.progress), "due_date": a.due_date.isoformat() if a.due_date else ""} for a in actions],
-        "activities": [{"id": a.pk, "action_id": a.action_plan.action_id, "action": a.action_plan.action.code, "title": a.title, "status": a.get_status_display(), "progress": str(a.progress), "executor": a.executor.get_full_name() or a.executor.username} for a in activities],
-        "risks": [{"id": r.pk, "title": r.title, "action": r.action.code, "status": r.get_status_display(), "level": r.level, "cause": r.cause, "control": r.preventive_measure} for r in risks],
+        "activities": [{"id": a.pk, "action_id": a.action_plan.action_id, "action": a.action_plan.action.code, "title": a.title, "status": a.get_status_display(), "progress": str(a.progress), "executor": a.executor.get_full_name() or a.executor.username, "completion_date": a.end_date.isoformat() if a.progress == 100 or a.status == StrategicAction.Status.COMPLETED else "", "evidence": ", ".join(e.title for e in a.evidences.all())} for a in activities],
+        "risks": [{"id": r.pk, "activity_id": r.activity_id, "title": r.title, "action": r.action.code, "status": r.get_status_display(), "level": r.level, "cause": r.cause, "control": r.preventive_measure} for r in risks],
         "risk_non_occurrences": [{"id": item.pk, "activity": item.activity.title, "risk": item.risk.title if item.risk else "Todos os riscos", "recorded_at": item.recorded_at.isoformat(), "recorded_on": timezone.localtime(item.recorded_at).strftime("%d/%m/%Y")} for item in risk_non_occurrences],
         "blockers": [{"id": b.pk, "description": b.description, "status": b.get_status_display()} for b in blockers],
         "evidences": [{"id": e.pk, "activity_id": e.activity_id, "title": e.title, "activity": e.activity.title, "reference": e.reference, "url": e.url, "file": e.attachment.name} for e in evidences],
@@ -151,8 +152,13 @@ def overview(request):
             with transaction.atomic():
                 # Serialize consolidation requests for the same sector.
                 unit = OrganizationalUnit.objects.select_for_update().get(pk=data["unit"].pk)
-                report, created = QuarterlySectorReport.objects.get_or_create(plan=data["plan"], unit=unit, year=data["year"], quarter=data["quarter"], defaults={"consolidated_by": request.user, "snapshot": _snapshot(data["plan"], unit, data["year"], data["quarter"])})
-            messages.success(request, "Relatório trimestral consolidado." if created else "Este setor já tem relatório consolidado para o plano e trimestre escolhidos.")
+                report = QuarterlySectorReport.objects.filter(plan=data["plan"], unit=unit, year=data["year"], quarter=data["quarter"]).order_by("-consolidated_at", "-id").first()
+                if report is None:
+                    report = QuarterlySectorReport.objects.create(plan=data["plan"], unit=unit, year=data["year"], quarter=data["quarter"], consolidated_by=request.user, snapshot=_snapshot(data["plan"], unit, data["year"], data["quarter"]))
+                    message = "Relatório trimestral consolidado."
+                else:
+                    message = "Já existe um relatório para este período. Edite-o para reconsolidar com as informações atuais."
+            messages.info(request, message)
             return redirect("quarterly_report_detail", report_id=report.id)
     reports = QuarterlySectorReport.objects.filter(unit__in=view_units).select_related("unit", "plan", "consolidated_by")
     years = sorted(set(reports.values_list("year", flat=True)) | {today.year}, reverse=True)
@@ -160,7 +166,14 @@ def overview(request):
         reports = reports.filter(unit_id=selected_unit)
     if selected_plan.isdigit():
         reports = reports.filter(plan_id=selected_plan)
-    available_periods = [{"value": f"{year}-{quarter}", "label": f"{quarter}º trimestre de {year}"} for year, quarter in reports.order_by("-year", "-quarter").values_list("year", "quarter").distinct()]
+    period_values = {(year, quarter) for year, quarter in reports.values_list("year", "quarter").distinct()}
+    for plan in Plan.objects.filter(active=True).only("start_date", "end_date"):
+        for year in range(plan.start_date.year, plan.end_date.year + 1):
+            first_quarter = 1 if year > plan.start_date.year else (plan.start_date.month - 1) // 3 + 1
+            last_quarter = 4 if year < plan.end_date.year else (plan.end_date.month - 1) // 3 + 1
+            period_values.update((year, quarter) for quarter in range(first_quarter, last_quarter + 1))
+    period_values.add((today.year, (today.month - 1) // 3 + 1))
+    available_periods = [{"value": f"{year}-{quarter}", "label": f"{quarter}º trimestre de {year}"} for year, quarter in sorted(period_values, reverse=True)]
     selected_period = request.GET.get("period", "")
     match = re.fullmatch(r"([2-9]\d{3})-([1-4])", selected_period)
     available_years = list(reports.order_by("-year").values_list("year", flat=True).distinct())
@@ -241,6 +254,34 @@ def repair_report_scope(report):
 def _report_display_data(snapshot, report=None):
     """Adiciona classes visuais sem alterar os dados consolidados."""
     data = dict(snapshot)
+    # Backfill fields introduced after older reports were consolidated.
+    if report and data.get("activities"):
+        activity_ids = [item.get("id") for item in data["activities"] if item.get("id")]
+        live_activities = {item.pk: item for item in Activity.objects.filter(pk__in=activity_ids).prefetch_related("evidences")}
+        for item in data["activities"]:
+            live = live_activities.get(item.get("id"))
+            if not live:
+                continue
+            item.setdefault("completion_date", live.end_date.isoformat() if live.progress == 100 or live.status == StrategicAction.Status.COMPLETED else "")
+            item.setdefault("evidence", ", ".join(e.title for e in live.evidences.all()))
+        risk_ids = [item.get("id") for item in data.get("risks", []) if item.get("id")]
+        live_risks = {item.pk: item for item in Risk.objects.filter(pk__in=risk_ids).only("pk", "activity_id")}
+        for item in data.get("risks", []):
+            live = live_risks.get(item.get("id"))
+            if live:
+                item.setdefault("activity_id", live.activity_id)
+    if report and data.get("targets"):
+        target_ids = [item.get("id") for item in data["targets"] if item.get("id")]
+        live_targets = {item.pk: item for item in StrategicTarget.objects.filter(pk__in=target_ids).select_related("action")}
+        for item in data["targets"]:
+            live = live_targets.get(item.get("id"))
+            if not live:
+                continue
+            item.setdefault("action_code", live.action.code if live.action_id else "")
+            item.setdefault("action_title", live.action.title if live.action_id else "")
+            activities = live.action.action_plan.activities.all() if live.action_id and hasattr(live.action, "action_plan") else []
+            item.setdefault("planned_cost", float(sum((a.planned_cost or 0 for a in activities), 0)))
+            item.setdefault("disbursed_cost", float(sum((a.disbursed_cost or 0 for a in activities), 0)))
     objectives_by_code = {item.get("code"): item for item in snapshot.get("objectives", []) if item.get("code")}
 
     def objective_for(item):
@@ -274,7 +315,11 @@ def _report_display_data(snapshot, report=None):
         except (ValueError, TypeError):
             action["due_date_display"] = action.get("due_date") or "A definir"
     data["unassigned_activities"] = []
+    risks_by_activity = {}
+    for risk in data.get("risks", []):
+        risks_by_activity.setdefault(risk.get("activity_id"), []).append(risk)
     for activity in data["activities"]:
+        activity["risks"] = risks_by_activity.get(activity.get("id"), [])
         action = actions_by_id.get(activity.get("action_id"))
         if activity.get("action_id") is None:
             matches = actions_by_code.get(activity.get("action"), [])
@@ -286,6 +331,9 @@ def _report_display_data(snapshot, report=None):
             activity["objective_code"] = action["objective_code"]
             activity["objective_title"] = action["objective_title"]
             action["activities"].append(activity)
+    for indicator in data["indicators"]:
+        action_codes = {target.get("action_code") for target in indicator.get("targets", []) if target.get("action_code")}
+        indicator["risks"] = [risk for risk in data.get("risks", []) if risk.get("action") in action_codes and risk.get("status") == "Materializado"]
     from .views import _decimal_from_measurement
     linked_target_ids = set()
     for indicator_index, item in enumerate(data["indicators"]):
@@ -293,6 +341,7 @@ def _report_display_data(snapshot, report=None):
         item["targets"] = [{**target, "report_anchor": f"report-target-{index}" if target.get("id") not in linked_target_ids else ""} for index, target in enumerate(data["targets"], 1) if target.get("id") in ids]
         linked_target_ids.update(ids)
         item["measurements"] = [dict(m) for m in item.get("measurements", [])]
+        item["measurements"].sort(key=lambda measurement: (measurement.get("period_end") or measurement.get("period") or ""))
         chart_rows = []
         for measurement_index, measurement in enumerate(item["measurements"]):
             value = _decimal_from_measurement(measurement.get("result"))
@@ -389,10 +438,7 @@ def edit(request, report_id):
             data = form.cleaned_data
             list(OrganizationalUnit.objects.select_for_update().filter(pk__in=[report.unit_id, data["unit"].pk]).order_by("pk"))
             report = QuarterlySectorReport.objects.select_for_update().get(pk=report.pk)
-            duplicate = QuarterlySectorReport.objects.filter(plan=data["plan"], unit=data["unit"], year=data["year"], quarter=data["quarter"]).exclude(pk=report.pk).exists()
-            if duplicate:
-                form.add_error(None, "Já existe um relatório para este plano, setor, ano e trimestre. Selecione o relatório existente na lista.")
-            else:
+            if True:
                 previous = deepcopy(report.snapshot)
                 history = previous.pop("previous_versions", [])
                 history.append({"snapshot": previous, "plan_id": report.plan_id, "unit_id": report.unit_id, "year": report.year, "quarter": report.quarter, "replaced_at": timezone.now().isoformat(), "replaced_by": request.user.pk})
@@ -405,7 +451,7 @@ def edit(request, report_id):
                 report.snapshot = snapshot
                 report.save(update_fields=["plan", "unit", "year", "quarter", "snapshot"])
                 messages.success(request, "Relatório atualizado. A versão anterior foi preservada no histórico.")
-                return redirect("quarterly_report_detail", report_id=report.pk)
+                return redirect("report_cycle_overview")
     return render(request, "core/quarterly_report_form.html", {"report": report, "form": form})
 
 

@@ -13,48 +13,44 @@
 <nav class="panel quarterly-report-summary" aria-label="Sumário do relatório">
   <h2>Sumário</h2>
   <div class="quarterly-report-summary-links">
-    <a href="#objetivos">Objetivos estratégicos</a><a href="#metas">Metas e resultados planejados</a><a href="#indicadores">Indicadores e gráficos</a><a href="#acoes">Ações e atividades</a><a href="#riscos">Riscos e impedimentos</a><a href="#evidencias">Evidências e anexos</a><a href="#financeiro">Execução financeira</a>
+    <a href="#objetivos-metas">Objetivos estratégicos e metas</a><a href="#acoes">Ações e atividades</a><a href="#riscos">Riscos e impedimentos</a><a href="#evidencias">Evidências e anexos</a><a href="#financeiro">Execução financeira</a>
   </div>
 </nav>
 <details class="report-item-map"><summary>Ver itens do relatório</summary>{% include "core/_quarterly_report_map.html" %}</details>
-{% if data.last_edited_at %}<p class="form-hint">Última atualização por {{ data.last_edited_by }}. {{ data.previous_versions|length }} versão(ões) anterior(es) preservada(s).</p>{% endif %}
-<p class="form-hint">As contagens abrangem os itens vinculados ao setor, incluindo ações em que participa e as metas e indicadores dos respectivos objetivos. Cada item é contado uma única vez.</p>
-<p class="form-hint">Consolidado por {{ report.consolidated_by.get_full_name|default:report.consolidated_by.username }} em {{ report.consolidated_at|date:"d/m/Y H:i" }}. As aferições e evidências respeitam o período do relatório.</p>
-{% if data.scope_revised_at %}<p class="form-hint">Abrangência revisada para incluir a participação do setor. Os valores originalmente consolidados foram preservados; os itens acrescentados refletem os cadastros disponíveis na revisão.</p>{% endif %}
-<section class="panel quarterly-report-block report-theme-objectives" id="objetivos"><span id="report-objectives"></span><h2>Objetivos estratégicos</h2><div class="report-objective-list">{% for item in data.objectives %}<article class="report-objective-card" id="report-objective-{{ forloop.counter }}"><span class="report-objective-code">{{ item.code|default:"Objetivo" }}</span><h3>{{ item.title }}</h3></article>{% empty %}<p>Nenhum objetivo vinculado ao setor.</p>{% endfor %}</div></section>
-<section class="panel quarterly-report-block report-theme-indicators" id="metas"><span id="report-targets"></span><span id="report-indicators"></span><span id="indicadores"></span><h2>Metas, indicadores e execução</h2>
+<details class="panel quarterly-report-block report-theme-objectives" id="objetivos"><span id="report-objectives"></span><summary><h2>Objetivos estratégicos</h2></summary><div class="report-objective-list">{% for item in data.objectives %}<article class="report-objective-card" id="report-objective-{{ forloop.counter }}"><span class="report-objective-code">{{ item.code|default:"Objetivo" }}</span><h3>{{ item.title }}</h3></article>{% empty %}<p>Nenhum objetivo vinculado ao setor.</p>{% endfor %}</div></details>
+<details class="panel quarterly-report-block report-theme-indicators" id="metas"><span id="report-targets"></span><span id="report-indicators"></span><span id="indicadores"></span><summary><h2>Metas, indicadores e execução</h2></summary>
 {% if data.contains_test_data %}<p class="form-hint"><strong>[TESTE]</strong> Este relatório contém dados fictícios para validação. Os registros e arquivos de teste estão identificados com [TESTE].</p>{% endif %}
-{% for item in data.indicators %}<article class="unified-result-section" id="report-indicator-{{ forloop.counter }}">
+{% for item in data.indicators %}<article class="unified-result-section indicator-status-{{ item.signal_class }}" id="report-indicator-{{ forloop.counter }}">
   {% include "core/_indicator_reference.html" with reference=item.reference_parameters %}
-  <div class="report-planned-result"><h3>Planejado</h3>
+  <div class="report-planned-result">
   {% for target in item.targets %}<div class="report-target-item"{% if target.report_anchor %} id="{{ target.report_anchor }}"{% endif %}><p class="report-objective-reference"><strong>{{ target.objective_code|default:"Objetivo não identificado" }}</strong>{% if target.objective_title %} · {{ target.objective_title }}{% endif %}</p><p><strong>{{ target.code|default:"Meta" }}</strong> · {{ target.description }}</p><p>Meta planejada: {{ target.value|default:"Não informada" }} {{ target.unit }} · {{ target.period }}</p></div>{% empty %}<p class="form-hint">Sem meta vinculada nesta consolidação.</p>{% endfor %}
-  <h3>Executado — {{ item.name }}</h3></div>{% if item.responsible_units %}<p class="form-hint">Setores responsáveis: {{ item.responsible_units }}</p>{% endif %}<p><span class="signal signal-{{ item.signal_class }}"><i></i>{{ item.status }}</span>{% if item.achievement != None %} · {{ item.achievement|floatformat:"-1" }}% de atingimento{% endif %}</p>
-  <p>Último resultado até o fim do período: {{ item.latest_result|default_if_none:"Sem aferição" }} {{ item.unit }}{% if item.latest_period %} · {{ item.latest_period }}{% endif %}</p>
-  <p>Fórmula: {{ item.formula|default:"Não informada" }} · Fonte: {{ item.source|default:"Não informada" }}</p>
+  {% for target in item.targets %}{% if target.planned_cost or target.disbursed_cost %}<p class="target-financial"><strong>Execução financeira da meta:</strong> Previsto: R$ {{ target.planned_cost|floatformat:2 }} · Desembolsado: R$ {{ target.disbursed_cost|floatformat:2 }}</p>{% endif %}{% endfor %}{% if item.risks %}<details class="indicator-risk-submenu" open><summary>Riscos da meta</summary><div>{% for risk in item.risks %}<p><strong>{{ risk.title }}</strong> · {{ risk.status }} · nível {{ risk.level }}</p><p>Causa: {{ risk.cause }} · Controle: {{ risk.control }}</p>{% endfor %}</div></details>{% endif %}</div><h3 class="indicator-result-title">{{ item.name }}</h3>{% if item.responsible_units %}<p class="form-hint">Setores responsáveis: {{ item.responsible_units }}</p>{% endif %}<p><span class="signal signal-{{ item.signal_class }}"><i></i>{{ item.status }}</span>{% if item.achievement != None %} · <strong>{{ item.achievement|floatformat:"-1" }}% de atingimento</strong>{% endif %}</p>
+  <p><strong>Último resultado até o fim do período:</strong> {{ item.latest_result|default_if_none:"Sem aferição" }} {{ item.unit }}{% if item.latest_period %} · {{ item.latest_period }}{% endif %}</p>
+  <p><strong>Fórmula:</strong> {{ item.formula|default:"Não informada" }}</p>
   {% if item.chart %}<div class="indicator-chart" id="{{ item.chart_id }}" data-report-chart data-report-indicator-chart data-source="{{ item.chart_data_id }}" role="img" aria-label="Gráfico de {{ item.name }}: resultado e meta do período"></div>{{ item.chart|json_script:item.chart_data_id }}{% else %}<p class="form-hint">Sem aferições numéricas consolidadas para o gráfico.</p>{% endif %}
   <div class="responsive-table"><table><thead><tr><th>Período</th><th>Linha de base</th><th>Resultado</th><th>Meta do período</th><th>Fonte / evidência</th></tr></thead><tbody>{% for measurement in item.measurements %}<tr><td>{{ measurement.period }}</td><td>{{ measurement.baseline }}</td><td>{{ measurement.result }}</td><td>{{ measurement.expected|default_if_none:"Não informada" }}</td><td>{{ measurement.source }}{% if measurement.download_url and perms.core.view_indicatormeasurement %}<a href="{{ measurement.download_url }}" class="row-icon evidence-link" target="_blank" rel="noopener" title="Abrir evidência da aferição" aria-label="Abrir evidência da aferição">{% include "core/_record_icon.html" with icon="evidence" %}</a>{% endif %}</td></tr>{% empty %}<tr><td colspan="5">Sem aferições neste trimestre.</td></tr>{% endfor %}</tbody></table></div>
 </article>{% empty %}<p>Nenhum indicador vinculado ao setor.</p>{% endfor %}
 {% for target in data.unlinked_targets %}<article class="unified-result-section"><p class="report-objective-reference"><strong>{{ target.objective_code|default:"Objetivo não identificado" }}</strong>{% if target.objective_title %} · {{ target.objective_title }}{% endif %}</p><h3>{{ target.code|default:"Meta" }} · {{ target.description }}</h3><p>Planejado: {{ target.value }} {{ target.unit }} · {{ target.period }}</p><p class="form-hint">Sem indicador vinculado nesta consolidação.</p></article>{% endfor %}</section>
-<section class="panel quarterly-report-block report-theme-actions" id="acoes"><span id="report-actions"></span><h2>Ações e atividades</h2>
+<details open class="panel quarterly-report-block report-theme-actions" id="acoes"><span id="report-actions"></span><summary><h2>Ações e atividades</h2></summary>
 <div class="report-action-groups">
 {% for action in data.actions %}<article class="report-action-block" {% if action.id %}id="acao-relatorio-{{ action.id }}"{% endif %}>
   <span id="report-action-{{ forloop.counter }}"></span><header class="report-action-heading">
     <div><p class="report-objective-reference"><strong>{{ action.objective_code|default:"Objetivo não identificado" }}</strong>{% if action.objective_title %} · {{ action.objective_title }}{% endif %}</p><h3>{{ action.code }} · {% if action.id and perms.core.view_actionplan %}<a href="{% url 'action_plan_detail' action.id %}">{{ action.title }}</a>{% else %}{{ action.title }}{% endif %}</h3><p>{{ action.activities|length }} atividade{{ action.activities|length|pluralize:"s" }} · Prazo: {{ action.due_date_display }}</p></div>
     <div class="report-action-status"><span class="chip chip-{{ action.status_class }}">{{ action.status }}</span><div class="report-action-progress">{% progress_bar action.progress %}<strong>{{ action.progress|floatformat:"-1" }}%</strong></div></div>
   </header>
-  {% if action.activities %}<div class="responsive-table"><table class="report-activity-table"><thead><tr><th>Atividade</th><th>Responsável</th><th>Situação</th><th>Execução</th></tr></thead><tbody>
-  {% for activity in action.activities %}<tr><td><strong>{{ activity.title }}</strong><small class="report-activity-context">{{ activity.objective_code|default:"Objetivo não identificado" }}{% if activity.objective_title %} · {{ activity.objective_title }}{% endif %}</small></td><td>{{ activity.executor|default:"A definir" }}</td><td><span class="chip chip-{{ activity.status_class }}">{{ activity.status }}</span></td><td><div class="report-activity-progress">{% progress_bar activity.progress "table-progress" %}<strong>{{ activity.progress|floatformat:"-1" }}%</strong></div></td></tr>{% endfor %}
+  {% if action.activities %}<div class="responsive-table"><table class="report-activity-table"><thead><tr><th>Atividade</th><th>Responsável</th><th>Situação</th><th>Execução</th><th>Evidência</th><th>Data de conclusão</th></tr></thead><tbody>
+  {% for activity in action.activities %}<tr><td><strong>{{ activity.title }}</strong><small class="report-activity-context">{{ activity.objective_code|default:"Objetivo não identificado" }}{% if activity.objective_title %} · {{ activity.objective_title }}{% endif %}</small>{% if activity.risks %}<details class="activity-risk-submenu"><summary>{{ activity.risks|length }} risco{{ activity.risks|length|pluralize:"s" }}</summary><div class="activity-risk-list">{% for risk in activity.risks %}<p><strong>{{ risk.title }}</strong> · {{ risk.status }} · nível {{ risk.level }}</p><p>Causa: {{ risk.cause }} · Controle: {{ risk.control }}</p>{% endfor %}</div></details>{% endif %}</td><td>{{ activity.executor|default:"A definir" }}</td><td><span class="chip chip-{{ activity.status_class }}">{{ activity.status }}</span></td><td><div class="report-activity-progress">{% progress_bar activity.progress "table-progress" %}<strong>{{ activity.progress|floatformat:"-1" }}%</strong></div></td><td>{{ activity.evidence|default:"-" }}</td><td>{% if activity.completion_date %}{{ activity.completion_date|date:"d/m/Y" }}{% else %}-{% endif %}</td></tr>{% endfor %}
   </tbody></table></div>{% else %}<p class="report-action-empty">Nenhuma atividade registrada para esta ação nesta consolidação.</p>{% endif %}
 </article>{% empty %}<p>Nenhuma ação do setor.</p>{% endfor %}
 </div>
 {% if data.unassigned_activities %}<div class="record-card"><h3>Atividades sem vínculo identificado nesta consolidação</h3>{% for activity in data.unassigned_activities %}<p class="report-objective-reference"><strong>{{ activity.objective_code|default:"Objetivo não identificado" }}</strong>{% if activity.objective_title %} · {{ activity.objective_title }}{% endif %}</p><p><strong>{{ activity.title }}</strong> · {{ activity.status }} · {{ activity.progress|floatformat:"-1" }}%</p>{% endfor %}</div>{% endif %}
 </section>
 <section class="panel quarterly-report-block report-theme-risks" id="riscos"><span id="report-risks"></span><h2>Riscos e impedimentos</h2>{% for item in data.risks %}<p><strong>{{ item.title }}</strong> · <span class="chip chip-{{ item.status_class }}">{{ item.status }}</span> · <span class="risk-level {% if item.level >= 20 %}risk-critical{% elif item.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">nível {{ item.level }}</span></p><p>Causa: {{ item.cause }} · Controle: {{ item.control }}</p>{% empty %}<p>Nenhum risco registrado.</p>{% endfor %}{% for item in data.risk_non_occurrences %}<p><strong>Não ocorreu:</strong> {{ item.risk }} · {{ item.activity }} · {{ item.recorded_on }}</p>{% endfor %}{% for item in data.blockers %}<p><strong>{{ item.description }}</strong> · <span class="chip chip-{{ item.status_class }}">{{ item.status }}</span></p>{% endfor %}</section>
-<section class="panel quarterly-report-block report-theme-evidences" id="evidencias"><span id="report-evidences"></span><h2>Evidências e anexos</h2>
+<details open class="panel quarterly-report-block report-theme-evidences" id="evidencias"><span id="report-evidences"></span><summary><h2>Evidências e anexos</h2></summary>
 {% for item in data.evidences %}<div class="record-card"><strong>{{ item.title }}</strong><p>{{ item.activity }}{% if item.reference %} · {{ item.reference }}{% endif %}</p>{% if item.url %}<a href="{{ item.url }}" target="_blank" rel="noopener">Abrir referência externa</a>{% endif %}{% if item.download_url and perms.core.view_activityevidence %}<a href="{{ item.download_url }}" class="row-icon evidence-link" target="_blank" rel="noopener" title="Abrir arquivo da evidência" aria-label="Abrir arquivo da evidência">{% include "core/_record_icon.html" with icon="evidence" %}</a>{% elif item.file %}<small>Arquivo registrado. É necessária permissão para visualizar evidências.</small>{% endif %}</div>{% empty %}<p>Nenhuma evidência de atividade registrada neste trimestre.</p>{% endfor %}
 {% for item in data.indicators %}{% for measurement in item.measurements %}{% if measurement.download_url and perms.core.view_indicatormeasurement %}<p><strong>{{ item.name }}</strong> · {{ measurement.period }} · <a href="{{ measurement.download_url }}" class="row-icon evidence-link" target="_blank" rel="noopener" title="Abrir evidência da aferição" aria-label="Abrir evidência da aferição">{% include "core/_record_icon.html" with icon="evidence" %}</a></p>{% endif %}{% endfor %}{% endfor %}
 </section>
-<section class="panel quarterly-report-block report-theme-financial" id="financeiro"><span id="report-financial"></span><h2>Execução financeira</h2><p>Previsto: R$ {{ data.planned_cost }} · Desembolsado: R$ {{ data.disbursed_cost }}</p></section>
+<details class="panel quarterly-report-block report-theme-financial" id="financeiro"><span id="report-financial"></span><summary><h2>Execução financeira</h2></summary><p>Previsto: R$ {{ data.planned_cost }} · Desembolsado: R$ {{ data.disbursed_cost }}</p></details>
 {% if can_manage_report %}{% include "core/_quarterly_report_delete.html" %}{% endif %}
 {% endblock %}
 {% block extra_script %}
@@ -63,10 +59,75 @@
 <script>(function(){
   document.querySelectorAll('[data-report-chart]').forEach(function(box){
     var data=JSON.parse(document.getElementById(box.dataset.source).textContent);
-    var series=[{name:'Resultado aferido',data:data.result,color:'#1463a7'}];
-    if(data.expected.some(function(value){return value!==null;})){series.push({name:'Meta do período',data:data.expected,color:'#6b7280',dashStyle:'ShortDash'});}
-    Highcharts.chart(box,{chart:{type:'line',height:280},title:{text:null},credits:{enabled:false},xAxis:{categories:data.categories},yAxis:{title:{text:'Valor'}},series:series,lang:{decimalPoint:',',thousandsSep:'.'}});
+    var resultData=data.result.map(function(point,index){return index===0?{y:point.y,marker:{symbol:'diamond',radius:7,lineWidth:2,lineColor:'#16839a',fillColor:'#fff'}}:point;});
+    var series=[{name:'Resultado aferido',data:resultData,color:'#27a8f2',dataLabels:{enabled:true,format:'{y}',y:18,style:{fontSize:'10px',fontWeight:'600',textOutline:'none',color:'#1463a7'}}}];
+    if(data.expected.some(function(value){return value!==null;})){series.push({name:'Meta do período',data:data.expected,color:'#697586',dashStyle:'ShortDash',dataLabels:{enabled:true,format:'{y}',y:-10,style:{fontSize:'10px',fontWeight:'600',textOutline:'none',color:'#4b5563'}}});}
+    Highcharts.chart(box,{chart:{type:'line',height:300},title:{text:'Evolução do indicador',align:'left',style:{fontSize:'14px',fontWeight:'700'}},credits:{enabled:false},xAxis:{categories:data.categories,title:{text:'Fim do período de aferição'}},yAxis:{title:{text:'Valor'}},tooltip:{shared:true,valueDecimals:2},series:series,lang:{decimalPoint:',',thousandsSep:'.'}});
   });
-  document.querySelectorAll('.quarterly-report-summary a,.report-section-map a').forEach(function(link){link.addEventListener('click',function(event){if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey){return;}var target=document.querySelector(link.hash);if(target){event.preventDefault();history.replaceState(null,'',link.hash);target.scrollIntoView({behavior:'smooth',block:'start'});}});});
+  document.querySelectorAll('.quarterly-report-summary a,.report-section-map a').forEach(function(link){link.addEventListener('click',function(event){if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey){return;}var target=document.querySelector(link.hash);if(target){event.preventDefault();if(target.tagName.toLowerCase()==='details'){target.open=true;}history.replaceState(null,'',link.hash);target.scrollIntoView({behavior:'smooth',block:'start'});}});});
+  var initial=document.querySelector(location.hash);
+  if(initial && initial.tagName.toLowerCase()==='details'){initial.open=true;}
+  document.querySelectorAll('details.quarterly-report-block').forEach(function(section){section.open=true;});
+  document.querySelectorAll('details.quarterly-report-block').forEach(function(section){section.setAttribute('open','');});
+}());</script>
+<script>(function(){
+  var objectivePanel=document.getElementById('objetivos');
+  var indicatorPanel=document.getElementById('metas');
+  if(!objectivePanel || !indicatorPanel){return;}
+  var cards=Array.from(indicatorPanel.querySelectorAll(':scope > .unified-result-section'));
+  if(!cards.length){return;}
+  var objectives={};
+  cards.forEach(function(card){
+    var ref=card.querySelector('.report-objective-reference');
+    var code=ref ? ref.textContent.trim() : 'Objetivo não identificado';
+    var key=code || 'Objetivo não identificado';
+    (objectives[key]||(objectives[key]=[])).push(card);
+  });
+  var panel=document.createElement('section');
+  panel.className='panel quarterly-report-block report-theme-indicators unified-objectives-panel';
+  panel.id='objetivos-metas';
+  panel.innerHTML='<h2>Objetivos estratégicos e metas</h2>';
+  Object.keys(objectives).forEach(function(name){
+    var group=document.createElement('section');
+    group.className='objective-meta-group';
+    group.innerHTML='<h3 class="objective-group-title">'+name+'</h3>';
+    objectives[name].forEach(function(card){
+      var details=document.createElement('details');
+      details.className='objective-meta-item '+Array.from(card.classList).filter(function(name){return name.indexOf('indicator-status-')===0;}).join(' ');
+      details.open=true;
+      var title=card.querySelector('.indicator-result-title');
+      var summary=document.createElement('summary');
+      summary.textContent=title ? title.textContent.trim() : 'Meta e indicador';
+      details.appendChild(summary);
+      details.appendChild(card);
+      group.appendChild(details);
+    });
+    panel.appendChild(group);
+  });
+  indicatorPanel.parentNode.insertBefore(panel, indicatorPanel);
+  objectivePanel.hidden=true;
+  indicatorPanel.hidden=true;
+}());</script>
+<script>(function(){
+  var map=document.querySelector('.report-section-map .report-map-list > li:first-child');
+  if(!map){return;}
+  var objectives=Array.from(map.querySelectorAll(':scope > .report-map-items:first-of-type > li'));
+  var source=map.querySelector('.report-map-subitems');
+  if(!source){return;}
+  var entries=Array.from(source.children).filter(function(item){return item.querySelector('a');});
+  objectives.forEach(function(objective){
+    var code=(objective.querySelector('strong')||{}).textContent||'';
+    var group=document.createElement('ul');
+    group.className='report-map-linked-items';
+    entries.filter(function(entry){
+      var strong=entry.querySelector('a strong');
+      var small=entry.querySelector('a small');
+      var entryCode=strong ? strong.textContent.trim() : '';
+      var linked=small ? small.textContent : '';
+      return linked.indexOf(code)>=0 || entryCode.indexOf(code.replace('OE','Mt'))===0 || entryCode.indexOf(code.replace('OE','IE'))===0;
+    }).forEach(function(entry){group.appendChild(entry);});
+    if(group.children.length){objective.appendChild(group);}
+  });
+  entries.forEach(function(entry){if(entry.parentNode===source){entry.remove();}});
 }());</script>
 {% endblock %}
