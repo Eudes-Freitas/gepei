@@ -7,8 +7,8 @@
     <div>
       <p class="eyebrow">{{ action.code }} · Acompanhamento da atividade</p>
       <h1>{{ activity.title }}</h1>
-      <p>{{ activity.get_status_display }} · {{ activity.progress|floatformat:"-1" }}% executado · conclusão em {{ activity.end_date|date:"d/m/Y" }}</p>
     </div>
+    <div class="activity-heading-status"><span class="activity-status-highlight activity-status-{{ activity.status|lower }}">{{ activity.get_status_display }}</span></div>
   </section>
 
   <section class="metrics follow-up-metrics">
@@ -75,7 +75,7 @@
         </div>
       {% else %}<div class="empty-state"><span>Nenhuma evidência registrada.</span></div>{% endif %}
       {% if perms.core.add_activityevidence %}<details class="entry-form" open>
-        <summary>Adicionar atividade</summary>
+        <summary>Adicionar evidência</summary>
         <p class="form-hint">O anexo é obrigatório, e a atividade só pode ser concluída depois que houver uma evidência com anexo.</p>
         <form method="post" enctype="multipart/form-data" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_evidence">{% for field in evidence_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}{% if evidence_form.non_field_errors %}<small class="field-error">{{ evidence_form.non_field_errors|striptags }}</small>{% endif %}<button class="button button-primary" type="submit">Registrar evidência</button></form>
       </details>{% endif %}{% endif %}
@@ -118,10 +118,10 @@
           {% for risk in risks %}
             <div class="record-card follow-up-editable-card"><div class="record-content">
               <div class="record-card-heading"><strong>{{ risk.title }}</strong><span class="risk-score {% if risk.level >= 15 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }}</span></div>
-              <small>{{ risk.get_status_display }}</small>
+              <span class="risk-status-highlight {% if risk.status == 'MATERIALIZADO' %}risk-status-materialized{% endif %}">{{ risk.get_status_display }}</span>
               {% if risk.is_unforeseen %}<span class="chip chip-warning">Risco não previsto</span>{% endif %}
               <p><strong>Causa:</strong> {{ risk.cause }}</p>
-              {% if risk.preventive_measure %}<p><strong>Controle:</strong> {{ risk.preventive_measure }}</p>{% endif %}
+              <p><strong>Momento do risco:</strong> {{ risk.occurrence_timing_summary|default:"Não informado" }}{% if risk.trigger_description %} · {{ risk.trigger_description }}{% endif %}</p>
               {% if perms.core.view_risktreatment %}{% for treatment in risk.treatments.all %}<div class="activity-treatment-card"><strong>Tratamento previsto · {{ treatment.get_decision_display }}</strong>{% if treatment.preventive_measure %}<p><strong>Medida preventiva:</strong> {{ treatment.preventive_measure }}</p>{% endif %}{% if treatment.contingency_measure %}<p><strong>Contingência:</strong> {{ treatment.contingency_measure }}</p>{% endif %}</div>{% endfor %}{% endif %}
               </div>{% if perms.core.change_risk and not request.read_only_other_unit %}<div class="record-actions"><a class="icon-button record-action" href="{% url 'risk_detail' action.pk risk.pk %}?editar_identificacao=1#dados" title="Editar risco" aria-label="Editar risco">{% include "core/_record_icon.html" with icon="edit" %}</a></div>{% endif %}
             </div>

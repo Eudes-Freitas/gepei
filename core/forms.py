@@ -572,7 +572,7 @@ class ActivityRiskForm(forms.ModelForm):
             "exposure_start_date": "Início do período",
             "exposure_end_date": "Fim do período",
             "trigger_description": "Marco, sinal ou condição de ocorrência (opcional)",
-            "preventive_measure": "Medida preventiva ou controle",
+            "preventive_measure": "Medida preventiva",
             "contingency_measure": "Medida de contingência",
         }
         widgets = {
@@ -658,7 +658,7 @@ class RiskIdentificationForm(forms.ModelForm):
             "exposure_start_date": "Início do período",
             "exposure_end_date": "Fim do período",
             "trigger_description": "Marco, sinal ou condição de ocorrência (opcional)",
-            "preventive_measure": "Medida preventiva ou controle",
+            "preventive_measure": "Medida preventiva",
             "contingency_measure": "Medida de contingência",
         }
         widgets = {
@@ -775,11 +775,12 @@ class RiskTimingForm(forms.ModelForm):
 class RiskIdentityForm(forms.ModelForm):
     class Meta:
         model = Risk
-        fields = ["title", "cause", "activity"]
+        fields = ["title", "cause", "activity", "occurrence_timing"]
         labels = {
             "title": "Risco identificado",
             "cause": "Causa",
             "activity": "Atividade afetada",
+            "occurrence_timing": "Momento em que pode ocorrer",
         }
         widgets = {"cause": forms.Textarea(attrs={"rows": 3})}
 
@@ -822,7 +823,7 @@ class RiskTreatmentForm(forms.ModelForm):
             "justification": "Justificativa",
             "responsible": "Responsável pelo tratamento",
             "due_date": "Prazo para concluir o tratamento (opcional)",
-            "preventive_measure": "Medida preventiva ou controle",
+            "preventive_measure": "Medida preventiva",
             "contingency_measure": "Medida de contingência",
         }
         widgets = {

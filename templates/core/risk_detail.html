@@ -4,13 +4,13 @@
 <div class="workspace-page">
   <a class="back-link" href="{% url 'risk_overview' %}">← Voltar aos riscos</a>
   <section class="action-detail-heading workspace-heading">
-    <div><p class="eyebrow">{{ action.code }} · Ciclo do risco</p><h1>{{ risk.title }}</h1><p>{% if risk.activity %}Atividade: {{ risk.activity.title }}{% else %}Ação estratégica{% endif %} · Responsável pelo tratamento: {% if not can_view.treatments %}Sem permissão{% elif current_treatment %}{{ current_treatment.responsible.get_full_name|default:current_treatment.responsible.username }}{% else %}Não definido{% endif %}</p></div>
+    <div><p class="eyebrow">{{ action.code }} · Ciclo do risco</p><h1>{{ risk.title }}</h1></div>
     <div class="risk-heading-status"><span class="risk-score {% if risk.level >= 20 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }}</span><span class="chip chip-neutral">{{ risk.get_status_display }}</span></div>
   </section>
 
   <div class="risk-workspace">
     <nav class="risk-side-menu workspace-nav" aria-label="Seções do risco">
-      <a href="#dados" data-section-link="dados">Dados e momento</a>
+      <a href="#dados" data-section-link="dados">Detalhes</a>
       <a href="#analise" data-section-link="analise">Avaliações {% if can_view.assessments %}<span class="risk-count">{{ assessments|length }}</span>{% else %}<span class="risk-lock" title="Sem permissão">🔒</span>{% endif %}</a>
       <a href="#tratamento" data-section-link="tratamento">Tratamento {% if can_view.treatments %}<span class="risk-count">{{ treatments|length }}</span>{% else %}<span class="risk-lock" title="Sem permissão">🔒</span>{% endif %}</a>
       <a href="#ocorrencia" data-section-link="ocorrencia">Materialização {% if can_view.materializations %}<span class="risk-count">{{ materializations|length }}</span>{% else %}<span class="risk-lock" title="Sem permissão">🔒</span>{% endif %}</a>
@@ -18,16 +18,9 @@
     </nav>
 
     <div class="panel risk-sections">
-      <div class="risk-summary-line">
-        <div><span>Causa</span><strong>{{ risk.cause }}</strong></div>
-        <div><span>Possível momento</span><strong>{{ risk.occurrence_timing_summary }}{% if risk.trigger_description %}{% if risk.occurrence_timing_summary %} · {% endif %}{{ risk.trigger_description }}{% endif %}</strong></div>
-        <div><span>Classificação atual</span><strong>{{ risk.level_label }} · P{{ risk.probability }} × I{{ risk.impact }}</strong></div>
-        <div><span>Resposta atual</span><strong>{% if not can_view.treatments %}Sem permissão{% elif current_treatment %}{{ current_treatment.get_decision_display }}{% elif risk.treatment %}{{ risk.treatment|title }}{% else %}A definir{% endif %}</strong></div>
-      </div>
-
       <details class="risk-section" id="dados" data-section="dados" open>
-        <summary><span>Dados e momento de ocorrência</span></summary>
-        <div class="risk-section-body">
+        <summary><span>Detalhes</span></summary>
+        <div class="risk-section-body"><div class="risk-timing-inline"><strong>Momento em que pode ocorrer:</strong> {{ risk.occurrence_timing_summary|default:"Não informado" }}{% if risk.trigger_description %} · {{ risk.trigger_description }}{% endif %}</div>
           <div class="record-card"><div class="record-content"><strong>{{ risk.title }}</strong><p>{{ risk.cause }}</p><small>{% if risk.activity %}Atividade afetada: {{ risk.activity.title }}{% else %}Afeta toda a ação estratégica{% endif %}</small></div><div class="record-actions">{% if perms.core.change_risk %}<button type="button" class="icon-button record-action" data-edit-record="identificacao" aria-controls="identificacao" aria-expanded="false" aria-label="Editar identificação do risco" title="Editar identificação do risco">{% include "core/_record_icon.html" with icon="edit" %}</button>{% endif %}{% if perms.core.delete_risk %}<form method="post" onsubmit="return confirm('Excluir este risco e todos os registros vinculados a ele?');">{% csrf_token %}<input type="hidden" name="operation" value="delete_risk"><button type="submit" class="icon-button record-action text-danger" aria-label="Excluir risco" title="Excluir risco">{% include "core/_record_icon.html" with icon="delete" %}</button></form>{% endif %}</div>{% if perms.core.change_risk %}<div id="identificacao" class="record-editor" {% if not identity_form.is_bound and not request.GET.editar_identificacao %}hidden{% endif %}><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="update_identity">{% for field in identity_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Salvar alterações</button></form></div>{% endif %}</div>
           <div class="record-card"><div class="record-content"><strong>{{ risk.occurrence_timing_summary }}</strong>{% if risk.trigger_description %}<p>{{ risk.trigger_description }}</p>{% endif %}{% if perms.core.change_risk %}</div><div class="record-actions"><button type="button" class="icon-button record-action" data-edit-record="exposicao" aria-controls="exposicao" aria-expanded="false" aria-label="Editar momento de ocorrência" title="Editar momento de ocorrência">{% include "core/_record_icon.html" with icon="edit" %}</button></div><div id="exposicao" class="record-editor" {% if not timing_form.is_bound %}hidden{% endif %}><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="update_timing">{% for field in timing_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-hint">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Atualizar condição</button></form></div>{% endif %}</div>
 
@@ -188,5 +181,6 @@
     var hash=location.hash.slice(1);var start=alias[hash]||(find(hash)?hash:'')||byOperation['{{ request.POST.operation|escapejs }}']||'dados';
     if(start){reveal(start);}
   }());</script>
+<script>(function(){var inline=document.querySelector('.risk-timing-inline'),form=document.querySelector('#identificacao form');if(inline&&form){var field=document.createElement('div');field.className='form-field risk-timing-form-field';field.innerHTML='<label>Momento em que pode ocorrer</label><div class="readonly-risk-field"></div>';field.querySelector('.readonly-risk-field').textContent=inline.textContent.trim();var submit=form.querySelector('button[type="submit"]');form.insertBefore(field,submit);inline.hidden=true;}}());</script>
 </div>
 {% endblock %}
