@@ -138,6 +138,8 @@ class Activity(models.Model):
     position = models.PositiveIntegerField(default=0)
     weight = models.DecimalField(max_digits=5, decimal_places=2)
     progress = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    blocker_checked = models.BooleanField(default=False)
+    risk_checked = models.BooleanField(default=False)
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField()
     status = models.CharField(max_length=15, choices=[*StrategicAction.Status.choices, ("PAUSADA", "Pausada")], default=StrategicAction.Status.NOT_STARTED)
@@ -172,9 +174,9 @@ class Activity(models.Model):
 
 class ActivityEvidence(models.Model):
     class EvidenceType(models.TextChoices):
-        ATTACHMENT = "ANEXO", "Documento ou arquivo"
+        ATTACHMENT = "ANEXO", "Documento"
         LINK = "LINK", "Link"
-        PHOTO = "FOTO", "Foto"
+        PHOTO = "FOTO", "Imagem"
         SEI = "SEI", "Referência ao SEI"
         OTHER = "OUTRA", "Outra"
 

@@ -31,7 +31,7 @@
   function bind(form) {
     if (form.method.toLowerCase() !== 'post' || !fields(form).length) { return; }
     var buttons = Array.from(form.elements).filter(function (button) {
-      return button.matches('button[type="submit"], button:not([type]), input[type="submit"]') && !button.disabled;
+      return form.contains(button) && button.matches('button[type="submit"], button:not([type]), input[type="submit"]') && !button.disabled;
     });
     if (!buttons.length) { return; }
     var initial = snapshot(form);

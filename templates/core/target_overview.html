@@ -27,8 +27,7 @@
     </label>
 <label>Situação<select name="status"><option value="">Todas as situações</option><option value="green" {% if selected_status == "green" %}selected{% endif %}>Meta alcançada</option><option value="yellow" {% if selected_status == "yellow" %}selected{% endif %}>Próximo da meta</option><option value="orange" {% if selected_status == "orange" %}selected{% endif %}>Atingimento parcial</option><option value="red" {% if selected_status == "red" %}selected{% endif %}>Baixo atingimento</option><option value="attention" {% if selected_status == "attention" %}selected{% endif %}>Exigem atenção</option><option value="gray" {% if selected_status == "gray" %}selected{% endif %}>Não aferido</option><option value="unmeasured" {% if selected_status == "unmeasured" %}selected{% endif %}>Não aferido</option></select></label>
     {% if selected_unit %}<input type="hidden" name="unit" value="{{ selected_unit }}">{% endif %}{% if selected_target %}<input type="hidden" name="target" value="{{ selected_target }}">{% endif %}
-    <button class="button button-primary" type="submit">Aplicar filtros</button>
-    <a class="clear-filter" href="{% url 'target_overview' %}">Limpar</a>
+    <a class="button button-primary clear-filter" href="{% url 'target_overview' %}">Limpar</a>
   </form>
 
   <section class="metrics metrics-centered indicator-metrics" aria-label="Resumo da execução das metas">
@@ -64,7 +63,7 @@
   {% endif %}
 
   <section class="panel indicator-list-panel">
-    <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Execução das metas</h2></div><div class="panel-heading-actions"><span class="chip chip-neutral">{{ target_rows|length }} exibida{{ target_rows|length|pluralize:"s" }}</span>{% if can_add_target and target_form %}<button class="button button-primary" type="button" data-open-target-form>Nova meta</button>{% endif %}</div></div>
+    <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Execução das metas</h2></div><div class="panel-heading-actions"><span class="chip chip-neutral">{{ target_rows|length }} exibida{{ target_rows|length|pluralize:"s" }}</span></div></div>
     {% if target_rows %}
       <div class="responsive-table"><table class="indicator-table">
         <thead><tr><th>Meta</th><th>Meta final</th><th>Situação</th><th>Execução</th><th>Vinculada a</th><th>Indicadores</th>{% if can_edit_target %}<th>Ações</th>{% endif %}</tr></thead>
@@ -79,7 +78,7 @@
               <td class="indicator-links-cell">
                 {% for item in row.indicators %}<span><a href="{% url 'indicator_detail' item.indicator.id %}"><strong>{{ item.indicator.code|default:"Indicador" }}</strong></a> {{ item.indicator.name }} <span class="signal signal-{{ item.signal.code }}"><i></i>{{ item.signal.label }}</span></span>{% empty %}<span class="muted-text">Nenhum indicador vinculado</span>{% endfor %}
               </td>
-              {% if can_edit_target %}<td><a class="text-button" href="?{% if selected_plan %}plan={{ selected_plan }}&amp;{% endif %}{% if selected_objective %}objective={{ selected_objective }}&amp;{% endif %}editar={{ target.id }}">Editar</a></td>{% endif %}
+              {% if can_edit_target %}<td></td>{% endif %}
             </tr>
           {% endwith %}{% endfor %}
         </tbody>

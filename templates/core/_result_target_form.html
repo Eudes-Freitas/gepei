@@ -1,12 +1,19 @@
   {% if target_form %}
-  <dialog closedby="none" class="panel activity-form-panel" id="target-form" aria-labelledby="target-form-title" {% if target_form.errors or editing_target %}data-open-on-load{% endif %}>
+  <dialog closedby="none" class="panel activity-form-panel target-form-dialog" id="target-form" aria-labelledby="target-form-title" {% if target_form.errors or editing_target %}data-open-on-load{% endif %}>
     <div class="dialog-heading"><div><p class="eyebrow">{% if editing_target %}Editar meta{% else %}Nova meta{% endif %}</p><h2 id="target-form-title">{% if editing_target %}Alterar {{ editing_target.code|default:"meta" }}{% else %}Cadastrar meta{% endif %}</h2></div><button class="icon-button dialog-close" type="button" data-close-target-form aria-label="Fechar">×</button></div>
     <p class="form-hint">A meta fica vinculada a um objetivo do plano e pode ser medida por um ou mais indicadores.</p>
     <form method="post" class="activity-form">{% csrf_token %}
       {% if editing_target %}<input type="hidden" name="target_id" value="{{ editing_target.id }}">{% endif %}
       {% for field in target_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}
-      <div class="form-buttons"><button class="button button-primary" type="submit">{% if editing_target %}Salvar alterações{% else %}Cadastrar meta{% endif %}</button></div>
+      <div class="form-buttons">{% if can_add_indicator and not editing_target %}<button class="button button-secondary" type="button" data-open-indicator-create>Cadastrar novo indicador</button>{% endif %}<button class="button button-primary" type="submit">{% if editing_target %}Salvar alterações{% else %}Cadastrar meta{% endif %}</button></div>
     </form>
     <script>(function(){var dialog=document.getElementById('target-form');var open=document.querySelector('[data-open-target-form]');if(open){open.addEventListener('click',function(){dialog.showModal();});}dialog.querySelectorAll('[data-close-target-form]').forEach(function(b){b.addEventListener('click',function(){dialog.close();});});if(dialog.hasAttribute('data-open-on-load')){dialog.showModal();}}());</script>
   </dialog>
+  {% endif %}
+  {% if indicator_form %}<dialog closedby="none" class="panel activity-form-panel indicator-create-dialog" id="indicator-create-form" aria-labelledby="indicator-create-title" {% if indicator_form.errors %}data-open-on-load{% endif %}>
+    <div class="dialog-heading"><div><p class="eyebrow">Novo indicador</p><h2 id="indicator-create-title">Cadastrar indicador</h2></div><button class="icon-button dialog-close" type="button" data-close-indicator-create aria-label="Fechar">×</button></div>
+    <p class="form-hint">Preencha a identificação, definição, linha de base, responsabilidades e vínculos do indicador.</p>
+    <form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="create_indicator">{% for field in indicator_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}<div class="form-buttons"><button class="button button-primary" type="submit">Cadastrar indicador</button></div></form>
+  </dialog>
+  <script>(function(){var target=document.getElementById('target-form'),indicator=document.getElementById('indicator-create-form');if(target){var open=document.querySelector('[data-open-target-form]');if(open){open.addEventListener('click',function(){target.showModal();});}target.querySelectorAll('[data-close-target-form]').forEach(function(button){button.addEventListener('click',function(){target.close();});});if(target.hasAttribute('data-open-on-load')){target.showModal();}}if(indicator){var openIndicator=document.querySelector('[data-open-indicator-create]');if(openIndicator){openIndicator.addEventListener('click',function(){if(target){target.close();}indicator.showModal();});}var close=indicator.querySelector('[data-close-indicator-create]');if(close){close.addEventListener('click',function(){indicator.close();});}if(indicator.hasAttribute('data-open-on-load')){indicator.showModal();}}}());</script>
   {% endif %}

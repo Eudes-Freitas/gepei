@@ -105,13 +105,21 @@
 
 <script>
 (function () {
+  function toggleFacts(section) {
+    var content=section.querySelector('[data-facts-content]');
+    var button=section.querySelector('[data-toggle-facts]');
+    var expanded=button.getAttribute('aria-expanded')==='true';
+    content.hidden=expanded;
+    section.querySelectorAll('[data-toggle-facts]').forEach(function(item){item.setAttribute('aria-expanded',String(!expanded));item.textContent=expanded?'+ Expandir':'− Recolher';});
+    var heading=section.querySelector('[data-toggle-facts-header]');if(heading){heading.setAttribute('aria-expanded',String(!expanded));}
+  }
+  document.querySelectorAll('[data-toggle-facts-header]').forEach(function(heading){
+    heading.addEventListener('click',function(event){if(event.target.closest('button,a')){return;}toggleFacts(heading.closest('[data-collapsible-facts]'));});
+    heading.addEventListener('keydown',function(event){if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleFacts(heading.closest('[data-collapsible-facts]'));}});
+  });
   document.querySelectorAll('[data-toggle-facts]').forEach(function (button) {
     button.addEventListener('click', function () {
-      var content = button.closest('[data-collapsible-facts]').querySelector('[data-facts-content]');
-      var expanded = button.getAttribute('aria-expanded') === 'true';
-      content.hidden = expanded;
-      button.setAttribute('aria-expanded', String(!expanded));
-      button.textContent = expanded ? 'Expandir' : 'Recolher';
+      toggleFacts(button.closest('[data-collapsible-facts]'));
     });
   });
 }());

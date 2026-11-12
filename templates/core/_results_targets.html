@@ -32,7 +32,7 @@
   {% endif %}
 
   <section class="panel indicator-list-panel">
-    <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Execução das metas</h2></div><div class="panel-heading-actions"><span class="chip chip-neutral">{{ target_rows|length }} exibida{{ target_rows|length|pluralize:"s" }}</span>{% if can_add_target and target_form %}<button class="button button-primary" type="button" data-open-target-form>Nova meta</button>{% endif %}</div></div>
+    <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Execução das metas</h2></div><div class="panel-heading-actions"><span class="chip chip-neutral">{{ target_rows|length }} exibida{{ target_rows|length|pluralize:"s" }}</span></div></div>
     {% if target_rows %}
       <div class="responsive-table"><table class="indicator-table">
         <thead><tr><th>Meta</th><th>Meta final</th><th>Situação</th><th>Execução</th><th>Vinculada a</th><th>Indicadores</th>{% if can_edit_target %}<th>Ações</th>{% endif %}</tr></thead>

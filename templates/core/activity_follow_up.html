@@ -41,13 +41,12 @@
 
   <section class="follow-up-grid">
     <article class="panel follow-up-panel" id="execucao" data-activity-section="execucao">
-      <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Execução da atividade</h2></div><span class="chip chip-{{ activity.status|lower }}">{{ activity.get_status_display }}</span></div>
-      {% if perms.core.change_activity %}<form method="post" class="activity-form">{% csrf_token %}
+      <div class="panel-heading"><div><p class="eyebrow">Acompanhamento</p><h2>Execução da atividade</h2></div></div>
+      {% if perms.core.change_activity and activity.status != 'CONCLUIDA' %}<form method="post" class="activity-form" id="activity-progress-form">{% csrf_token %}
         <input type="hidden" name="operation" value="update_progress">
         <div class="form-field">{{ progress_form.progress.label_tag }}{{ progress_form.progress }}{% if progress_form.progress.errors %}<small class="field-error">{{ progress_form.progress.errors|striptags }}</small>{% endif %}</div>
-        <p class="form-hint">Para chegar a 100% e concluir a atividade, registre uma evidência com anexo.</p>
-        <button class="button button-primary" type="submit">Salvar execução</button>
-      </form>{% endif %}
+        <p class="form-hint{% if request.GET.missing_attachment %} field-error{% endif %}">Para chegar a 100% e concluir a atividade, registre uma evidência com anexo.</p>
+      </form>{% elif activity.status == 'CONCLUIDA' %}<p class="form-hint">Atividade concluída · {{ activity.progress|floatformat:"-1" }}% de execução.</p>{% endif %}
     </article>
 
     <article class="panel follow-up-panel" id="evidencias" data-activity-section="execucao">
@@ -68,7 +67,7 @@
                 <input type="hidden" name="operation" value="edit_evidence"><input type="hidden" name="evidence_id" value="{{ evidence.pk }}">
                 {% for field in edit_evidence_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}
                 {{ edit_evidence_form.non_field_errors }}
-                <div class="form-buttons"><button type="submit" class="button button-primary">Salvar alterações</button><a class="button button-secondary" href="{% url 'activity_follow_up' action.pk activity.pk %}#evidencias">Cancelar</a></div>
+                <div class="form-buttons"><button type="submit" class="button button-primary">Salvar alterações</button>{% if evidence.attachment %}<button type="submit" class="button button-danger" formnovalidate onclick="if (!confirm('Remover esta evidência cadastrada?')) return false; this.form.elements.operation.value='delete_evidence';">Remover evidência</button>{% endif %}<a class="button button-secondary" href="{% url 'activity_follow_up' action.pk activity.pk %}#evidencias">Cancelar</a></div>
               </form>{% endif %}
             </div>
           {% endfor %}
@@ -83,6 +82,7 @@
 
     <article class="panel follow-up-panel" id="impedimentos" data-activity-section="impedimentos">
       <div class="panel-heading"><div><p class="eyebrow">Desbloqueio</p><h2>Impedimentos</h2></div></div>
+      {% if request.GET.required_section == 'impedimentos' %}<p class="field-error" role="alert">É obrigatório informar se houve impedimento antes de concluir a atividade.</p>{% endif %}
       {% if not can_view.blockers %}<div class="empty-state" role="alert"><strong>Sem permissão.</strong><span>Você não tem permissão para visualizar os impedimentos.</span></div>
       {% else %}{% if blockers %}
         <div class="record-list">
@@ -104,29 +104,30 @@
           {% endfor %}
         </div>
       {% else %}<div class="empty-state"><span>Nenhum impedimento registrado.</span></div>{% endif %}
-      {% if perms.core.add_activityblocker %}<details class="entry-form">
-        <summary>Registrar impedimento</summary>
-        <form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_blocker">{% for field in blocker_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}<button class="button button-primary" type="submit">Registrar impedimento</button></form>
+      {% if perms.core.add_activityblocker %}<details class="entry-form" {% if blocker_form.errors %}open{% endif %}>
+        <summary>Informar impedimento</summary>
+        <form method="post" class="activity-form" data-blocker-form>{% csrf_token %}<input type="hidden" name="operation" value="add_blocker"><div class="form-field"><label for="blocker-occurred">Houve impedimento?</label><select id="blocker-occurred" name="blocker_choice" data-blocker-choice><option value="">Selecione</option><option value="nao" {% if activity.blocker_checked and not blockers %}selected{% endif %}>Não</option><option value="sim" {% if blocker_form.errors %}selected{% endif %}>Sim</option></select></div><div data-blocker-details {% if not blocker_form.errors %}hidden{% endif %}>{% for field in blocker_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}</div><button class="button button-primary" type="submit" data-blocker-submit {% if not blocker_form.errors %}hidden{% endif %}>Salvar impedimento</button></form>
       </details>{% endif %}{% endif %}
     </article>
 
     <article class="panel follow-up-panel" id="riscos" data-activity-section="riscos">
       <div class="panel-heading"><div><p class="eyebrow">Prevenção</p><h2>Riscos da atividade</h2></div></div>
+      {% if request.GET.required_section == 'riscos' %}<p class="field-error" role="alert">É obrigatório informar se houve risco antes de concluir a atividade.</p>{% endif %}
       {% if not can_view.risks %}<div class="empty-state" role="alert"><strong>Sem permissão.</strong><span>Você não tem permissão para visualizar os riscos.</span></div>
       {% else %}
         <div class="record-list">
           {% for risk in risks %}
             <div class="record-card follow-up-editable-card"><div class="record-content">
               <div class="record-card-heading"><strong>{{ risk.title }}</strong><span class="risk-score {% if risk.level >= 15 %}risk-critical{% elif risk.level >= 10 %}risk-high{% else %}risk-medium{% endif %}">{{ risk.level }}</span></div>
-              <span class="risk-status-highlight {% if risk.status == 'MATERIALIZADO' %}risk-status-materialized{% endif %}">{{ risk.get_status_display }}</span>
               {% if risk.is_unforeseen %}<span class="chip chip-warning">Risco não previsto</span>{% endif %}
               <p><strong>Causa:</strong> {{ risk.cause }}</p>
               <p><strong>Momento do risco:</strong> {{ risk.occurrence_timing_summary|default:"Não informado" }}{% if risk.trigger_description %} · {{ risk.trigger_description }}{% endif %}</p>
-              {% if perms.core.view_risktreatment %}{% for treatment in risk.treatments.all %}<div class="activity-treatment-card"><strong>Tratamento previsto · {{ treatment.get_decision_display }}</strong>{% if treatment.preventive_measure %}<p><strong>Medida preventiva:</strong> {{ treatment.preventive_measure }}</p>{% endif %}{% if treatment.contingency_measure %}<p><strong>Contingência:</strong> {{ treatment.contingency_measure }}</p>{% endif %}</div>{% endfor %}{% endif %}
-              </div>{% if perms.core.change_risk and not request.read_only_other_unit %}<div class="record-actions"><a class="icon-button record-action" href="{% url 'risk_detail' action.pk risk.pk %}?editar_identificacao=1#dados" title="Editar risco" aria-label="Editar risco">{% include "core/_record_icon.html" with icon="edit" %}</a></div>{% endif %}
+              {% if perms.core.view_risktreatment %}{% for treatment in risk.treatments.all %}<p><strong>Tratamento previsto:</strong> {{ treatment.get_decision_display }}</p>{% if treatment.due_date %}<p><strong>Prazo do tratamento:</strong> {{ treatment.due_date|date:"d/m/Y" }}</p>{% endif %}{% if treatment.preventive_measure %}<p><strong>Medida preventiva:</strong> {{ treatment.preventive_measure }}</p>{% endif %}{% if treatment.contingency_measure %}<p><strong>Contingência:</strong> {{ treatment.contingency_measure }}</p>{% endif %}{% endfor %}{% endif %}
+              </div>{% if perms.core.change_risk or perms.core.delete_risk %}<div class="record-actions"><span class="risk-status-compact {% if risk.status == 'MATERIALIZADO' %}risk-status-materialized{% endif %}">{{ risk.get_status_display }}</span>{% if perms.core.change_risk and not request.read_only_other_unit %}<a class="icon-button record-action" href="{% url 'risk_detail' action.pk risk.pk %}?editar_identificacao=1#dados" title="Editar risco" aria-label="Editar risco">{% include "core/_record_icon.html" with icon="edit" %}</a>{% endif %}{% if perms.core.delete_risk and not request.read_only_other_unit %}<form method="post" action="{% url 'risk_detail' action.pk risk.pk %}" onsubmit="return confirm('Excluir este risco e todos os registros vinculados a ele?');">{% csrf_token %}<input type="hidden" name="operation" value="delete_risk"><button class="icon-button record-action text-danger" type="submit" title="Excluir risco" aria-label="Excluir risco">{% include "core/_record_icon.html" with icon="delete" %}</button></form>{% endif %}</div>{% endif %}
             </div>
           {% empty %}<div class="empty-state"><span>Nenhum risco vinculado à atividade.</span></div>{% endfor %}
         </div>
+      {% if perms.core.add_risk and not request.read_only_other_unit %}<details class="entry-form" {% if create_risk_form.errors %}open{% endif %}><summary>Cadastrar risco</summary><form method="post" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="create_risk"><input type="hidden" name="risk-create-action" value="{{ action.pk }}"><input type="hidden" name="risk-create-activity" value="{{ activity.pk }}">{% for field in create_risk_form %}{% if field.name != 'action' and field.name != 'activity' and field.name != 'register_another' %}{% include "core/_form_field.html" with field=field %}{% endif %}{% endfor %}<button class="button button-primary" type="submit">Cadastrar risco</button></form></details>{% endif %}
       {% if perms.core.add_risk or perms.core.change_risk %}<details class="entry-form" {% if risk_report_form.is_bound or request.GET.new %}open{% endif %}>
         <summary>Informar risco</summary>
         {% include "core/_registered_risks.html" %}
@@ -140,7 +141,6 @@
           {% if perms.core.add_risk %}<fieldset data-unforeseen-risk hidden disabled><legend>Risco não previsto</legend><p class="form-hint">Preencha os dados somente se este risco ainda não estiver cadastrado para a ação.</p>{% for field in unforeseen_form %}{% if field.name != "register_another" %}{% include "core/_form_field.html" with field=field %}{% endif %}{% endfor %}</fieldset>{% endif %}
           <a data-occurrence-attachment hidden target="_blank" rel="noopener">Abrir anexo da evidência do risco</a>
           <fieldset data-risk-occurrence hidden disabled><legend>Materialização do risco</legend>{% for field in occurrence_form %}{% if field.name == "measure_source" %}<div class="activity-measure-choice" data-measure-choice hidden><strong>Qual providência foi adotada?</strong><p data-planned-measure></p>{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% elif field.name == "actions_taken" %}<div class="form-field" data-actions-taken>{{ field.label_tag }}{{ field }}<small class="form-hint">Você pode ajustar a sugestão para descrever exatamente o que foi feito.</small>{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% elif field.name != "evidence_reference" and field.name != "evidence_attachment" %}{% include "core/_form_field.html" with field=field %}{% endif %}{% endfor %}</fieldset>
-          <div class="form-buttons"><button class="button button-primary" type="submit">Salvar informação do risco</button>{% if perms.core.add_risk %}<button class="button button-secondary" type="submit" name="unforeseen-register_another" value="on" data-register-another-risk>Cadastrar outro risco</button>{% endif %}</div>
           </div>
         </form>
         {{ risk_prefill|json_script:"activity-risk-prefill" }}
@@ -177,22 +177,23 @@
             }
             updateMeasure(load,saved);
             var unforeseen=form.querySelector('[data-unforeseen-risk]');
-            if(unforeseen){unforeseen.hidden=!!risk.value;unforeseen.disabled=!!risk.value;}
-            var another=form.querySelector("[data-register-another-risk]");if(another){another.hidden=!!risk.value;}
+            if(unforeseen){unforeseen.hidden=risk.value!=='NOVO';unforeseen.disabled=risk.value!=='NOVO';}
+            var another=form.querySelector("[data-register-another-risk]");if(another){another.hidden=risk.value!=='NOVO';}
             var attachment=form.querySelector('[data-occurrence-attachment]');
             attachment.hidden=!(saved&&saved.attachment_url);
             if(saved&&saved.attachment_url){attachment.href=saved.attachment_url;}else{attachment.removeAttribute('href');}
             var existing=saved&&saved.has_occurrence;
             var show=materialized.value==='SIM';
+            var container=form.closest('details');if(container){container.open=true;}
             reportDetails.hidden=!show;
             if(load){edit.checked=!!(existing&&saved.can_edit);}
-            occurrence.hidden=!show||(existing&&!saved.can_view);
-            occurrence.disabled=!show||(existing&&!edit.checked);
+            occurrence.hidden=!show||!risk.value||risk.value==='NOVO'||(existing&&!saved.can_view);
+            occurrence.disabled=!show||!risk.value||risk.value==='NOVO'||(existing&&!edit.checked);
             notice.hidden=!(show&&existing);
             notice.textContent=existing&&!saved.can_view?'Materialização já registrada. Sem permissão para visualizar seus detalhes.':existing&&!saved.can_edit?'Dados já cadastrados. Sem permissão para editar.':'Dados da ocorrência carregados. Você pode editar a providência e os demais campos antes de salvar.';
           }
           risk.addEventListener('change',function(){update(true);});
-          materialized.addEventListener('change',function(){update(false);});
+          materialized.addEventListener('change',function(event){event.stopPropagation();var panel=form.closest('details');if(panel){panel.open=true;}update(false);if(materialized.value==='SIM'){reportDetails.hidden=false;reportDetails.style.display='block';}});
           measureSources.forEach(function(field){field.addEventListener('change',function(){var saved=data[risk.value];if(field.value==='NOVA'){actionsTaken.value=saved.occurrence.measure_source==='NOVA'?saved.occurrence.actions_taken:'';}else{actionsTaken.value=saved.occurrence.measure_source==='PREVISTA'?saved.occurrence.actions_taken:saved.planned_measure;}updateMeasure(false,saved);actionsTaken.focus();});});
           update({% if risk_report_form.is_bound %}false{% else %}true{% endif %});
           {% if request.GET.new %}var next=form.parentElement.querySelector("[data-next-risk]");if(next){next.scrollIntoView({block:"start"});next.focus({preventScroll:true});}{% endif %}
@@ -200,6 +201,37 @@
       </details>{% endif %}{% endif %}
     </article>
   </section>
+  <div class="form-buttons activity-save-actions"><button class="button button-primary" type="{% if perms.core.change_activity and activity.status != 'CONCLUIDA' %}submit{% else %}button{% endif %}" {% if perms.core.change_activity and activity.status != 'CONCLUIDA' %}form="activity-progress-form"{% endif %} id="save-activity-cards">Salvar alterações da atividade</button></div>
+  <script>(function(){
+    var button=document.getElementById('save-activity-cards');
+    var operations=['add_blocker','edit_blocker','create_risk','report_risk','add_evidence','edit_evidence','update_progress'];
+    var changed=new Set();
+    document.querySelectorAll('.follow-up-grid form').forEach(function(form){
+      var operation=form.querySelector('[name="operation"]');
+      if(!operation||!operations.includes(operation.value))return;
+      form.addEventListener('input',function(){changed.add(form);});
+      form.addEventListener('change',function(){changed.add(form);});
+    });
+    button.addEventListener('click',async function(event){
+      var forms=Array.from(changed).filter(function(form){return form.isConnected&&form.querySelector('[name="operation"]');}).sort(function(a,b){return operations.indexOf(a.querySelector('[name="operation"]').value)-operations.indexOf(b.querySelector('[name="operation"]').value);});
+      if(forms.length===1&&forms[0].querySelector('[name="operation"]').value==='update_progress'&&button.type==='submit')return;
+      event.preventDefault();
+      if(!forms.length)return;
+      button.disabled=true;
+      try{
+        for(var form of forms.slice(0,-1)){
+          if(form.hasAttribute('data-blocker-form')&&!form.querySelector('[data-blocker-choice]').value)continue;
+          if(!form.reportValidity())return;
+          var response=await fetch(form.action||location.href,{method:'POST',body:new FormData(form),credentials:'same-origin'});
+          if(!response.ok||!response.redirected){document.open();document.write(await response.text());document.close();return;}
+        }
+        var finalForm=forms[forms.length-1];
+        if(finalForm.hasAttribute('data-blocker-form')&&!finalForm.querySelector('[data-blocker-choice]').value)return;
+        if(!finalForm.reportValidity())return;
+        finalForm.requestSubmit();
+      }finally{button.disabled=false;}
+    });
+  }());</script>
 <script>
   (function () {
     var links = document.querySelectorAll('.activity-workspace-nav a');
@@ -230,5 +262,6 @@
   }());
 </script>
 <script>(function(){document.querySelectorAll('[name$="has_expected_resolution"]').forEach(function(toggle){var form=toggle.closest('form'),date=form&&form.querySelector('[name$="expected_resolution_date"]'),field=date&&date.closest('.form-field');function update(){var yes=toggle.value==='sim';if(field){field.hidden=!yes;}if(date){date.required=yes;if(!yes){date.value='';}}}toggle.addEventListener('change',update);update();});}());</script>
+<script>(function(){var form=document.querySelector('[data-blocker-form]');if(!form)return;var choice=form.querySelector('[data-blocker-choice]'),details=form.querySelector('[data-blocker-details]'),submit=form.querySelector('[data-blocker-submit]');function update(){var yes=choice.value==='sim';details.hidden=!yes;submit.hidden=!yes;details.querySelectorAll('input,select,textarea').forEach(function(field){field.disabled=!yes;});}choice.addEventListener('change',update);update();form.addEventListener('submit',function(event){if(!choice.value){event.preventDefault();}});}());</script>
 </div>
 {% endblock %}

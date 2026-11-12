@@ -24,13 +24,11 @@
     <label>Status
       <select name="status"><option value="">Todos os status</option>{% for code, label in actions_status_choices %}<option value="{{ code }}" {% if selected_status == code %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
     </label>
-    <button class="button button-primary" type="submit">Aplicar filtros</button>
-    <a class="clear-filter" href="{% url 'action_plan_list' %}">Limpar</a>
+    <a class="button button-primary clear-filter" href="{% url 'action_plan_list' %}">Limpar</a>
   </form>
 
-  <nav class="execution-view-switch" aria-label="Visualização da execução">
-    <a class="button {% if display_mode == 'columns' %}button-primary{% else %}button-secondary{% endif %}" href="{{ columns_url }}" {% if display_mode == 'columns' %}aria-current="true"{% endif %}>Colunas</a>
-    <a class="button {% if display_mode == 'list' %}button-primary{% else %}button-secondary{% endif %}" href="{{ list_url }}" {% if display_mode == 'list' %}aria-current="true"{% endif %}>Listagem</a>
+  <nav class="execution-view-switch" aria-label="Alternar visualização">
+    {% if display_mode == 'columns' %}<a class="view-toggle-icon" href="{{ list_url }}" title="Alternar para listagem" aria-label="Alternar para listagem">☷</a>{% else %}<a class="view-toggle-icon" href="{{ columns_url }}" title="Alternar para colunas" aria-label="Alternar para colunas">▦</a>{% endif %}
   </nav>
   {% if display_mode == "list" %}
     <section class="panel execution-list" aria-label="Listagem de planos de ação">

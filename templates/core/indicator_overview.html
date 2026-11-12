@@ -6,19 +6,17 @@
     <div>
       <p class="eyebrow">Monitoramento de resultados</p>
       <h1>Metas e indicadores</h1>
-      <p>Consulte a meta, a ficha do indicador, o gráfico e o histórico de aferições juntos, abaixo.</p>
     </div>
     {% if plan %}<span class="chip chip-neutral">{{ plan.acronym }} · {{ plan.start_date|date:"Y" }}–{{ plan.end_date|date:"Y" }}</span>{% endif %}
   </section>
 
   {% include "core/_results_status_legend.html" %}
-
   <form class="dashboard-filters results-filters" method="get" action="{% if perms.core.view_indicator %}{% url 'indicator_overview' %}{% else %}{% url 'target_overview' %}{% endif %}" aria-label="Filtros dos indicadores">
     <label>Ano
-      <select name="year" onchange="if(!this.value) this.form.elements.quarter.value=''; if(this.form.elements.indicator) this.form.elements.indicator.value=''; this.form.requestSubmit()"><option value="">Todos os anos</option>{% for year in available_years %}<option value="{{ year }}" {% if selected_year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>{% endfor %}</select>
+      <select name="year" onchange="if(!this.value) this.form.elements.quarter.value=''; if(this.form.elements.indicator) this.form.elements.indicator.value='';"><option value="">Todos os anos</option>{% for year in available_years %}<option value="{{ year }}" {% if selected_year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>{% endfor %}</select>
     </label>
     <label>Período
-      <select name="quarter" onchange="this.form.requestSubmit()">
+      <select name="quarter">
         <option value="">{% if selected_year %}Ano completo{% else %}Período total{% endif %}</option>
         <option value="1" {% if selected_quarter == "1" %}selected{% endif %}>1º trimestre · jan–mar</option>
         <option value="2" {% if selected_quarter == "2" %}selected{% endif %}>2º trimestre · abr–jun</option>
@@ -27,16 +25,16 @@
       </select>
     </label>
     <label>Plano
-      <select name="plan" onchange="this.form.elements.objective.value=''; if(this.form.elements.target) this.form.elements.target.value=''; if(this.form.elements.indicator) this.form.elements.indicator.value=''; this.form.requestSubmit()"><option value="">Todos os planos</option>{% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}</select>
+      <select name="plan" onchange="this.form.elements.objective.value=''; if(this.form.elements.target) this.form.elements.target.value='';if(this.form.elements.indicator) this.form.elements.indicator.value='';"><option value="">Todos os planos</option>{% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}</select>
     </label>
     <label>Unidade responsável
-      <select name="unit" onchange="this.form.elements.objective.value=''; if(this.form.elements.target) this.form.elements.target.value=''; if(this.form.elements.indicator) this.form.elements.indicator.value=''; this.form.requestSubmit()"><option value="">Todas as unidades</option>{% for unit in units %}<option value="{{ unit.id }}" {% if selected_unit == unit.id|stringformat:"s" %}selected{% endif %}>{{ unit.acronym|default:unit.name }}</option>{% endfor %}</select>
+      <select name="unit" onchange="this.form.elements.objective.value=''; if(this.form.elements.target) this.form.elements.target.value='';if(this.form.elements.indicator) this.form.elements.indicator.value='';"><option value="">Todas as unidades</option>{% for unit in units %}<option value="{{ unit.id }}" {% if selected_unit == unit.id|stringformat:"s" %}selected{% endif %}>{{ unit.acronym|default:unit.name }}</option>{% endfor %}</select>
     </label>
     <label class="filter-wide">Objetivo estratégico
-      <select name="objective" onchange="if(this.form.elements.target) this.form.elements.target.value=''; if(this.form.elements.indicator) this.form.elements.indicator.value=''; this.form.requestSubmit()"><option value="">Todos os objetivos</option>{% for objective in objectives %}<option value="{{ objective.id }}" {% if selected_objective == objective.id|stringformat:"s" %}selected{% endif %}>{{ objective.code }} · {{ objective.title }}</option>{% endfor %}</select>
+      <select name="objective" onchange="if(this.form.elements.target) this.form.elements.target.value='';if(this.form.elements.indicator) this.form.elements.indicator.value='';"><option value="">Todos os objetivos</option>{% for objective in objectives %}<option value="{{ objective.id }}" {% if selected_objective == objective.id|stringformat:"s" %}selected{% endif %}>{{ objective.code }} · {{ objective.title }}</option>{% endfor %}</select>
     </label>
     {% if perms.core.view_strategictarget %}<label class="filter-wide">Meta
-      <select name="target" onchange="if(this.form.elements.indicator) this.form.elements.indicator.value=''; this.form.requestSubmit()">
+      <select name="target" onchange="if(this.form.elements.indicator) this.form.elements.indicator.value='';">
         <option value="">Todas as metas</option>
         {% for target in filter_targets %}<option value="{{ target.id }}" {% if selected_target == target.id|stringformat:"s" %}selected{% endif %}>{{ target.code|default:"Meta" }} · {{ target.description }}</option>{% endfor %}
       </select>
@@ -52,14 +50,13 @@
       </select>
     </label>{% endif %}
     {% if perms.core.view_indicator %}<label class="filter-wide">Indicador
-      <select name="indicator" onchange="this.form.requestSubmit()">
+      <select name="indicator">
         <option value="">Todos os indicadores</option>
         {% for indicator in filter_indicators %}<option value="{{ indicator.id }}" {% if selected_indicator == indicator.id|stringformat:"s" %}selected{% endif %}>{{ indicator.code|default:"Indicador" }} · {{ indicator.name }}</option>{% endfor %}
       </select>
     </label>{% endif %}
     <div class="results-filter-actions">
-    <button class="button button-primary" type="submit">Aplicar filtros</button>
-    <a class="clear-filter" href="{% if perms.core.view_indicator %}{% url 'indicator_overview' %}{% else %}{% url 'target_overview' %}{% endif %}">Limpar</a>
+    <a class="button button-primary clear-filter" href="{% if perms.core.view_indicator %}{% url 'indicator_overview' %}{% else %}{% url 'target_overview' %}{% endif %}">Limpar</a>
     </div>
   </form>
 
@@ -77,13 +74,12 @@
   {% include "core/_results_page_map.html" %}
 
   <section aria-label="Metas e indicadores detalhados">
-    <div class="panel-heading"><h2>Metas e indicadores</h2>{% if can_add_target and target_form %}<button class="button button-primary" type="button" data-open-target-form>Nova meta</button>{% endif %}</div>
+    <div class="panel-heading"></div>
     {% for row in indicator_rows %}{% include "core/_result_indicator_card.html" %}{% empty %}<div class="panel empty-state"><strong>Nenhum indicador encontrado.</strong><span>Altere os filtros para consultar outros registros.</span></div>{% endfor %}
   </section>
   {% endif %}
   {% if perms.core.view_strategictarget %}
     {% if not perms.core.view_indicator %}<section class="metrics" aria-label="Período de visualização"><article class="metric-card"><span>Período</span><strong class="metric-text-value">{{ period_kind }}</strong><small>{{ period_label }}</small></article></section>{% include "core/_results_page_map.html" %}{% endif %}
-    {% if not perms.core.view_indicator and can_add_target and target_form %}<button class="button button-primary" type="button" data-open-target-form>Nova meta</button>{% endif %}
     {% for target in standalone_targets %}<article class="panel"><h2>{{ target.code|default:"Meta" }}</h2>{% include "core/_result_target_facts.html" %}<p class="form-hint">Sem indicador exibido neste recorte.</p></article>{% endfor %}
     {% include "core/_result_target_form.html" %}
   {% endif %}

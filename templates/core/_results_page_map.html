@@ -1,22 +1,11 @@
 {% if navigation_targets or navigation_unlinked_indicators %}
-<details class="results-page-map">
-  <summary>Navegar por metas e indicadores</summary>
-  <nav aria-label="Índice de metas e indicadores" class="results-target-index">
-    {% for item in navigation_targets %}
-    <details class="results-target-index-item">
-      <summary><strong>{{ item.target.code|default:"Meta" }}</strong> · {{ item.target.description }}</summary>
-      <ul>
-        {% for indicator in item.indicators %}<li><a href="#indicador-{{ indicator.id }}">{{ indicator.code|default:"Indicador" }} · {{ indicator.name }}</a></li>
-        {% empty %}<li><a href="#meta-{{ item.target.id }}">Ver detalhes da meta</a><span class="muted-text"> · Sem indicador exibido neste recorte.</span></li>{% endfor %}
-      </ul>
-    </details>
-    {% endfor %}
-    {% if navigation_unlinked_indicators %}
-    <details class="results-target-index-item">
-      <summary>Indicadores sem meta exibida</summary>
-      <ul>{% for indicator in navigation_unlinked_indicators %}<li><a href="#indicador-{{ indicator.id }}">{{ indicator.code|default:"Indicador" }} · {{ indicator.name }}</a></li>{% endfor %}</ul>
-    </details>
-    {% endif %}
+<details class="report-section-map results-page-map">
+  <summary>Mapa do relatório</summary>
+  <nav aria-label="Mapa de metas e indicadores" class="results-target-index">
+    {% for objective in objectives %}<details class="results-map-objective"><summary><strong>{{ objective.code }}</strong> {{ objective.title }}</summary><ul>
+        {% for item in navigation_targets %}{% if item.target.artifact_id == objective.id %}<li><details class="results-map-target"><summary><strong>{{ item.target.code|default:"Meta" }}</strong> {{ item.target.description }}</summary><ul>{% for indicator in item.indicators %}<li><a href="#indicador-{{ indicator.id }}">{{ indicator.code|default:"Indicador" }} {{ indicator.name }}</a></li>{% empty %}<li><a href="#meta-{{ item.target.id }}">Ver detalhes da meta</a><span class="muted-text"> · Sem indicador exibido neste recorte.</span></li>{% endfor %}</ul></details></li>{% endif %}{% endfor %}
+      </ul></details>{% endfor %}
+      {% if navigation_unlinked_indicators %}<details class="results-map-objective"><summary>Indicadores sem meta</summary><ul>{% for indicator in navigation_unlinked_indicators %}<li><a href="#indicador-{{ indicator.id }}">{{ indicator.code|default:"Indicador" }} · {{ indicator.name }}</a></li>{% endfor %}</ul></details>{% endif %}
   </nav>
 </details>
 {% endif %}

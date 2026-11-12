@@ -103,6 +103,37 @@ class IndicatorDefinitionForm(forms.ModelForm):
         widgets = {"formula": forms.Textarea(attrs={"rows": 3})}
 
 
+class IndicatorCreateForm(forms.ModelForm):
+    artifacts = forms.ModelMultipleChoiceField(queryset=PlanArtifact.objects.none(), required=True, label="Objetivos e projetos vinculados")
+    responsible_units = forms.ModelMultipleChoiceField(queryset=OrganizationalUnit.objects.none(), required=False, label="Setores responsáveis")
+    targets = forms.ModelMultipleChoiceField(queryset=StrategicTarget.objects.none(), required=False, label="Metas vinculadas")
+
+    class Meta:
+        model = Indicator
+        fields = ["code", "name", "indicator_type", "description", "formula", "unit_of_measure", "data_source", "frequency", "direction", "baseline", "responsible_unit"]
+        labels = {"code":"Código", "name":"Nome do indicador", "indicator_type":"Tipo", "description":"Objetivo do indicador", "formula":"Fórmula", "unit_of_measure":"Unidade de medida", "data_source":"Fonte de dados", "frequency":"Periodicidade", "direction":"Sentido esperado", "baseline":"Linha de base", "responsible_unit":"Unidade responsável"}
+        widgets = {"description":forms.Textarea(attrs={"rows":2}), "formula":forms.Textarea(attrs={"rows":2})}
+
+    def __init__(self, *args, plan, units, targets=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        artifacts = PlanArtifact.objects.filter(plan=plan, artifact_type__in=[PlanArtifact.ArtifactType.OBJECTIVE, PlanArtifact.ArtifactType.PROJECT]).order_by("code", "title")
+        self.fields["artifacts"].queryset = artifacts
+        self.fields["artifacts"].label_from_instance = lambda item: f"{item.code} · {item.title}"
+        self.fields["responsible_unit"].queryset = units
+        self.fields["responsible_units"].queryset = units
+        self.fields["targets"].queryset = targets if targets is not None else StrategicTarget.objects.filter(artifact__plan=plan)
+        self.fields["targets"].required = False
+        self.fields["responsible_unit"].required = False
+
+    def save(self, commit=True):
+        indicator = super().save(commit=commit)
+        if commit:
+            indicator.artifacts.set(self.cleaned_data["artifacts"])
+            indicator.responsible_units.set(self.cleaned_data["responsible_units"])
+            indicator.targets.set(self.cleaned_data["targets"])
+        return indicator
+
+
 class IndicatorMeasurementForm(forms.ModelForm):
     measurement_date = forms.DateField(label="Data da aferição", widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}))
 
@@ -430,9 +461,19 @@ class ActivityProgressForm(forms.ModelForm):
             raise forms.ValidationError("Informe um percentual inteiro, com até três dígitos.")
         if progress == 100 and not self.instance.evidences.exclude(attachment="").exists():
             raise forms.ValidationError("Para concluir a atividade, registre ao menos uma evidência com anexo.")
-        if progress == 100 and not (self.instance.risks.exists() or self.instance.risk_non_occurrences.exists()):
+        if progress == 100 and not (self.instance.blocker_checked or self.instance.blockers.exists()):
+            raise forms.ValidationError("Para concluir a atividade, informe se houve impedimento.")
+        if progress == 100 and not self.instance.risk_checked:
             raise forms.ValidationError("Para concluir a atividade, informe se houve ou não ocorrência de risco.")
         return progress
+
+
+class EvidenceTypeSelect(forms.Select):
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        if value == "":
+            option["attrs"]["disabled"] = True
+        return option
 
 
 class ActivityEvidenceForm(forms.ModelForm):
@@ -443,15 +484,19 @@ class ActivityEvidenceForm(forms.ModelForm):
             "title": "Título da evidência",
             "evidence_type": "Tipo",
             "description": "Descrição",
-            "reference": "Referência ou número do processo SEI",
-            "url": "Link",
-            "attachment": "Anexo (arquivo ou foto)",
+            "reference": "Número do processo SEI",
+            "url": "URL",
+            "attachment": "Anexo",
         }
         widgets = {"description": forms.Textarea(attrs={"rows": 2})}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["attachment"].required = True
+        self.fields["evidence_type"].widget = EvidenceTypeSelect()
+        self.fields["evidence_type"].choices = [("", "Selecione o tipo"), *ActivityEvidence.EvidenceType.choices]
+        self.fields["attachment"].required = not bool(self.instance.pk)
+        if self.instance.pk:
+            self.fields["attachment"].widget = forms.FileInput()
         self.fields["attachment"].help_text = "Obrigatório. Ao salvar a evidência, a atividade será concluída automaticamente com 100% de execução."
 
 
@@ -607,6 +652,7 @@ class ActivityRiskForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["preventive_measure"].required = True
         self.fields["occurrence_timing"].choices = [("", "Selecione quando pode ocorrer"), *Risk.OccurrenceTiming.choices]
         self.initial.setdefault("occurrence_timing", "")
         self.fields["treatment_responsible"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
@@ -695,6 +741,7 @@ class RiskIdentificationForm(forms.ModelForm):
 
     def __init__(self, *args, action_plan, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["preventive_measure"].required = True
         self.fields["activity"].required = True
         self.fields["occurrence_timing"].choices = [("", "Selecione quando pode ocorrer"), *Risk.OccurrenceTiming.choices]
         self.initial.setdefault("occurrence_timing", "")
@@ -725,6 +772,7 @@ class ActivityPlanningRiskForm(RiskIdentificationForm):
 
     def __init__(self, *args, **kwargs):
         forms.ModelForm.__init__(self, *args, **kwargs)
+        self.fields["preventive_measure"].required = True
         self.fields.pop("register_another", None)
         self.fields["occurrence_timing"].choices = [("", "Selecione quando pode ocorrer"), *Risk.OccurrenceTiming.choices]
         self.initial.setdefault("occurrence_timing", "")
@@ -749,6 +797,7 @@ class RiskCreateForm(RiskIdentificationForm):
 
     def __init__(self, *args, actions, **kwargs):
         forms.ModelForm.__init__(self, *args, **kwargs)
+        self.fields["preventive_measure"].required = True
         self.fields["action"].queryset = actions
         self.fields["action"].label_from_instance = lambda action: f"{action.code} · {action.title}"
         self.fields["activity"].required = True
@@ -885,6 +934,7 @@ class RiskMaterializationForm(forms.ModelForm):
     def __init__(self, *args, action=None, **kwargs):
         self.action = action
         super().__init__(*args, **kwargs)
+        self.fields["actions_taken"].required = True
         self.fields["occurred_on"].help_text = "Preencha somente depois que o risco tiver se materializado."
         self.fields["measure_source"].required = False
         self.fields["measure_source"].choices = RiskMaterialization.MeasureSource.choices
@@ -1127,7 +1177,7 @@ class RiskSelectionField(forms.ModelChoiceField):
 
 
 class ActivityRiskReportForm(forms.Form):
-    risk = RiskSelectionField(queryset=Risk.objects.none(), required=False, label="Qual risco?", empty_label="Nenhum risco selecionado")
+    risk = RiskSelectionField(queryset=Risk.objects.none(), required=False, label="Qual risco?", empty_label="Selecione um risco")
     materialized = forms.ChoiceField(label="O risco se materializou?", required=False, choices=(("", "Selecione"), ("SIM", "Sim"), ("NAO", "Não")))
 
     edit_materialization = forms.BooleanField(required=False, label="Atualizar o registro desta ocorrência")
@@ -1137,12 +1187,12 @@ class ActivityRiskReportForm(forms.Form):
         self.fields["risk"].queryset = risks
         self.fields["risk"].label_from_instance = lambda risk: risk.title
         self.fields["risk"].choices = [
-            ("", "Nenhum risco selecionado"),
+            ("", "Selecione um risco"),
             *([("NOVO", "Cadastrar risco não previsto")] if can_create else []),
             *((str(risk.pk), risk.title) for risk in risks),
         ]
         if not can_create:
-            self.fields["risk"].empty_label = "Nenhum risco selecionado"
+            self.fields["risk"].empty_label = "Selecione um risco"
 
     def clean(self):
         data = super().clean()

@@ -6,9 +6,8 @@
     <div>
       <p class="eyebrow">Gestão preventiva</p>
       <h1>Riscos consolidados</h1>
-      <p>Cadastre riscos, associe-os à AE tratada e acompanhe todos em um só lugar. Abra um risco para avaliar, tratar ou registrar uma materialização.</p>
     </div>
-    <div class="heading-actions">{% if has_creatable_actions %}<button class="button button-primary" type="button" data-open-risk-form>Cadastrar risco</button>{% else %}<span class="form-hint">Para cadastrar riscos, inicie o plano de ação de uma AE.</span>{% endif %}</div>
+    {% if has_creatable_actions %}<button class="button button-primary" type="button" data-open-risk-form>Cadastrar novo risco</button>{% endif %}
   </section>
 
   {% include "core/_risk_legend.html" %}
@@ -25,8 +24,7 @@
     <label>Situação
       <select name="status"><option value="">Todas as situações</option>{% for code,label in risk_status_choices %}<option value="{{ code }}" {% if selected_status == code %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
     </label>
-    <button class="button button-primary" type="submit">Aplicar filtros</button>
-    <a class="clear-filter" href="{% url 'risk_overview' %}">Limpar</a>
+    <a class="button button-primary clear-filter" href="{% url 'risk_overview' %}">Limpar</a>
   </form>
 
   <section class="metrics metrics-centered action-detail-metrics">
@@ -51,7 +49,7 @@
           <td><div class="row-actions"><a class="row-icon" href="{% url 'risk_detail' risk.action.id risk.id %}" title="Visualizar risco" aria-label="Visualizar risco">{% include "core/_record_icon.html" with icon="view" %}</a>{% if perms.core.change_risk %}<a class="row-icon" href="{% url 'risk_detail' risk.action.id risk.id %}?editar_identificacao=1#dados" title="Editar risco" aria-label="Editar risco">{% include "core/_record_icon.html" with icon="edit" %}</a>{% endif %}{% if perms.core.delete_risk %}<form method="post" action="{% url 'risk_detail' risk.action.id risk.id %}" onsubmit="return confirm('Excluir este risco e todos os registros vinculados a ele?');">{% csrf_token %}<input type="hidden" name="operation" value="delete_risk"><button class="row-icon row-icon-danger" type="submit" title="Excluir risco" aria-label="Excluir risco">{% include "core/_record_icon.html" with icon="delete" %}</button></form>{% endif %}</div></td>
         </tr>{% endfor %}
       </tbody></table></div>
-    {% else %}<div class="empty-state large-empty"><strong>Nenhum risco encontrado.</strong><span>Altere os filtros ou use “Cadastrar risco”.</span></div>{% endif %}
+    {% else %}<div class="empty-state large-empty"><strong>Nenhum risco encontrado.</strong><span>Altere os filtros ou cadastre o risco a partir da atividade ou do plano de ação.</span></div>{% endif %}
   </section>
 
 

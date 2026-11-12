@@ -44,8 +44,7 @@
         <option value="4" {% if selected_quarter == "4" %}selected{% endif %}>4º trimestre</option>
       </select>
     </label>
-    <button class="button button-primary" type="submit">Aplicar filtros</button>
-    <a class="clear-filter" href="{% url 'dashboard' %}">Limpar</a>
+    <a class="button button-primary clear-filter" href="{% url 'dashboard' %}">Limpar</a>
   </form>
 
   <section class="dx-kpis" aria-label="Resumo estratégico">

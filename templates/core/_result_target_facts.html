@@ -1,22 +1,21 @@
 <div class="inline-target-facts" id="meta-{{ target.id }}{% if row.indicator %}-indicador-{{ row.indicator.id }}{% endif %}" tabindex="-1">
   <p><strong>{{ target.code|default:"Meta" }}</strong> · {{ target.description }}</p>
   <section class="target-facts" data-collapsible-facts>
-    <div class="panel-heading"><h4>Ficha da meta</h4><button type="button" class="button button-secondary" data-toggle-facts aria-expanded="false">Expandir</button></div>
+    <div class="panel-heading disclosure-blue-heading" style="background-color:#dcecff;border-color:#9fc5ed" data-toggle-facts-header role="button" tabindex="0" aria-expanded="false"><h4>Ficha da meta</h4><button type="button" class="disclosure-blue-button" data-toggle-facts aria-expanded="false">+ Expandir</button></div>
     <div data-facts-content hidden>
   <dl class="definition-grid">
     <div><dt>Valor esperado</dt><dd>{{ target.target_value|default:"A definir" }}{% if target.unit_of_measure %} {{ target.unit_of_measure }}{% endif %}</dd></div>
-    <div><dt>Período da meta</dt><dd>{{ target.reference_period|default:"A definir" }}</dd></div>
-    <div><dt>Plano estratégico</dt><dd>{{ target.artifact.plan.acronym }} · {{ target.artifact.plan.name }}</dd></div>
+    <div><dt>Período de Aferição</dt><dd>{{ target.reference_period|default:"A definir" }}</dd></div>
+    <div><dt>Plano de referência</dt><dd>{{ target.artifact.plan.acronym }} · {{ target.artifact.plan.name }}</dd></div>
     <div><dt>Item do plano estratégico</dt><dd>{{ target.artifact.code }} · {{ target.artifact.title }}</dd></div>
     {% if target.action %}<div><dt>Ação estratégica</dt><dd>{{ target.action.code }} · {{ target.action.title }}</dd></div>{% endif %}
   </dl>
-  {% if can_edit_target and target.can_write %}<a class="button button-secondary" href="{% url 'target_overview' %}?plan={{ target.artifact.plan_id }}&amp;target={{ target.id }}&amp;editar={{ target.id }}{% if selected_unit %}&amp;unit={{ selected_unit }}{% endif %}#meta-{{ target.id }}">Editar meta</a>{% endif %}
     </div>
   </section>
   {% if can_view_measurements %}
     {% with summary=target.achievement_summary %}
     <section class="target-achievement-section" aria-label="Atingimento da meta {{ target.code }}">
-      <h4>Monitoramento da meta</h4>
+      <h4>Situação atual</h4>
       {% if summary.indicator_count %}
         {% with target_id=target.id|stringformat:"s" indicator_id=row.indicator.id|default:0|stringformat:"s" %}
         {% with chart_id="achievement-meta-"|add:target_id|add:"-indicador-"|add:indicator_id %}

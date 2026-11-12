@@ -8,7 +8,7 @@
   <form method="get" class="dashboard-filters" aria-label="Filtros dos ciclos">
     <label>Setor<select name="unit"><option value="">Todos os setores disponíveis</option>{% for unit in units %}<option value="{{ unit.id }}" {% if selected_unit == unit.id|stringformat:"s" %}selected{% endif %}>{{ unit.acronym|default:unit.name }}</option>{% endfor %}</select></label>
     <label>Ano<select name="year"><option value="">Todos os anos</option>{% for year in years %}<option value="{{ year }}" {% if selected_year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>{% endfor %}</select></label>
-    <button class="button button-primary" type="submit">Aplicar filtros</button>
+    <a class="button button-primary clear-filter" href="{% url 'legacy_report_cycles' %}">Limpar</a>
   </form>
   <section class="report-overview-grid">
     <div class="report-cycle-list">

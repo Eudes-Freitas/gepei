@@ -32,6 +32,7 @@ from .forms import (
     ActivityRiskReportForm,
     UnforeseenActivityRiskForm,
     GroupForm,
+    IndicatorCreateForm,
     IndicatorDefinitionForm,
     IndicatorMeasurementForm,
     ProfileForm,
@@ -949,6 +950,8 @@ def _results_overview(request):
     visible_targets = {row["target"].id: row["target"] for row in context.get("target_rows", [])}
     for execution in context.get("target_rows", []):
         execution["target"].can_write = _can_write_target(request.user, execution["target"])
+        execution["target"].signal_code = execution["code"]
+        execution["target"].signal_label = execution["label"]
         execution["target"].achievement_summary = _target_achievement_chart(execution) if can_measure else None
     linked_ids = set()
     writable_indicators = set(scope_by_unit(Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True).values_list("pk", flat=True))
@@ -1119,11 +1122,26 @@ def _target_overview_context(request):
     can_edit_target = request.user.has_perm("core.change_strategictarget")
     target_form = None
     editing_target = None
+    indicator_form = None
+    if request.method == "POST" and request.POST.get("operation") == "create_indicator":
+        _require_permission(request.user, "add_indicator")
+        if not plan:
+            raise PermissionDenied
+        indicator_units = scope_units(OrganizationalUnit.objects.all(), request.user)
+        indicator_form = IndicatorCreateForm(request.POST, plan=plan, units=indicator_units, targets=editable_targets)
+        if indicator_form.is_valid():
+            indicator = indicator_form.save()
+            if write_ids is not None and any(not unit.pk in write_ids for unit in indicator.responsible_units.all()):
+                indicator.delete()
+                raise PermissionDenied
+            messages.success(request, "Indicador cadastrado e vinculado ao plano.")
+            return redirect(f"{reverse('indicator_overview')}?{urlencode({'plan': plan.id})}#indicador-{indicator.id}")
     if request.method == "POST":
-        _require_permission(
-            request.user,
-            "change_strategictarget" if request.POST.get("target_id", "").isdigit() else "add_strategictarget",
-        )
+        if request.POST.get("operation") != "create_indicator":
+            _require_permission(
+                request.user,
+                "change_strategictarget" if request.POST.get("target_id", "").isdigit() else "add_strategictarget",
+            )
     if plan and (can_add_target or can_edit_target):
         form_actions = scope_actions(StrategicAction.objects.all(), request.user)
         form_indicators = scope_by_unit(Indicator.objects.all(), request.user, "responsible_unit_id")
@@ -1159,12 +1177,17 @@ def _target_overview_context(request):
         elif can_add_target:
             initial = {"artifact": selected_objective} if selected_objective.isdigit() else {}
             target_form = StrategicTargetForm(initial=initial, plan=plan, actions=form_actions, visible_indicators=form_indicators)
+    if plan and request.user.has_perm("core.add_indicator") and indicator_form is None:
+        indicator_units = scope_units(OrganizationalUnit.objects.all(), request.user)
+        indicator_form = IndicatorCreateForm(plan=plan, units=indicator_units, targets=editable_targets)
 
     return {
             "can_add_target": can_add_target,
             "can_edit_target": can_edit_target,
             "target_form": target_form,
             "editing_target": editing_target,
+            "indicator_form": indicator_form,
+            "can_add_indicator": bool(plan and request.user.has_perm("core.add_indicator")),
             "plans": plans,
             "objectives": objectives,
             "plan": plan,
@@ -2267,6 +2290,18 @@ def activity_follow_up(request, action_id, activity_id):
     }
 
     progress_form = ActivityProgressForm(instance=activity, prefix="progress")
+    create_risk_form = RiskCreateForm(
+        request.POST if operation == "create_risk" else None,
+        actions=StrategicAction.objects.filter(pk=action.pk),
+        prefix="risk-create",
+        initial={"action": action, "activity": activity},
+    )
+    if operation == "create_risk":
+        _require_permission(request.user, "add_risk")
+        if create_risk_form.is_valid():
+            _save_new_risk(request.user, create_risk_form, action, activity)
+            messages.success(request, "Risco cadastrado na atividade.")
+            return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "#riscos")
     editing_evidence = None
     editing_blocker = None
     edit_evidence_form = None
@@ -2276,6 +2311,11 @@ def activity_follow_up(request, action_id, activity_id):
     if operation == "delete_evidence":
         evidence = get_object_or_404(activity.evidences, pk=request.POST.get("evidence_id"))
         evidence.delete()
+        if not activity.evidences.exclude(attachment="").exists() and activity.status == StrategicAction.Status.COMPLETED:
+            activity.progress = Decimal("99")
+            activity.status = StrategicAction.Status.IN_PROGRESS
+            activity.save(update_fields=["progress", "status"])
+            _sync_action_progress(action, activity.action_plan)
         messages.success(request, "Evidência removida.")
         return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "#evidencias")
     if operation == "edit_evidence" or evidence_id:
@@ -2289,10 +2329,17 @@ def activity_follow_up(request, action_id, activity_id):
         )
         if operation == "edit_evidence" and edit_evidence_form.is_valid():
             edit_evidence_form.save()
-            activity.progress = Decimal("100")
-            activity.status = StrategicAction.Status.COMPLETED
+            can_complete = (activity.blocker_checked or activity.blockers.exists()) and activity.risk_checked
+            activity.progress = Decimal("100" if can_complete else "99")
+            activity.status = StrategicAction.Status.COMPLETED if can_complete else StrategicAction.Status.IN_PROGRESS
             activity.save(update_fields=["progress", "status"])
             _sync_action_progress(action, activity.action_plan)
+            if not (activity.blocker_checked or activity.blockers.exists()):
+                messages.error(request, "Evidência atualizada. Para concluir a atividade, informe se houve impedimento.")
+                return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "#impedimentos")
+            if not activity.risk_checked:
+                messages.error(request, "Evidência atualizada. Para concluir a atividade, informe se houve ou não ocorrência de risco.")
+                return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "#riscos")
             messages.success(request, "Evidência atualizada.")
             return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "#evidencias")
     if operation == "edit_blocker" or blocker_id:
@@ -2322,7 +2369,14 @@ def activity_follow_up(request, action_id, activity_id):
         risk_report_form = ActivityRiskReportForm(request.POST, risks=selectable_risks, can_create=request.user.has_perm("core.add_risk"), prefix="risk-report")
         if risk_report_form.is_valid():
             selected_risk = risk_report_form.cleaned_data["risk"]
+            if selected_risk == "NOVO":
+                selected_risk = None
             materialized = risk_report_form.cleaned_data["materialized"] == "SIM"
+            if not materialized and selected_risk is None:
+                activity.risk_checked = True
+                activity.save(update_fields=["risk_checked"])
+                messages.success(request, "Informação sobre riscos registrada.")
+                return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "#riscos")
             _require_permission(request.user, "change_risk" if selected_risk else "add_risk")
             valid = True
             current_occurrence = selected_risk.materializations.first() if selected_risk else None
@@ -2330,7 +2384,9 @@ def activity_follow_up(request, action_id, activity_id):
             if selected_risk is None:
                 unforeseen_form = UnforeseenActivityRiskForm(request.POST, prefix="unforeseen")
                 valid = unforeseen_form.is_valid()
-            if save_occurrence:
+            if save_occurrence and selected_risk is None:
+                _require_permission(request.user, "add_riskmaterialization")
+            if save_occurrence and selected_risk is not None:
                 _require_permission(request.user, "change_riskmaterialization" if current_occurrence else "add_riskmaterialization")
                 if current_occurrence:
                     _require_permission(request.user, "view_riskmaterialization")
@@ -2365,14 +2421,27 @@ def activity_follow_up(request, action_id, activity_id):
                     selected_risk = Risk.objects.select_for_update().get(pk=selected_risk.pk)
                     selected_risk.activity = activity
                 if save_occurrence:
-                    occurrence = occurrence_form.save(commit=False)
-                    occurrence.risk = selected_risk
-                    if not occurrence.pk:
-                        occurrence.recorded_by = request.user
-                    occurrence.save()
+                    if unforeseen_form.is_bound:
+                        details = unforeseen_form.cleaned_data
+                        RiskMaterialization.objects.create(
+                            risk=selected_risk, occurred_on=details["occurred_on"],
+                            description=details["title"], actual_impact=details["actual_impact"],
+                            actions_taken=details["actions_taken"],
+                            provision_responsible=details["treatment_responsible"],
+                            measure_source=RiskMaterialization.MeasureSource.NEW,
+                            recorded_by=request.user,
+                        )
+                    else:
+                        occurrence = occurrence_form.save(commit=False)
+                        occurrence.risk = selected_risk
+                        if not occurrence.pk:
+                            occurrence.recorded_by = request.user
+                        occurrence.save()
                 if materialized:
                     selected_risk.status = Risk.Status.MATERIALIZED
                 selected_risk.save()
+                activity.risk_checked = True
+                activity.save(update_fields=["risk_checked"])
                 messages.success(request, "Risco registrado no acompanhamento da atividade.")
                 if unforeseen_form.is_bound and unforeseen_form.cleaned_data.get("register_another"):
                     response = _next_risk_registration(request, registered_risks, selected_risk)
@@ -2382,6 +2451,18 @@ def activity_follow_up(request, action_id, activity_id):
 
 
     if operation == "update_progress":
+        if activity.status == StrategicAction.Status.COMPLETED:
+            messages.error(request, "A execução de uma atividade concluída não pode ser alterada.")
+            return redirect(reverse("activity_follow_up", args=[action.id, activity.id]) + "#execucao")
+        if request.POST.get("progress-progress") == "100" and not (activity.blocker_checked or activity.blockers.exists()):
+            messages.error(request, "É obrigatório informar se houve impedimento antes de concluir a atividade.")
+            return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "?required_section=impedimentos#impedimentos")
+        if request.POST.get("progress-progress") == "100" and not activity.risk_checked:
+            messages.error(request, "É obrigatório informar se houve risco antes de concluir a atividade.")
+            return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "?required_section=riscos#riscos")
+        if request.POST.get("progress-progress") == "100" and not activity.evidences.exclude(attachment="").exists():
+            messages.error(request, "Para concluir a atividade, registre uma evidência com anexo.")
+            return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "?missing_attachment=1#execucao")
         progress_form = ActivityProgressForm(request.POST, instance=activity, prefix="progress")
         if progress_form.is_valid():
             progress_form.save()
@@ -2396,19 +2477,33 @@ def activity_follow_up(request, action_id, activity_id):
             evidence.activity = activity
             evidence.created_by = request.user
             evidence.save()
-            activity.progress = Decimal("100")
-            activity.status = StrategicAction.Status.COMPLETED
+            can_complete = (activity.blocker_checked or activity.blockers.exists()) and activity.risk_checked
+            activity.progress = Decimal("100" if can_complete else "99")
+            activity.status = StrategicAction.Status.COMPLETED if can_complete else StrategicAction.Status.IN_PROGRESS
             activity.save(update_fields=["progress", "status"])
             _sync_action_progress(action, activity.action_plan)
+            if not (activity.blocker_checked or activity.blockers.exists()):
+                messages.error(request, "Evidência registrada. Para concluir a atividade, informe se houve impedimento.")
+                return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "#impedimentos")
+            if not activity.risk_checked:
+                messages.error(request, "Evidência registrada. Para concluir a atividade, informe se houve ou não ocorrência de risco.")
+                return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "#riscos")
             messages.success(request, "Evidência registrada. Atividade concluída com 100% de execução.")
             return redirect("activity_follow_up", action_id=action.id, activity_id=activity.id)
     elif operation == "add_blocker":
+        if request.POST.get("blocker_choice") == "nao":
+            activity.blocker_checked = True
+            activity.save(update_fields=["blocker_checked"])
+            messages.success(request, "Ausência de impedimento registrada.")
+            return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "#impedimentos")
         blocker_form = ActivityBlockerForm(request.POST, prefix="blocker")
         if blocker_form.is_valid():
             blocker = blocker_form.save(commit=False)
             blocker.activity = activity
             blocker.created_by = request.user
             blocker.save()
+            activity.blocker_checked = True
+            activity.save(update_fields=["blocker_checked"])
             _sync_action_progress(action, activity.action_plan)
             messages.success(request, "Impedimento registrado na atividade.")
             return redirect("activity_follow_up", action_id=action.id, activity_id=activity.id)
@@ -2501,6 +2596,7 @@ def activity_follow_up(request, action_id, activity_id):
             "activity": activity,
             "related_results": related_results,
             "progress_form": progress_form,
+            "create_risk_form": create_risk_form,
             "can_view": can_view,
             "evidences": evidences,
             "blockers": activity.blockers.select_related("resolution_owner", "created_by") if can_view["blockers"] else [],
@@ -2678,6 +2774,7 @@ def risk_detail(request, action_id, risk_id):
         _require_permission(request.user, "change_riskmaterialization")
         editing_materialization = get_object_or_404(risk.materializations, pk=materialization_id)
     materialization_form = RiskMaterializationForm(instance=editing_materialization, action=action, prefix="materialization")
+    materialization_form.fields["actual_impact"].required = False
     acceptance_form = RiskAcceptanceForm(instance=current_acceptance, prefix="acceptance")
     remediation_form = RiskRemediationSubmissionForm(prefix="remediation")
 
@@ -2734,7 +2831,11 @@ def risk_detail(request, action_id, risk_id):
     elif operation in ("materialize", "edit_materialization"):
         if operation == "edit_materialization" and editing_materialization is None:
             raise Http404
+        if operation == "materialize" and risk.materializations.exists():
+            messages.warning(request, "Este risco já possui uma materialização registrada. Edite o registro existente.")
+            return redirect(reverse("risk_detail", args=[action.id, risk.id]) + "#ocorrencia")
         materialization_form = RiskMaterializationForm(request.POST, request.FILES, instance=editing_materialization, action=action, prefix="materialization")
+        materialization_form.fields["actual_impact"].required = False
         if materialization_form.is_valid():
             materialization = materialization_form.save(commit=False)
             materialization.risk = risk
