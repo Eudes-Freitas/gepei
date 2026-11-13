@@ -1,0 +1,16 @@
+<div class="form-field">
+  <div class="blocker-status-label">
+    {{ field.label_tag }}
+    <span class="blocker-status-tooltip">
+      <button type="button" class="blocker-status-help" aria-label="Explicação das situações do impedimento" aria-describedby="{{ field.auto_id }}-help">?</button>
+      <span class="blocker-status-tooltip-content" id="{{ field.auto_id }}-help" role="tooltip">
+        <span><strong>Aberto:</strong> nenhuma providência efetiva foi iniciada.</span>
+        <span><strong>Em tratamento:</strong> há providências em andamento.</span>
+        <span><strong>Parcialmente resolvido:</strong> houve avanço na solução, mas o impedimento persiste, ainda que de forma reduzida.</span>
+        <span><strong>Resolvido:</strong> não existem mais restrições decorrentes daquele impedimento.</span>
+      </span>
+    </span>
+  </div>
+  {{ field }}
+  {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
+</div>

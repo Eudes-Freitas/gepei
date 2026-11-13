@@ -130,6 +130,20 @@
         details.open = !details.open;
       }
     });
+    document.querySelectorAll('select[name$="treatment_decision"], select[name$="treatment"], select[name$="decision"]').forEach(function (decision) {
+      var form = decision.form;
+      if (!form) return;
+      var prefix = decision.name.includes('-') ? decision.name.slice(0, decision.name.lastIndexOf('-') + 1) : '';
+      var measures = ['preventive_measure', 'contingency_measure'].map(function (name) {
+        return Array.from(form.querySelectorAll('textarea')).find(function (field) { return field.name === prefix + name; });
+      }).filter(Boolean);
+      function updateRequiredMeasures() {
+        var required = Boolean(decision.value) && decision.value !== 'ACEITAR' && decision.value !== 'Aceitar';
+        measures.forEach(function (measure) { measure.required = required; });
+      }
+      decision.addEventListener('change', updateRequiredMeasures);
+      updateRequiredMeasures();
+    });
   </script>
   {% block extra_script %}{% endblock %}
   <script src="{% static 'js/form-submit-state.js' %}?v=20261112-2" defer></script>

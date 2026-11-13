@@ -36,6 +36,11 @@
       {% if perms.core.view_indicator %}<ul>{% for indicator in item.indicators %}<li><a href="{% url 'indicator_overview' %}?target={{ item.target.pk }}&amp;indicator={{ indicator.pk }}#indicador-{{ indicator.pk }}">{{ indicator.code|default:"Indicador" }} · {{ indicator.name }}</a></li>{% empty %}<li class="muted-text">Nenhum indicador disponível para esta meta.</li>{% endfor %}</ul>{% endif %}
     </div>
     {% empty %}<p class="muted-text">Nenhuma meta relacionada à ação ou ao objetivo desta atividade.</p>{% endfor %}
+    {% if perms.core.view_indicator %}
+    <section aria-label="Indicadores relacionados à atividade">
+      {% for row in related_indicator_rows %}{% include "core/_result_indicator_card.html" with activity_results_only=True %}{% endfor %}
+    </section>
+    {% endif %}
   </details>
   {% endif %}
 
@@ -96,7 +101,7 @@
               {% if editing_blocker.pk == blocker.pk %}
               <form method="post" class="activity-form record-editor">{% csrf_token %}
                 <input type="hidden" name="operation" value="edit_blocker"><input type="hidden" name="blocker_id" value="{{ blocker.pk }}">
-                {% for field in edit_blocker_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}
+                {% for field in edit_blocker_form %}{% if field.name == "status" %}{% include "core/_blocker_status_field.html" with field=field %}{% else %}{% include "core/_form_field.html" with field=field %}{% endif %}{% endfor %}
                 {{ edit_blocker_form.non_field_errors }}
                 <div class="form-buttons"><button type="submit" class="button button-primary">Salvar alterações</button><a class="button button-secondary" href="{% url 'activity_follow_up' action.pk activity.pk %}#impedimentos">Cancelar</a></div>
               </form>{% endif %}
@@ -106,7 +111,7 @@
       {% else %}<div class="empty-state"><span>Nenhum impedimento registrado.</span></div>{% endif %}
       {% if perms.core.add_activityblocker %}<details class="entry-form" {% if blocker_form.errors %}open{% endif %}>
         <summary>Informar impedimento</summary>
-        <form method="post" class="activity-form" data-blocker-form>{% csrf_token %}<input type="hidden" name="operation" value="add_blocker"><div class="form-field"><label for="blocker-occurred">Houve impedimento?</label><select id="blocker-occurred" name="blocker_choice" data-blocker-choice><option value="">Selecione</option><option value="nao" {% if activity.blocker_checked and not blockers %}selected{% endif %}>Não</option><option value="sim" {% if blocker_form.errors %}selected{% endif %}>Sim</option></select></div><div data-blocker-details {% if not blocker_form.errors %}hidden{% endif %}>{% for field in blocker_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}</div><button class="button button-primary" type="submit" data-blocker-submit {% if not blocker_form.errors %}hidden{% endif %}>Salvar impedimento</button></form>
+        <form method="post" class="activity-form" data-blocker-form>{% csrf_token %}<input type="hidden" name="operation" value="add_blocker"><div class="form-field"><label for="blocker-occurred">Houve impedimento?</label><select id="blocker-occurred" name="blocker_choice" data-blocker-choice><option value="">Selecione</option><option value="nao" {% if activity.blocker_checked and not blockers %}selected{% endif %}>Não</option><option value="sim" {% if blocker_form.errors %}selected{% endif %}>Sim</option></select></div><div data-blocker-details {% if not blocker_form.errors %}hidden{% endif %}>{% for field in blocker_form %}{% if field.name == "status" %}{% include "core/_blocker_status_field.html" with field=field %}{% else %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endif %}{% endfor %}</div><button class="button button-primary" type="submit" data-blocker-submit {% if not blocker_form.errors %}hidden{% endif %}>Salvar impedimento</button></form>
       </details>{% endif %}{% endif %}
     </article>
 
@@ -265,3 +270,4 @@
 <script>(function(){var form=document.querySelector('[data-blocker-form]');if(!form)return;var choice=form.querySelector('[data-blocker-choice]'),details=form.querySelector('[data-blocker-details]'),submit=form.querySelector('[data-blocker-submit]');function update(){var yes=choice.value==='sim';details.hidden=!yes;submit.hidden=!yes;details.querySelectorAll('input,select,textarea').forEach(function(field){field.disabled=!yes;});}choice.addEventListener('change',update);update();form.addEventListener('submit',function(event){if(!choice.value){event.preventDefault();}});}());</script>
 </div>
 {% endblock %}
+{% block extra_script %}{% if related_indicator_rows %}{% include "core/_results_charts.html" %}{% endif %}{% endblock %}

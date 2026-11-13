@@ -600,6 +600,14 @@ def validate_risk_timing(form, cleaned_data):
     return cleaned_data
 
 
+def validate_treatment_measures(form, cleaned_data, decision):
+    if decision and decision not in (RiskTreatment.Decision.ACCEPT, "Aceitar"):
+        for name in ("preventive_measure", "contingency_measure"):
+            if name in form.fields and not cleaned_data.get(name, "").strip():
+                form.add_error(name, "Informe esta medida para a resposta escolhida.")
+    return cleaned_data
+
+
 class ActivityRiskForm(forms.ModelForm):
     register_another = forms.BooleanField(required=False, label="Cadastrar outro risco após salvar")
     treatment_responsible = forms.ModelChoiceField(queryset=get_user_model().objects.filter(is_active=True), label="Responsável pelo tratamento")
@@ -652,7 +660,6 @@ class ActivityRiskForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["preventive_measure"].required = True
         self.fields["occurrence_timing"].choices = [("", "Selecione quando pode ocorrer"), *Risk.OccurrenceTiming.choices]
         self.initial.setdefault("occurrence_timing", "")
         self.fields["treatment_responsible"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
@@ -670,7 +677,8 @@ class ActivityRiskForm(forms.ModelForm):
         return value
 
     def clean(self):
-        return validate_risk_timing(self, super().clean())
+        data = validate_risk_timing(self, super().clean())
+        return validate_treatment_measures(self, data, data.get("treatment"))
 
 
 class InitialActivityRiskForm(ActivityRiskForm):
@@ -688,12 +696,6 @@ class RiskIdentificationForm(forms.ModelForm):
         required=True,
         label="Resposta inicial ao risco",
     )
-    treatment_due_date = forms.DateField(
-        required=False,
-        label="Prazo para concluir o tratamento (opcional)",
-        help_text="Este prazo se refere à medida de tratamento, não à data em que o risco poderá ocorrer.",
-        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
-    )
 
     class Meta:
         model = Risk
@@ -709,7 +711,6 @@ class RiskIdentificationForm(forms.ModelForm):
             "exposure_end_date",
             "trigger_description",
             "treatment_decision",
-            "treatment_due_date",
             "preventive_measure",
             "contingency_measure",
         ]
@@ -741,7 +742,6 @@ class RiskIdentificationForm(forms.ModelForm):
 
     def __init__(self, *args, action_plan, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["preventive_measure"].required = True
         self.fields["activity"].required = True
         self.fields["occurrence_timing"].choices = [("", "Selecione quando pode ocorrer"), *Risk.OccurrenceTiming.choices]
         self.initial.setdefault("occurrence_timing", "")
@@ -761,7 +761,8 @@ class RiskIdentificationForm(forms.ModelForm):
         return value
 
     def clean(self):
-        return validate_risk_timing(self, super().clean())
+        data = validate_risk_timing(self, super().clean())
+        return validate_treatment_measures(self, data, data.get("treatment_decision"))
 
 
 class ActivityPlanningRiskForm(RiskIdentificationForm):
@@ -772,7 +773,6 @@ class ActivityPlanningRiskForm(RiskIdentificationForm):
 
     def __init__(self, *args, **kwargs):
         forms.ModelForm.__init__(self, *args, **kwargs)
-        self.fields["preventive_measure"].required = True
         self.fields.pop("register_another", None)
         self.fields["occurrence_timing"].choices = [("", "Selecione quando pode ocorrer"), *Risk.OccurrenceTiming.choices]
         self.initial.setdefault("occurrence_timing", "")
@@ -797,7 +797,6 @@ class RiskCreateForm(RiskIdentificationForm):
 
     def __init__(self, *args, actions, **kwargs):
         forms.ModelForm.__init__(self, *args, **kwargs)
-        self.fields["preventive_measure"].required = True
         self.fields["action"].queryset = actions
         self.fields["action"].label_from_instance = lambda action: f"{action.code} · {action.title}"
         self.fields["activity"].required = True
@@ -886,18 +885,16 @@ class RiskAssessmentForm(forms.ModelForm):
 class RiskTreatmentForm(forms.ModelForm):
     class Meta:
         model = RiskTreatment
-        fields = ["decision", "justification", "responsible", "due_date", "preventive_measure", "contingency_measure"]
+        fields = ["decision", "justification", "responsible", "preventive_measure", "contingency_measure"]
         labels = {
             "decision": "Resposta ao risco",
             "justification": "Justificativa",
             "responsible": "Responsável pelo tratamento",
-            "due_date": "Prazo para concluir o tratamento (opcional)",
             "preventive_measure": "Medida preventiva",
             "contingency_measure": "Medida de contingência",
         }
         widgets = {
             "justification": forms.Textarea(attrs={"rows": 2}),
-            "due_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "preventive_measure": forms.Textarea(attrs={"rows": 2}),
             "contingency_measure": forms.Textarea(attrs={"rows": 2}),
         }
@@ -906,7 +903,10 @@ class RiskTreatmentForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["decision"].choices = RiskTreatment.Decision.choices
         self.fields["responsible"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
-        self.fields["due_date"].help_text = "Não é uma previsão de quando o risco ocorrerá; é o prazo da ação de tratamento."
+
+    def clean(self):
+        data = super().clean()
+        return validate_treatment_measures(self, data, data.get("decision"))
 
 
 class RiskMaterializationForm(forms.ModelForm):

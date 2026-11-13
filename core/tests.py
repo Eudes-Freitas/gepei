@@ -386,6 +386,16 @@ class DashboardAndRiskTests(TestCase):
         self.assertTrue(form.fields["decision"].required)
         self.assertIn("decision", RiskTreatmentForm({"decision": "", "responsible": self.user.pk}).errors)
 
+    def test_treatment_measures_are_optional_only_when_accepting_risk(self):
+        for decision in RiskTreatment.Decision.values:
+            form = RiskTreatmentForm({"decision": decision, "responsible": self.user.pk})
+            if decision == RiskTreatment.Decision.ACCEPT:
+                self.assertTrue(form.is_valid(), form.errors)
+            else:
+                self.assertFalse(form.is_valid())
+                self.assertIn("preventive_measure", form.errors)
+                self.assertIn("contingency_measure", form.errors)
+
     def test_risk_sections_require_their_own_permissions(self):
         action_plan = ActionPlan.objects.create(action=self.action, manager=self.user)
         risk = self.create_risk(
@@ -766,7 +776,7 @@ class DashboardAndRiskTests(TestCase):
         url = f"/planos-de-acao/{self.action.id}/riscos/{risk.id}/"
         self.client.force_login(self.user)
         for operation, fields, Model in (
-            ("add_treatment", {"treatment-decision": "MITIGAR", "treatment-responsible": self.user.id}, RiskTreatment),
+            ("add_treatment", {"treatment-decision": "MITIGAR", "treatment-responsible": self.user.id, "treatment-preventive_measure": "Prevenir", "treatment-contingency_measure": "Contingência"}, RiskTreatment),
             ("accept", {"acceptance-authority": self.user.id, "acceptance-decision": "ACEITO"}, RiskAcceptance),
         ):
             prefix = "treatment" if operation == "add_treatment" else "acceptance"
@@ -2977,7 +2987,6 @@ class DashboardAndRiskTests(TestCase):
                 "trigger_description": "Atraso no retorno das unidades.",
                 "treatment_decision": RiskTreatment.Decision.MITIGATE,
                 "treatment_responsible": self.user.id,
-                "treatment_due_date": "2026-06-15",
                 "preventive_measure": "Acompanhar respostas",
                 "contingency_measure": "Escalonar à chefia",
             },
@@ -3114,7 +3123,7 @@ class DashboardAndRiskTests(TestCase):
         self.assertContains(response, "Mapa de riscos")
         self.assertContains(response, "Baixa adesão")
         self.assertContains(response, "Decidir aceite")
-        self.assertContains(response, "Prazo para concluir o tratamento (opcional)")
+        self.assertNotContains(response, "Prazo para concluir o tratamento (opcional)")
 
         response = self.client.get("/riscos/")
         self.assertContains(response, "Riscos consolidados")
@@ -3460,6 +3469,17 @@ class ResultsDependentFiltersTests(TestCase):
         self.assertEqual(list(response.context["filter_targets"]), [self.targets[0]])
         self.assertEqual([row["indicator"] for row in response.context["indicator_rows"]], [self.indicators[0]])
 
+    def test_report_map_shows_only_the_selected_objective(self):
+        self.indicators[1].responsible_unit = self.units[0]
+        self.indicators[1].save(update_fields=["responsible_unit"])
+        response = self.client.get("/indicadores/", {
+            "plan": self.plan.pk, "unit": self.units[0].pk, "objective": self.objectives[0].pk,
+        })
+        self.assertEqual(list(response.context["objectives"]), self.objectives)
+        self.assertEqual(response.context["map_objectives"], [self.objectives[0]])
+        self.assertContains(response, f'<summary><strong>{self.objectives[0].code}</strong> {self.objectives[0].title}</summary>', html=True)
+        self.assertNotContains(response, f'<summary><strong>{self.objectives[1].code}</strong> {self.objectives[1].title}</summary>', html=True)
+
     def test_target_overrides_conflicting_objective_and_selects_linked_indicators(self):
         response = self.client.get("/metas/", {"target": self.targets[0].pk, "objective": self.objectives[1].pk})
         self.assertEqual(response.status_code, 200)
@@ -3627,5 +3647,13 @@ class ResultsDependentFiltersTests(TestCase):
         group = next(row for row in response.context['related_results'] if row['target'] == self.targets[0])
         self.assertEqual(group['indicators'], [self.indicators[0]])
         self.assertContains(response, 'Metas e indicadores relacionados')
+        self.assertContains(response, 'Ficha do indicador')
+        self.assertContains(response, 'Evolução da meta')
+        self.assertContains(response, 'Aferições registradas')
+        self.assertNotContains(response, 'Ficha da meta')
+        self.assertNotContains(response, 'Monitoramento da meta')
+        self.assertContains(response, 'Explicação das situações do impedimento', count=1)
+        self.assertContains(response, 'nenhuma providência efetiva foi iniciada')
+        self.assertContains(response, 'há providências em andamento')
         self.assertContains(response, f'&amp;indicator={self.indicators[0].pk}#indicador-{self.indicators[0].pk}')
         self.assertNotContains(response, unrelated.description)

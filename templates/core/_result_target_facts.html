@@ -1,7 +1,7 @@
 <div class="inline-target-facts" id="meta-{{ target.id }}{% if row.indicator %}-indicador-{{ row.indicator.id }}{% endif %}" tabindex="-1">
   <p><strong>{{ target.code|default:"Meta" }}</strong> · {{ target.description }}</p>
   <section class="target-facts" data-collapsible-facts>
-    <div class="panel-heading disclosure-blue-heading" style="background-color:#dcecff;border-color:#9fc5ed" data-toggle-facts-header role="button" tabindex="0" aria-expanded="false"><h4>Ficha da meta</h4><button type="button" class="disclosure-blue-button" data-toggle-facts aria-expanded="false">+ Expandir</button></div>
+    <div class="panel-heading disclosure-blue-heading" data-toggle-facts-header role="button" tabindex="0" aria-expanded="false"><h4>Ficha da meta</h4><button type="button" class="disclosure-blue-button" data-toggle-facts aria-expanded="false">+ Expandir</button></div>
     <div data-facts-content hidden>
   <dl class="definition-grid">
     <div><dt>Valor esperado</dt><dd>{{ target.target_value|default:"A definir" }}{% if target.unit_of_measure %} {{ target.unit_of_measure }}{% endif %}</dd></div>

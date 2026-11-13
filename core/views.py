@@ -981,6 +981,12 @@ def _results_overview(request):
             navigation_targets[target.pk]["indicators"].append(row["indicator"])
     context["navigation_targets"] = list(navigation_targets.values())
     context["navigation_unlinked_indicators"] = [row["indicator"] for row in context.get("indicator_rows", []) if not row["targets"]]
+    map_objective_ids = {item["target"].artifact_id for item in context["navigation_targets"]}
+    for row in context.get("indicator_rows", []):
+        map_objective_ids.update(artifact.pk for artifact in row["indicator"].artifacts.all() if artifact.artifact_type == PlanArtifact.ArtifactType.OBJECTIVE)
+    if context.get("selected_objective", "").isdigit():
+        map_objective_ids.intersection_update({int(context["selected_objective"])})
+    context["map_objectives"] = [objective for objective in context.get("objectives", []) if objective.pk in map_objective_ids]
     context["inline_charts"] = bool(context.get("indicator_rows")) and can_measure
     return render(request, "core/indicator_overview.html", context)
 
@@ -1760,7 +1766,6 @@ def _save_new_risk(user, form, action, activity=None):
                 risk=risk,
                 decision=decision,
                 responsible=form.cleaned_data["treatment_responsible"],
-                due_date=form.cleaned_data["treatment_due_date"],
                 preventive_measure=risk.preventive_measure,
                 contingency_measure=risk.contingency_measure,
                 created_by=user,
@@ -2006,12 +2011,18 @@ def action_plan_detail(request, action_id):
         else:
             form = ActivityForm(action_plan=action_plan)
 
-    activities = action_plan.activities.select_related("executor", "financial_responsible_unit").all() if action_plan else []
+    activities = list(action_plan.activities.select_related("executor", "financial_responsible_unit").all()) if action_plan else []
+    objective = action.artifact
+    while objective and objective.artifact_type != PlanArtifact.ArtifactType.OBJECTIVE:
+        objective = objective.parent
+    targets = list(StrategicTarget.objects.filter(Q(action=action) | Q(action__isnull=True, artifact=objective)).prefetch_related("indicators").distinct()) if objective else []
+    associated_results = [{"target": target, "indicators": list(target.indicators.all())} for target in targets]
     allocated_weight = sum((activity.weight for activity in activities), 0)
     context = {
         "action": action,
         "action_plan": action_plan,
         "activities": activities,
+        "associated_results": associated_results,
         "form": form,
         "activity_risk_formset": activity_risk_formset,
         "allocated_weight": allocated_weight,
@@ -2572,6 +2583,8 @@ def activity_follow_up(request, action_id, activity_id):
         evidence.attachment_available = bool(evidence.attachment and evidence.attachment.storage.exists(evidence.attachment.name))
 
     related_results = []
+    related_indicator_rows = []
+    can_view_measurements = request.user.has_perm("core.view_indicatormeasurement")
     if request.user.has_perm("core.view_strategictarget"):
         artifact_ids = []
         artifact = action.artifact
@@ -2585,8 +2598,28 @@ def activity_follow_up(request, action_id, activity_id):
             Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True,
         ) if request.user.has_perm("core.view_indicator") else Indicator.objects.none()
         visible_ids = set(visible_indicators.values_list("pk", flat=True))
+        indicator_rows_by_id = {}
+        writable_indicator_ids = set(scope_by_unit(Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True).values_list("pk", flat=True)) if visible_ids else set()
         for target in targets:
-            related_results.append({"target": target, "indicators": [item for item in target.indicators.all() if item.pk in visible_ids]})
+            indicators = [item for item in target.indicators.all() if item.pk in visible_ids]
+            related_results.append({"target": target, "indicators": indicators})
+            if not indicators:
+                continue
+            for indicator in indicators:
+                row = indicator_rows_by_id.get(indicator.pk)
+                if row is None:
+                    indicator.can_write = indicator.pk in writable_indicator_ids
+                    row = {
+                        "indicator": indicator,
+                        "signal": _indicator_signal(indicator, target=target),
+                        "targets": [],
+                        "measurements": _results_measurements(indicator) if can_view_measurements else [],
+                        "chart": _measurement_chart(indicator) if can_view_measurements else None,
+                        "chart_data_id": f"target-chart-data-{indicator.pk}",
+                    }
+                    indicator_rows_by_id[indicator.pk] = row
+                row["targets"].append(target)
+        related_indicator_rows = list(indicator_rows_by_id.values())
 
     return render(
         request,
@@ -2595,6 +2628,8 @@ def activity_follow_up(request, action_id, activity_id):
             "action": action,
             "activity": activity,
             "related_results": related_results,
+            "related_indicator_rows": related_indicator_rows,
+            "can_view_measurements": can_view_measurements,
             "progress_form": progress_form,
             "create_risk_form": create_risk_form,
             "can_view": can_view,

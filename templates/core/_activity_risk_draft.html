@@ -6,6 +6,5 @@
     {% for field in risk_form %}{% if field.name != "DELETE" %}
       {% include "core/_form_field.html" with field=field %}
     {% endif %}{% endfor %}
-    <button class="button button-secondary text-danger" type="button" data-remove-risk-draft>Remover este risco do cadastro</button>
   </div>
 </details>
