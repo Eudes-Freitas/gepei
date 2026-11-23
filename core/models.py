@@ -141,7 +141,7 @@ class Activity(models.Model):
     blocker_checked = models.BooleanField(default=False)
     risk_checked = models.BooleanField(default=False)
     start_date = models.DateField(null=True, blank=True)
-    end_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=15, choices=[*StrategicAction.Status.choices, ("PAUSADA", "Pausada")], default=StrategicAction.Status.NOT_STARTED)
     expected_delivery = models.CharField(max_length=255, blank=True)
     requires_financial_resource = models.BooleanField(default=False)

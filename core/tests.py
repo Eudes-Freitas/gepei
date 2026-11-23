@@ -2236,7 +2236,7 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(self.client.get(f"/planos-de-acao/{other_action.pk}/editar/").status_code, 404)
         self.assertEqual(self.client.post(f"/planos-de-acao/{other_action.pk}/editar/", payload).status_code, 404)
 
-    def test_activity_creation_requires_at_least_one_risk(self):
+    def test_activity_creation_allows_no_risk(self):
         self.client.force_login(self.user)
         plan = ActionPlan.objects.create(action=self.action, manager=self.user)
         url = f"/planos-de-acao/{self.action.pk}/"
@@ -2244,17 +2244,10 @@ class DashboardAndRiskTests(TestCase):
                    "weight": "100", "start_date": "2026-10-01", "end_date": "2026-12-31",
                    "progress": "0", "status": StrategicAction.Status.NOT_STARTED,
                    "requires_financial_resource": "NAO"}
-        variants = [{}, {"activity-risks-TOTAL_FORMS": "0", "activity-risks-INITIAL_FORMS": "0"},
-                    {"activity-risks-TOTAL_FORMS": "1", "activity-risks-INITIAL_FORMS": "0", "activity-risks-0-DELETE": "on"},
-                    {"activity-risks-TOTAL_FORMS": "1", "activity-risks-INITIAL_FORMS": "0"}]
-        for data in variants:
-            with self.subTest(data=data):
-                response = self.client.post(url, {**payload, **data})
-                self.assertEqual(response.status_code, 200)
-                self.assertTrue(response.context["activity_risk_formset"].errors or response.context["activity_risk_formset"].non_form_errors())
-                self.assertContains(response, "data-open-on-load")
-                self.assertFalse(plan.activities.exists())
-                self.assertFalse(Risk.objects.exists())
+        response = self.client.post(url, payload)
+        self.assertRedirects(response, url)
+        self.assertTrue(plan.activities.exists())
+        self.assertFalse(Risk.objects.exists())
         self.user.user_permissions.remove(Permission.objects.get(codename="add_risk"))
         self.assertEqual(self.client.post(url, payload).status_code, 403)
         self.assertFalse(plan.activities.exists())

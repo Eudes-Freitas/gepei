@@ -1889,7 +1889,7 @@ def _sync_action_progress(action, action_plan):
 
 
 def _sync_activity_status(activity):
-    if activity.progress == 100 and activity.evidences.exclude(attachment="").exists():
+    if activity.progress == 100 and _has_activity_evidence(activity):
         status = StrategicAction.Status.COMPLETED
     elif activity.progress == 0:
         status = StrategicAction.Status.NOT_STARTED
@@ -1902,6 +1902,11 @@ def _sync_activity_status(activity):
     if activity.status != status:
         activity.status = status
         activity.save(update_fields=["status"])
+
+
+def _has_activity_evidence(activity):
+    """Retorna se a atividade ainda possui uma evidência comprobatória."""
+    return activity.evidences.exclude(attachment="").exists()
 
 
 def _rebalance_activity_weights(action_plan, new_weight):
@@ -1981,7 +1986,6 @@ def action_plan_detail(request, action_id):
             _require_permission(request.user, "add_risk")
             activity_risk_formset = ActivityPlanningRiskFormSet(
                 request.POST, prefix="activity-risks",
-                error_messages={"too_few_forms": "Informe pelo menos um risco para cadastrar a atividade."},
             )
             risks_valid = activity_risk_formset.is_valid()
             form = ActivityForm(request.POST, action_plan=action_plan)
@@ -2322,7 +2326,7 @@ def activity_follow_up(request, action_id, activity_id):
     if operation == "delete_evidence":
         evidence = get_object_or_404(activity.evidences, pk=request.POST.get("evidence_id"))
         evidence.delete()
-        if not activity.evidences.exclude(attachment="").exists() and activity.status == StrategicAction.Status.COMPLETED:
+        if not _has_activity_evidence(activity) and activity.status == StrategicAction.Status.COMPLETED:
             activity.progress = Decimal("99")
             activity.status = StrategicAction.Status.IN_PROGRESS
             activity.save(update_fields=["progress", "status"])
@@ -2340,7 +2344,7 @@ def activity_follow_up(request, action_id, activity_id):
         )
         if operation == "edit_evidence" and edit_evidence_form.is_valid():
             edit_evidence_form.save()
-            can_complete = (activity.blocker_checked or activity.blockers.exists()) and activity.risk_checked
+            can_complete = _has_activity_evidence(activity) and (activity.blocker_checked or activity.blockers.exists()) and activity.risk_checked
             activity.progress = Decimal("100" if can_complete else "99")
             activity.status = StrategicAction.Status.COMPLETED if can_complete else StrategicAction.Status.IN_PROGRESS
             activity.save(update_fields=["progress", "status"])

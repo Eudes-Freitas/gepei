@@ -360,7 +360,7 @@ class ActivityForm(forms.ModelForm):
         self.fields["financial_responsible_unit"].queryset = OrganizationalUnit.objects.order_by("name")
         self.fields["progress"].help_text = "Com 0%, a atividade permanece não iniciada. Um percentual acima de 0% inicia a execução; a evidência com anexo conclui a atividade em 100%."
         self.fields["start_date"].required = True
-        self.fields["end_date"].required = True
+        self.fields["end_date"].required = False
         self.fields["weight"].help_text = "Informe um peso entre 0,01% e 100%. Se o total passar de 100%, os pesos das atividades existentes serão reduzidos proporcionalmente."
         has_financial_resource = self.instance.pk and any(
             [
@@ -499,6 +499,35 @@ class ActivityEvidenceForm(forms.ModelForm):
             self.fields["attachment"].widget = forms.FileInput()
         self.fields["attachment"].help_text = "Obrigatório. Ao salvar a evidência, a atividade será concluída automaticamente com 100% de execução."
 
+    def clean(self):
+        cleaned_data = super().clean()
+        evidence_type = cleaned_data.get("evidence_type")
+        url = cleaned_data.get("url")
+        attachment = cleaned_data.get("attachment")
+        url_types = {ActivityEvidence.EvidenceType.LINK, ActivityEvidence.EvidenceType.SEI}
+        if evidence_type in url_types:
+            if not url:
+                self.add_error("url", "Informe a URL da evidência.")
+            cleaned_data["attachment"] = False
+        elif evidence_type:
+            if not attachment and not (self.instance.pk and self.instance.attachment):
+                self.add_error("attachment", "Anexe a evidência para este tipo.")
+            cleaned_data["url"] = ""
+            if evidence_type != ActivityEvidence.EvidenceType.SEI:
+                cleaned_data["reference"] = ""
+        return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if instance.evidence_type in {ActivityEvidence.EvidenceType.LINK, ActivityEvidence.EvidenceType.SEI}:
+            instance.attachment = ""
+        else:
+            instance.url = ""
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
+
 
 class ActivityBlockerForm(forms.ModelForm):
     resolution_owner_choice = forms.ChoiceField(label="Responsável pela solução")
@@ -585,7 +614,6 @@ def validate_risk_timing(form, cleaned_data):
     timing = cleaned_data.get("occurrence_timing")
     exposure_start = cleaned_data.get("exposure_start_date")
     exposure_end = cleaned_data.get("exposure_end_date")
-    trigger = cleaned_data.get("trigger_description")
     if timing == Risk.OccurrenceTiming.EXPOSURE_WINDOW:
         if not exposure_start and not exposure_end:
             form.add_error("exposure_start_date", "Informe ao menos o início ou o fim do período provável.")
@@ -594,9 +622,6 @@ def validate_risk_timing(form, cleaned_data):
     else:
         cleaned_data["exposure_start_date"] = None
         cleaned_data["exposure_end_date"] = None
-    if timing == Risk.OccurrenceTiming.DATE_OR_MILESTONE:
-        if not trigger:
-            form.add_error("trigger_description", "Descreva o marco ou condição de ocorrência.")
     return cleaned_data
 
 
@@ -780,7 +805,7 @@ class ActivityPlanningRiskForm(RiskIdentificationForm):
 
 
 ActivityPlanningRiskFormSet = forms.formset_factory(
-    ActivityPlanningRiskForm, extra=0, can_delete=True, min_num=1, validate_min=True,
+    ActivityPlanningRiskForm, extra=0, can_delete=True,
     max_num=20, validate_max=True,
 )
 
