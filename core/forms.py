@@ -956,18 +956,35 @@ class RiskMaterializationForm(forms.ModelForm):
             "measure_source": forms.RadioSelect,
         }
 
-    def __init__(self, *args, action=None, **kwargs):
+    def __init__(self, *args, action=None, risk=None, **kwargs):
         self.action = action
+        self.risk = risk
         super().__init__(*args, **kwargs)
         self.fields["actions_taken"].required = True
         self.fields["occurred_on"].help_text = "Preencha somente depois que o risco tiver se materializado."
         self.fields["measure_source"].required = False
         self.fields["measure_source"].choices = RiskMaterialization.MeasureSource.choices
+        risk = self.instance.risk if self.instance.pk else self.risk
+        if risk is not None and risk.expected_occurrence_date:
+            expected_date = risk.expected_occurrence_date
+            self.fields["occurred_on"].widget.attrs["min"] = expected_date.isoformat()
+            self.fields["occurred_on"].help_text = (
+                f"A data deve ser igual ou posterior a {expected_date:%d/%m/%Y}."
+            )
+            if not self.instance.pk:
+                self.fields["occurred_on"].initial = expected_date
 
     def clean(self):
         cleaned_data = super().clean()
         if not self.instance.pk and self.action is not None and not self.action.can_materialize_risks:
             raise forms.ValidationError("Só é possível materializar um risco com plano de ação em andamento.")
+        risk = self.instance.risk if self.instance.pk else self.risk
+        occurred_on = cleaned_data.get("occurred_on")
+        if risk is not None and risk.expected_occurrence_date and occurred_on and occurred_on < risk.expected_occurrence_date:
+            self.add_error(
+                "occurred_on",
+                "A data da materialização não pode ser anterior à data prevista para a ocorrência do risco.",
+            )
         return cleaned_data
 
 

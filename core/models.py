@@ -651,6 +651,11 @@ class RiskMaterialization(models.Model):
         super().clean()
         if self._state.adding and self.risk_id and not self.risk.action.can_materialize_risks:
             raise ValidationError("Só é possível materializar um risco com plano de ação em andamento.")
+        expected_date = self.risk.expected_occurrence_date if self.risk_id else None
+        if expected_date and self.occurred_on and self.occurred_on < expected_date:
+            raise ValidationError({
+                "occurred_on": "A data da materialização não pode ser anterior à data prevista para a ocorrência do risco."
+            })
 
     class Meta:
         ordering = ["-occurred_on", "-id"]

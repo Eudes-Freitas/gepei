@@ -2405,7 +2405,7 @@ def activity_follow_up(request, action_id, activity_id):
                 _require_permission(request.user, "change_riskmaterialization" if current_occurrence else "add_riskmaterialization")
                 if current_occurrence:
                     _require_permission(request.user, "view_riskmaterialization")
-                occurrence_form = RiskMaterializationForm(request.POST, request.FILES, instance=current_occurrence, action=action, prefix="occurrence")
+                occurrence_form = RiskMaterializationForm(request.POST, request.FILES, instance=current_occurrence, action=action, risk=selected_risk, prefix="occurrence")
                 valid = occurrence_form.is_valid() and valid
                 treatment = selected_risk.treatments.first() if selected_risk else None
                 if valid and treatment and (treatment.preventive_measure or treatment.contingency_measure):
@@ -2812,7 +2812,7 @@ def risk_detail(request, action_id, risk_id):
     if materialization_id:
         _require_permission(request.user, "change_riskmaterialization")
         editing_materialization = get_object_or_404(risk.materializations, pk=materialization_id)
-    materialization_form = RiskMaterializationForm(instance=editing_materialization, action=action, prefix="materialization")
+    materialization_form = RiskMaterializationForm(instance=editing_materialization, action=action, risk=risk, prefix="materialization")
     materialization_form.fields["actual_impact"].required = False
     acceptance_form = RiskAcceptanceForm(instance=current_acceptance, prefix="acceptance")
     remediation_form = RiskRemediationSubmissionForm(prefix="remediation")
@@ -2873,7 +2873,7 @@ def risk_detail(request, action_id, risk_id):
         if operation == "materialize" and risk.materializations.exists():
             messages.warning(request, "Este risco já possui uma materialização registrada. Edite o registro existente.")
             return redirect(reverse("risk_detail", args=[action.id, risk.id]) + "#ocorrencia")
-        materialization_form = RiskMaterializationForm(request.POST, request.FILES, instance=editing_materialization, action=action, prefix="materialization")
+        materialization_form = RiskMaterializationForm(request.POST, request.FILES, instance=editing_materialization, action=action, risk=risk, prefix="materialization")
         materialization_form.fields["actual_impact"].required = False
         if materialization_form.is_valid():
             materialization = materialization_form.save(commit=False)
