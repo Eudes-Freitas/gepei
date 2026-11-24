@@ -1881,7 +1881,7 @@ def _sync_action_progress(action, action_plan):
     total_weight = sum((activity.weight for activity in activities), 0)
     if total_weight == 100 and all(
         activity.status == StrategicAction.Status.COMPLETED and activity.progress == 100 for activity in activities
-    ):
+    ) and _plan_has_activity_evidence(activities[0]):
         action.status = StrategicAction.Status.COMPLETED
     elif action.status not in [StrategicAction.Status.BLOCKED, StrategicAction.Status.SUSPENDED]:
         action.status = StrategicAction.Status.IN_PROGRESS if any(activity.progress > 0 for activity in activities) else StrategicAction.Status.NOT_STARTED
@@ -1889,7 +1889,7 @@ def _sync_action_progress(action, action_plan):
 
 
 def _sync_activity_status(activity):
-    if activity.progress == 100 and _has_activity_evidence(activity):
+    if activity.progress == 100:
         status = StrategicAction.Status.COMPLETED
     elif activity.progress == 0:
         status = StrategicAction.Status.NOT_STARTED
@@ -1905,8 +1905,24 @@ def _sync_activity_status(activity):
 
 
 def _has_activity_evidence(activity):
-    """Retorna se a atividade ainda possui uma evidência comprobatória."""
+    """Retorna se a atividade possui uma evidência comprobatória."""
     return activity.evidences.exclude(attachment="").exists()
+
+
+def _plan_has_activity_evidence(activity):
+    """Retorna se qualquer atividade do plano possui evidência com anexo."""
+    return ActivityEvidence.objects.filter(
+        activity__action_plan=activity.action_plan,
+    ).exclude(attachment="").exists()
+
+
+def _is_last_activity_without_plan_evidence(activity):
+    """Indica se esta é a última atividade pendente e o plano não tem evidência."""
+    if _plan_has_activity_evidence(activity):
+        return False
+    return not activity.action_plan.activities.exclude(pk=activity.pk).exclude(
+        status=StrategicAction.Status.COMPLETED,
+    ).filter(progress__lt=100).exists()
 
 
 def _rebalance_activity_weights(action_plan, new_weight):
@@ -2475,8 +2491,8 @@ def activity_follow_up(request, action_id, activity_id):
         if request.POST.get("progress-progress") == "100" and not activity.risk_checked:
             messages.error(request, "É obrigatório informar se houve risco antes de concluir a atividade.")
             return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "?required_section=riscos#riscos")
-        if request.POST.get("progress-progress") == "100" and not activity.evidences.exclude(attachment="").exists():
-            messages.error(request, "Para concluir a atividade, registre uma evidência com anexo.")
+        if request.POST.get("progress-progress") == "100" and _is_last_activity_without_plan_evidence(activity):
+            messages.error(request, "Para concluir o plano de ação, registre ao menos uma evidência com anexo em uma atividade.")
             return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "?missing_attachment=1#execucao")
         progress_form = ActivityProgressForm(request.POST, instance=activity, prefix="progress")
         if progress_form.is_valid():

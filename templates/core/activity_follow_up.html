@@ -50,7 +50,7 @@
       {% if perms.core.change_activity and activity.status != 'CONCLUIDA' %}<form method="post" class="activity-form" id="activity-progress-form">{% csrf_token %}
         <input type="hidden" name="operation" value="update_progress">
         <div class="form-field">{{ progress_form.progress.label_tag }}{{ progress_form.progress }}{% if progress_form.progress.errors %}<small class="field-error">{{ progress_form.progress.errors|striptags }}</small>{% endif %}</div>
-        <p class="form-hint{% if request.GET.missing_attachment %} field-error{% endif %}">Para chegar a 100% e concluir a atividade, registre uma evidência com anexo.</p>
+        <p class="form-hint{% if request.GET.missing_attachment %} field-error{% endif %}">O plano de ação precisa ter ao menos uma evidência com anexo em uma atividade para chegar a 100%.</p>
       </form>{% elif activity.status == 'CONCLUIDA' %}<p class="form-hint">Atividade concluída · {{ activity.progress|floatformat:"-1" }}% de execução.</p>{% endif %}
     </article>
 

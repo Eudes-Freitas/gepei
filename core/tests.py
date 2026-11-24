@@ -2639,6 +2639,30 @@ class DashboardAndRiskTests(TestCase):
         activity.refresh_from_db()
         self.assertEqual(activity.status, StrategicAction.Status.COMPLETED)
 
+    def test_non_last_activity_can_be_completed_without_evidence(self):
+        self.client.login(username="copin", password="senha-segura")
+        action_plan = ActionPlan.objects.create(action=self.action, manager=self.user)
+        first = Activity.objects.create(
+            action_plan=action_plan, executor=self.user, title="Primeira",
+            weight=50, end_date=date(2026, 6, 30),
+        )
+        second = Activity.objects.create(
+            action_plan=action_plan, executor=self.user, title="Última",
+            weight=50, end_date=date(2026, 6, 30),
+        )
+        first_url = f"/planos-de-acao/{self.action.id}/atividades/{first.id}/acompanhar/"
+        response = self.client.post(first_url, {"operation": "update_progress", "progress-progress": "100"})
+        self.assertEqual(response.status_code, 302)
+        first.refresh_from_db()
+        self.assertEqual(first.status, StrategicAction.Status.COMPLETED)
+
+        second_url = f"/planos-de-acao/{self.action.id}/atividades/{second.id}/acompanhar/"
+        response = self.client.post(second_url, {"operation": "update_progress", "progress-progress": "100"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "registre ao menos uma evidência com anexo em uma atividade")
+        second.refresh_from_db()
+        self.assertNotEqual(second.status, StrategicAction.Status.COMPLETED)
+
     def test_follow_up_cards_edit_evidence_and_blocker_with_scope_and_permissions(self):
         self.client.force_login(self.user)
         plan = ActionPlan.objects.create(action=self.action, manager=self.user)
