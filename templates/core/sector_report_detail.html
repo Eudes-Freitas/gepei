@@ -6,7 +6,7 @@
   {% if report.prepared_by %}<div class="report-author"><span>Responsável pelo relatório</span><strong>{{ report.prepared_by.get_full_name|default:report.prepared_by.username }}</strong>{% if report.submitted_at %}<small>enviado em {{ report.submitted_at|date:"d/m/Y H:i" }}</small>{% endif %}</div>{% endif %}
   {% if report.validator_comment %}<div class="report-return-note"><strong>Manifestação do validador</strong><span>{{ report.validator_comment }}</span>{% if report.resubmission_due_date %}<small>Reapresentar até {{ report.resubmission_due_date|date:"d/m/Y" }}</small>{% endif %}</div>{% endif %}
   {% include "core/_sector_report_map.html" %}
-  <section class="panel" id="report-objectives"><h2>Objetivos estratégicos</h2>{% for objective in content.objectives %}<p id="report-objective-{{ forloop.counter }}"><strong>{{ objective.code }}</strong> · {{ objective.title }}</p>{% empty %}<p>Nenhum objetivo vinculado à unidade.</p>{% endfor %}</section>
+  <section class="panel" id="report-objectives"><h2>{% if active_plan.plan_type == "PESP" %}Ações estratégicas{% else %}Objetivos estratégicos{% endif %}</h2>{% for objective in content.objectives %}<p id="report-objective-{{ forloop.counter }}"><strong>{{ objective.code }}</strong> · {{ objective.title }}</p>{% empty %}<p>Nenhum objetivo vinculado à unidade.</p>{% endfor %}</section>
   <section class="metrics report-content-metrics">
     <article class="metric-card"><span>Ações estratégicas</span><strong>{{ content.actions|length }}</strong><small>{{ content.activities|length }} atividades</small></article>
     <article class="metric-card metric-warning"><span>Impedimentos abertos</span><strong>{{ content.blockers|length }}</strong><small>exigem providência</small></article>

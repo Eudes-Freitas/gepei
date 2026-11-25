@@ -5,7 +5,7 @@
 <a class="back-link" href="{% url 'report_cycle_overview' %}?unit={{ report.unit_id }}">← Voltar aos relatórios do setor</a>
 <header class="action-detail-heading"><div><p class="eyebrow">{{ data.plan_acronym }} · Relatório trimestral</p><h1>{{ data.unit_acronym }} · {{ report.quarter }}º trimestre de {{ report.year }}</h1><p>{{ data.unit }} · {{ data.period_label }}</p></div><div class="heading-actions quarterly-heading-actions"><span class="chip chip-concluida">Consolidado</span>{% if can_manage_report %}<a class="row-icon" href="{% url 'quarterly_report_edit' report.pk %}" title="Editar relatório" aria-label="Editar relatório">{% include "core/_record_icon.html" with icon="edit" %}</a><button type="button" class="row-icon row-icon-danger" data-delete-report="{{ report.pk }}" title="Excluir relatório" aria-label="Excluir relatório">{% include "core/_record_icon.html" with icon="delete" %}</button>{% endif %}</div></header>
 <section class="metrics metrics-centered quarterly-report-metrics" aria-label="Totais do setor, incluindo participação">
-  <article class="metric-card report-theme-objectives"><span>Objetivos</span><strong>{{ data.objectives|length }}</strong></article>
+  {% if active_plan.plan_type != "PESP" %}<article class="metric-card report-theme-objectives"><span>Objetivos</span><strong>{{ data.objectives|length }}</strong></article>{% endif %}
   <article class="metric-card report-theme-targets"><span>Metas</span><strong>{{ data.targets|length }}</strong></article>
   <article class="metric-card report-theme-indicators"><span>Indicadores</span><strong>{{ data.indicators|length }}</strong></article>
   <article class="metric-card report-theme-actions"><span>Ações</span><strong>{{ data.actions|length }}</strong></article>
@@ -13,7 +13,7 @@
 <section class="report-map-featured" aria-label="Mapa do relatório">
   {% include "core/_quarterly_report_map.html" %}
 </section>
-<details class="panel quarterly-report-block report-theme-objectives" id="objetivos"><span id="report-objectives"></span><summary><h2>Objetivos estratégicos</h2></summary><div class="report-objective-list">{% for item in data.objectives %}<article class="report-objective-card" id="report-objective-{{ forloop.counter }}"><span class="report-objective-code">{{ item.code|default:"Objetivo" }}</span><h3>{{ item.title }}</h3></article>{% empty %}<p>Nenhum objetivo vinculado ao setor.</p>{% endfor %}</div></details>
+<details class="panel quarterly-report-block report-theme-objectives" id="objetivos"><span id="report-objectives"></span><summary><h2>{% if active_plan.plan_type == "PESP" %}Ações estratégicas{% else %}Objetivos estratégicos{% endif %}</h2></summary><div class="report-objective-list">{% for item in data.objectives %}<article class="report-objective-card" id="report-objective-{{ forloop.counter }}"><span class="report-objective-code">{{ item.code|default:"Objetivo" }}</span><h3>{{ item.title }}</h3></article>{% empty %}<p>Nenhum objetivo vinculado ao setor.</p>{% endfor %}</div></details>
 <details class="panel quarterly-report-block report-theme-indicators" id="metas"><span id="report-targets"></span><span id="report-indicators"></span><span id="indicadores"></span><summary><h2>Metas, indicadores e execução</h2></summary>
 {% if data.contains_test_data %}<p class="form-hint"><strong>[TESTE]</strong> Este relatório contém dados fictícios para validação. Os registros e arquivos de teste estão identificados com [TESTE].</p>{% endif %}
 {% for item in data.indicators %}<article class="unified-result-section indicator-status-{{ item.signal_class }}" id="report-indicator-{{ forloop.counter }}">
@@ -81,7 +81,7 @@
   var panel=document.createElement('section');
   panel.className='panel quarterly-report-block report-theme-indicators unified-objectives-panel';
   panel.id='objetivos-metas';
-  panel.innerHTML='<h2>Objetivos estratégicos e metas</h2>';
+  panel.innerHTML='<h2>{% if active_plan.plan_type == "PESP" %}Ações estratégicas e metas{% else %}Objetivos estratégicos e metas{% endif %}</h2>';
   Object.keys(objectives).forEach(function(name){
     var group=document.createElement('section');
     group.className='objective-meta-group';

@@ -19,6 +19,18 @@
       <input id="permission-filter" type="search" placeholder="Filtrar permissões..." data-permission-filter autocomplete="off">
     </div>
 
+    <fieldset class="permission-module">
+      <legend class="permission-module-heading"><span>Planos</span></legend>
+      <div class="permission-grid">
+        {% for plan in form.plans %}
+          <label class="permission-option">{{ plan.tag }} {{ plan.choice_label }}</label>
+        {% empty %}
+          <p>Nenhum plano cadastrado.</p>
+        {% endfor %}
+      </div>
+      {{ form.plans.errors }}
+    </fieldset>
+
     {% for module in modules %}
       <fieldset class="permission-module" data-module>
         <legend class="permission-module-heading">

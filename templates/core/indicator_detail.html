@@ -53,9 +53,9 @@
       </article>
 
       <article class="panel indicator-relations">
-        <div class="panel-heading"><div><p class="eyebrow">Vínculos estratégicos</p><h2>Objetivos relacionados</h2></div></div>
+        <div class="panel-heading"><div><p class="eyebrow">Vínculos estratégicos</p><h2>{% if active_plan.plan_type == "PESP" %}Ações estratégicas relacionadas{% else %}Objetivos relacionados{% endif %}</h2></div></div>
         <div class="relation-list">
-          {% for artifact in indicator.artifacts.all %}<a class="relation-link" href="{% url 'pei_overview' %}?plan={{ artifact.plan_id }}&amp;objective={{ artifact.id }}#objetivo-{{ artifact.id }}"><span>Objetivo</span><strong>{{ artifact.code }} · {{ artifact.title }}</strong></a>{% empty %}<p class="strategy-empty">Nenhum objetivo vinculado.</p>{% endfor %}
+          {% for artifact in indicator.artifacts.all %}<a class="relation-link" href="{% url 'pei_overview' %}?plan={{ artifact.plan_id }}&amp;objective={{ artifact.id }}#objetivo-{{ artifact.id }}"><span>{% if active_plan.plan_type == "PESP" %}Ação estratégica{% else %}Objetivo{% endif %}</span><strong>{{ artifact.code }} · {{ artifact.title }}</strong></a>{% empty %}<p class="strategy-empty">Nenhum objetivo vinculado.</p>{% endfor %}
         </div>
       </article>
       <article class="panel indicator-target-details">

@@ -5,6 +5,7 @@ from . import views, quarterly_reports
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("planos/selecionar/", views.select_plan, name="select_plan"),
     path("pei/", views.pei_overview, name="pei_overview"),
     path("metas/", views.target_overview, name="target_overview"),
     path("indicadores/", views.indicator_overview, name="indicator_overview"),

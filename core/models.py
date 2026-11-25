@@ -20,6 +20,7 @@ class OrganizationalUnit(models.Model):
         SECTOR = "SETOR", "Setor"
 
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+    exclusive_plan = models.ForeignKey("Plan", null=True, blank=True, on_delete=models.PROTECT, related_name="exclusive_units")
     parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT)
     name = models.CharField(max_length=180)
     acronym = models.CharField(max_length=30, blank=True)
@@ -58,9 +59,16 @@ class Plan(models.Model):
     name = models.CharField(max_length=180)
     acronym = models.CharField(max_length=30)
     plan_type = models.CharField(max_length=10, choices=PlanType.choices)
+    access_groups = models.ManyToManyField("auth.Group", blank=True, related_name="accessible_plans")
     start_date = models.DateField()
     end_date = models.DateField()
     active = models.BooleanField(default=True)
+
+    @property
+    def strategy_artifact_type(self):
+        if self.plan_type == self.PlanType.PESP:
+            return PlanArtifact.ArtifactType.ACTION
+        return PlanArtifact.ArtifactType.OBJECTIVE
 
     def __str__(self):
         return self.acronym
@@ -72,6 +80,8 @@ class PlanArtifact(models.Model):
         AXIS = "EIXO", "Eixo Estratégico"
         OBJECTIVE = "OBJETIVO", "Objetivo Estratégico"
         PROJECT = "PROJETO", "Projeto Estratégico"
+        ACTION = "ACAO", "Ação Estratégica"
+        REFERENCE = "REFERENCIA", "Referência normativa"
 
     plan = models.ForeignKey(Plan, on_delete=models.CASCADE, related_name="artifacts")
     parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE)
@@ -82,6 +92,9 @@ class PlanArtifact(models.Model):
 
     def __str__(self):
         return f"{self.code} {self.title}".strip()
+
+
+STRATEGY_ARTIFACT_TYPES = (PlanArtifact.ArtifactType.OBJECTIVE, PlanArtifact.ArtifactType.ACTION)
 
 
 class StrategicAction(models.Model):
@@ -106,7 +119,10 @@ class StrategicAction(models.Model):
     status = models.CharField(max_length=15, choices=Status.choices, default=Status.NOT_STARTED)
     progress = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     funding_sources = models.CharField(max_length=255, blank=True)
+    alineas = models.JSONField(default=dict, blank=True)
+    is_execution_item = models.BooleanField(default=True)
     participating_units = models.ManyToManyField(OrganizationalUnit, related_name="participating_actions", blank=True)
+    related_objectives = models.ManyToManyField(PlanArtifact, blank=True, related_name="related_actions")
 
     def __str__(self):
         return f"{self.code} — {self.title}"

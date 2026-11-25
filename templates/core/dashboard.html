@@ -4,7 +4,7 @@
 {% block content %}
   <section class="page-heading dashboard-heading">
     <div>
-      <p class="eyebrow">Piloto PEI · 2025–2034</p>
+      {% if active_plan %}<p class="eyebrow">{{ active_plan.acronym }} · {{ active_plan.start_date|date:"Y" }}–{{ active_plan.end_date|date:"Y" }}</p>{% endif %}
       <h1>Painel executivo</h1>
       <p>Visão geral da implementação: desempenho, execução e pontos que exigem atenção da gestão. Clique em qualquer indicador para ver o detalhe.</p>
     </div>
@@ -13,7 +13,6 @@
   <form class="dashboard-filters" method="get" aria-label="Filtros do painel">
     <label>Plano
       <select name="plan">
-        <option value="">Todos os planos</option>
         {% for plan in plans %}<option value="{{ plan.id }}" {% if selected_plan == plan.id|stringformat:"s" %}selected{% endif %}>{{ plan.acronym }} · {{ plan.name }}</option>{% endfor %}
       </select>
     </label>
@@ -48,9 +47,11 @@
   </form>
 
   <section class="dx-kpis" aria-label="Resumo estratégico">
+    {% if active_plan.plan_type != "PESP" %}
     {% if can_plans %}<a class="dx-kpi" href="{% url 'pei_overview' %}?{{ objective_query }}"><span class="dx-kpi-label">Objetivos estratégicos</span><strong>{{ objective_count }}</strong></a>{% else %}<div class="dx-kpi  dx-locked"><span class="dx-kpi-label">Objetivos estratégicos</span><strong>🔒</strong><small>sem permissão</small></div>{% endif %}
-    {% if can_exec %}<a class="dx-kpi dx-green" href="{% url 'action_plan_list' %}{% if base_query %}?{{ base_query }}{% endif %}"><span class="dx-kpi-label">Ações estratégicas</span><strong>{{ action_count }}</strong></a>
-    <a class="dx-kpi dx-amber" href="{% url 'action_plan_list' %}?{{ delayed_query }}"><span class="dx-kpi-label">Ações em atraso</span><strong>{{ delayed_count }}</strong></a>{% else %}<div class="dx-kpi dx-green dx-locked"><span class="dx-kpi-label">Ações estratégicas</span><strong>🔒</strong><small>sem permissão</small></div><div class="dx-kpi dx-amber dx-locked"><span class="dx-kpi-label">Ações em atraso</span><strong>🔒</strong><small>sem permissão</small></div>{% endif %}
+    {% endif %}
+    {% if can_exec %}<a class="dx-kpi dx-green" href="{% url 'action_plan_list' %}{% if base_query %}?{{ base_query }}{% endif %}"><span class="dx-kpi-label">{% if active_plan.plan_type == "PESP" %}Alíneas{% else %}Ações estratégicas{% endif %}</span><strong>{{ action_count }}</strong></a>
+    <a class="dx-kpi dx-amber" href="{% url 'action_plan_list' %}?{{ delayed_query }}"><span class="dx-kpi-label">{% if active_plan.plan_type == "PESP" %}Alíneas em atraso{% else %}Ações em atraso{% endif %}</span><strong>{{ delayed_count }}</strong></a>{% else %}<div class="dx-kpi dx-green dx-locked"><span class="dx-kpi-label">{% if active_plan.plan_type == "PESP" %}Alíneas{% else %}Ações estratégicas{% endif %}</span><strong>🔒</strong><small>sem permissão</small></div><div class="dx-kpi dx-amber dx-locked"><span class="dx-kpi-label">{% if active_plan.plan_type == "PESP" %}Alíneas em atraso{% else %}Ações em atraso{% endif %}</span><strong>🔒</strong><small>sem permissão</small></div>{% endif %}
     {% if can_view_risks %}
       <a class="dx-kpi dx-red" href="{% url 'risk_overview' %}?{{ risk_query }}"><span class="dx-kpi-label">Riscos altos ou críticos</span><strong>{{ critical_risk_count }}</strong></a>
     {% else %}
@@ -61,7 +62,7 @@
   <section class="panel sector-execution-panel" aria-label="Ranking de atingimento das metas por setor">
     <div class="panel-heading"><div><p class="eyebrow">Ranking</p><h2>Atingimento das metas por setor</h2></div><span class="chip chip-neutral">{% if selected_quarter %}{{ selected_quarter }}º trimestre{% elif selected_year %}{{ selected_year }}{% else %}Todo o plano{% endif %}</span></div>
     <div class="sector-execution-table">
-      <div class="sector-execution-row sector-execution-header"><strong>Setor</strong><strong>Execução do plano de ação</strong><strong>Atingimento das metas</strong></div>
+      <div class="sector-execution-row sector-execution-header"><strong>{% if active_plan.plan_type == "PESP" %}Órgão{% else %}Setor{% endif %}</strong><strong>Execução do plano de ação</strong><strong>Atingimento das metas</strong></div>
       {% for item in sector_execution|slice:":5" %}
         <div class="sector-execution-row">
           <div><strong>{{ item.name }}</strong><small>{{ item.full_name }}</small></div>
@@ -86,7 +87,7 @@
 
   <section class="dx-grid">
     {% if can_exec %}<article class="dx-card">
-      <div class="panel-heading"><div><p class="eyebrow">Execução</p><h2>Situação das ações</h2></div><a class="chip chip-neutral" href="{% url 'action_plan_list' %}{% if base_query %}?{{ base_query }}{% endif %}">{{ action_count }} no total</a></div>
+      <div class="panel-heading"><div><p class="eyebrow">Execução</p><h2>Situação {% if active_plan.plan_type == "PESP" %}das alíneas{% else %}das ações{% endif %}</h2></div><a class="chip chip-neutral" href="{% url 'action_plan_list' %}{% if base_query %}?{{ base_query }}{% endif %}">{{ action_count }} no total</a></div>
       <div class="dx-donut-box">
         <div id="chart-actions" class="dx-chart" style="width:250px" aria-label="Situação das ações: clique em uma fatia para filtrar"></div>
         <ul class="dx-legend">
@@ -130,7 +131,7 @@
       <div class="dx-charts">
         <figure><figcaption>Aferição dos indicadores</figcaption><div id="chart-measured" class="dx-chart" role="img" aria-label="Gráfico de rosca: indicadores aferidos e sem aferição"></div></figure>
         <figure><figcaption>Situação em relação à meta</figcaption><div id="chart-signal" class="dx-chart" role="img" aria-label="Gráfico de barras: indicadores por situação frente à meta"></div></figure>
-        <figure><figcaption>Atingimento médio da meta por objetivo</figcaption><div id="chart-objectives" class="dx-chart" role="img" aria-label="Gráfico de barras: percentual médio de atingimento da meta por objetivo"></div></figure>
+        <figure><figcaption>Atingimento médio da meta por {% if active_plan.plan_type == "PESP" %}ação estratégica{% else %}objetivo{% endif %}</figcaption><div id="chart-objectives" class="dx-chart" role="img" aria-label="Gráfico de barras: percentual médio de atingimento da meta por {% if active_plan.plan_type == "PESP" %}ação estratégica{% else %}objetivo{% endif %}"></div></figure>
       </div>
       <p class="dx-note">Atingimento = avanço realizado ÷ avanço esperado pelo tempo decorrido. Sem trajetória calculável, usa-se a meta do período. Os gráficos são limitados a 100%. Meta alcançada ≥ 100% · Próximo da meta ≥ 80% · Atingimento parcial ≥ 50% · Baixo atingimento &lt; 50%. Clique em um gráfico para abrir a lista filtrada.</p>
     {% else %}
@@ -173,10 +174,10 @@
 
   {% if objective_progress and can_plans %}
   <article class="dx-card dx-wide">
-    <div class="panel-heading"><div><p class="eyebrow">Estratégia</p><h2>Progresso por objetivo estratégico</h2></div><span class="chip chip-neutral">{{ objective_progress|length }} objetivo{{ objective_progress|length|pluralize }}</span></div>
+    <div class="panel-heading"><div><p class="eyebrow">Estratégia</p><h2>Progresso por {% if active_plan.plan_type == "PESP" %}ação estratégica{% else %}objetivo estratégico{% endif %}</h2></div><span class="chip chip-neutral">{{ objective_progress|length }} {% if active_plan.plan_type == "PESP" %}aç{{ objective_progress|length|pluralize:"ão,ões" }}{% else %}objetivo{{ objective_progress|length|pluralize }}{% endif %}</span></div>
     <ul class="dx-bars">
       {% for item in objective_progress %}
-        <li><a href="{% url 'pei_overview' %}?{{ item.query }}#objetivo-{{ item.id }}" title="{{ item.actions }} ação{{ item.actions|pluralize:"ões" }} · ver ações do objetivo"><span class="dx-bar-label">{{ item.code }} · {{ item.title }}</span><span class="dx-track"><span class="dx-fill" style="width:{{ item.average|stringformat:'.1f' }}%"></span></span><b>{{ item.average|floatformat:"-1" }}%</b></a></li>
+        <li><a href="{% url 'pei_overview' %}?{{ item.query }}#objetivo-{{ item.id }}" title="{% if active_plan.plan_type == "PESP" %}Ver ação estratégica{% else %}{{ item.actions }} ação{{ item.actions|pluralize:"ões" }} · ver ações do objetivo{% endif %}"><span class="dx-bar-label">{{ item.code }} · {{ item.title }}</span><span class="dx-track"><span class="dx-fill" style="width:{{ item.average|stringformat:'.1f' }}%"></span></span><b>{{ item.average|floatformat:"-1" }}%</b></a></li>
       {% endfor %}
     </ul>
   </article>
@@ -197,8 +198,26 @@
         var el = document.getElementById(id);
         if (!el) { return; }
         Highcharts.chart(id, {
-          chart: { type: 'pie', height: 250, style: { fontFamily: 'inherit' } },
-          title: { text: centerText, verticalAlign: 'middle', y: -8, style: { fontSize: '1.5rem', fontWeight: '800', color: '#0b2a4a' } },
+          chart: {
+            type: 'pie', height: 250, style: { fontFamily: 'inherit' },
+            events: {
+              render: function () {
+                var center = this.series[0].center;
+                if (!this.centerLabel) {
+                  this.centerLabel = this.renderer.text(String(centerText), 0, 0)
+                    .css({ fontSize: '1.5rem', fontWeight: '800', pointerEvents: 'none' })
+                    .attr({ fill: '#0b2a4a', zIndex: 5 })
+                    .add();
+                }
+                var bounds = this.centerLabel.element.getBBox();
+                this.centerLabel.attr({
+                  translateX: this.plotLeft + center[0] - bounds.x - bounds.width / 2,
+                  translateY: this.plotTop + center[1] - bounds.y - bounds.height / 2
+                });
+              }
+            }
+          },
+          title: { text: null },
           credits: { enabled: false },
           tooltip: { pointFormat: '<b>{point.y}</b> ({point.percentage:.0f}%)' },
           legend: { enabled: true, labelFormat: '{name}: {y} ({percentage:.0f}%)' },

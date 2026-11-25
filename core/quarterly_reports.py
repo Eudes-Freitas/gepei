@@ -12,6 +12,8 @@ from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
+
+from .plan_scope import current_plans
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
@@ -53,7 +55,7 @@ def _snapshot_indicator_chart(indicator):
 def _snapshot(plan, unit, year, quarter):
     from .views import _final_progress, _indicator_signal
     start, end = _period(year, quarter)
-    actions = list(StrategicAction.objects.filter(artifact__plan=plan).filter(Q(coordinating_unit=unit) | Q(participating_units=unit)).distinct().select_related("artifact"))
+    actions = list(StrategicAction.objects.filter(artifact__plan=plan, is_execution_item=True).filter(Q(coordinating_unit=unit) | Q(participating_units=unit)).distinct().select_related("artifact"))
     activities = list(Activity.objects.filter(action_plan__action__in=actions).select_related("action_plan__action", "executor"))
     artifacts = {a.id: a for a in PlanArtifact.objects.filter(plan=plan)}
     action_artifact_ids = set()
@@ -64,7 +66,7 @@ def _snapshot(plan, unit, year, quarter):
         while node and node.pk not in visited:
             visited.add(node.pk)
             action_artifact_ids.add(node.pk)
-            if node.artifact_type == PlanArtifact.ArtifactType.OBJECTIVE:
+            if node.artifact_type == plan.strategy_artifact_type:
                 action_objective_codes[action.pk] = node.code
             node = artifacts.get(node.parent_id)
     targets = list(StrategicTarget.objects.filter(artifact__plan=plan).filter(
@@ -81,7 +83,7 @@ def _snapshot(plan, unit, year, quarter):
         visited = set()
         while node and node.id not in visited:
             visited.add(node.id)
-            if node.artifact_type == PlanArtifact.ArtifactType.OBJECTIVE:
+            if node.artifact_type == plan.strategy_artifact_type:
                 objective_ids.add(node.id)
             node = artifacts.get(node.parent_id)
     indicator_rows = []
@@ -142,8 +144,8 @@ def overview(request):
     view_units = view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
     write_units = scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
     can_consolidate = request.user.has_perm("core.consolidate_quarterlysectorreport")
-    initial = {"unit": selected_unit, "plan": selected_plan or Plan.objects.filter(active=True).values_list("pk", flat=True).first(), "year": today.year, "quarter": (today.month - 1) // 3 + 1}
-    form = QuarterlyReportForm(request.POST if request.method == "POST" else None, units=write_units, initial=initial)
+    initial = {"unit": selected_unit, "plan": selected_plan or current_plans(request).values_list("pk", flat=True).first(), "year": today.year, "quarter": (today.month - 1) // 3 + 1}
+    form = QuarterlyReportForm(request.POST if request.method == "POST" else None, units=write_units, plans=current_plans(request), initial=initial)
     if request.method == "POST":
         if not can_consolidate:
             raise PermissionDenied
@@ -160,14 +162,14 @@ def overview(request):
                     message = "Já existe um relatório para este período. Edite-o para reconsolidar com as informações atuais."
             messages.info(request, message)
             return redirect("quarterly_report_detail", report_id=report.id)
-    reports = QuarterlySectorReport.objects.filter(unit__in=view_units).select_related("unit", "plan", "consolidated_by")
+    reports = QuarterlySectorReport.objects.filter(plan__in=current_plans(request), unit__in=view_units).select_related("unit", "plan", "consolidated_by")
     years = sorted(set(reports.values_list("year", flat=True)) | {today.year}, reverse=True)
     if selected_unit.isdigit():
         reports = reports.filter(unit_id=selected_unit)
     if selected_plan.isdigit():
         reports = reports.filter(plan_id=selected_plan)
     period_values = {(year, quarter) for year, quarter in reports.values_list("year", "quarter").distinct()}
-    for plan in Plan.objects.filter(active=True).only("start_date", "end_date"):
+    for plan in current_plans(request).only("start_date", "end_date"):
         for year in range(plan.start_date.year, plan.end_date.year + 1):
             first_quarter = 1 if year > plan.start_date.year else (plan.start_date.month - 1) // 3 + 1
             last_quarter = 4 if year < plan.end_date.year else (plan.end_date.month - 1) // 3 + 1
@@ -199,7 +201,7 @@ def overview(request):
     if selected_period:
         units = units.filter(pk__in=reports.values("unit_id"))
     sector_rows = [{"unit": unit, "reports": [r for r in reports if r.unit_id == unit.pk], "can_consolidate": can_consolidate and write_units.filter(pk=unit.pk).exists()} for unit in units]
-    return render(request, "core/quarterly_report_overview.html", {"units": view_units, "selected_unit": selected_unit, "plans": Plan.objects.filter(active=True), "selected_plan": selected_plan, "sector_rows": sector_rows, "consolidation_form": form, "can_consolidate": can_consolidate, "available_years": available_years, "selected_year": selected_year, "selected_quarter": selected_quarter, "quarters": range(1, 5), "available_periods": available_periods, "selected_period": selected_period})
+    return render(request, "core/quarterly_report_overview.html", {"units": view_units, "selected_unit": selected_unit, "plans": current_plans(request), "selected_plan": selected_plan, "sector_rows": sector_rows, "consolidation_form": form, "can_consolidate": can_consolidate, "available_years": available_years, "selected_year": selected_year, "selected_quarter": selected_quarter, "quarters": range(1, 5), "available_periods": available_periods, "selected_period": selected_period})
 
 
 def repair_report_scope(report):
@@ -381,7 +383,7 @@ def _report_display_data(snapshot, report=None):
 def _get_visible_report(request, report_id):
     if not _can_view(request.user):
         raise PermissionDenied
-    return get_object_or_404(QuarterlySectorReport.objects.filter(unit__in=view_scope_units(OrganizationalUnit.objects.all(), request.user)).select_related("unit", "plan", "consolidated_by"), pk=report_id)
+    return get_object_or_404(QuarterlySectorReport.objects.filter(plan__in=current_plans(request), unit__in=view_scope_units(OrganizationalUnit.objects.all(), request.user)).select_related("unit", "plan", "consolidated_by"), pk=report_id)
 
 
 def _snapshot_file(filename):
@@ -421,7 +423,7 @@ def measurement_file(request, report_id, indicator_index, measurement_index):
 def _get_editable_report(request, report_id):
     if not request.user.has_perm("core.consolidate_quarterlysectorreport"):
         raise PermissionDenied
-    return get_object_or_404(QuarterlySectorReport.objects.filter(unit__in=scope_units(OrganizationalUnit.objects.all(), request.user)).select_related("unit", "plan"), pk=report_id)
+    return get_object_or_404(QuarterlySectorReport.objects.filter(plan__in=current_plans(request), unit__in=scope_units(OrganizationalUnit.objects.all(), request.user)).select_related("unit", "plan"), pk=report_id)
 
 
 @login_required
@@ -430,6 +432,7 @@ def edit(request, report_id):
     form = QuarterlyReportForm(
         request.POST if request.method == "POST" else None,
         units=scope_units(OrganizationalUnit.objects.order_by("name"), request.user),
+        plans=current_plans(request),
         initial={"plan": report.plan_id, "unit": report.unit_id, "year": report.year, "quarter": report.quarter},
     )
     if request.method == "POST" and form.is_valid():
@@ -469,7 +472,7 @@ def delete(request, report_id):
 def detail(request, report_id):
     if not _can_view(request.user):
         raise PermissionDenied
-    report = get_object_or_404(QuarterlySectorReport.objects.filter(unit__in=view_scope_units(OrganizationalUnit.objects.all(), request.user)).select_related("unit", "plan", "consolidated_by"), pk=report_id)
+    report = get_object_or_404(QuarterlySectorReport.objects.filter(plan__in=current_plans(request), unit__in=view_scope_units(OrganizationalUnit.objects.all(), request.user)).select_related("unit", "plan", "consolidated_by"), pk=report_id)
     ids = user_unit_ids(request.user)
     request.read_only_other_unit = ids is not None and report.unit_id not in ids
     display_data = _report_display_data(report.snapshot, report)

@@ -129,12 +129,18 @@ def user_unit_ids(user, for_view=False):
 
 
 def scope_units(queryset, user, for_view=False):
+    from .plan_scope import units_for_plan
+
+    queryset = units_for_plan(queryset, user)
     ids = user_unit_ids(user, for_view=for_view)
     return queryset if ids is None else queryset.filter(pk__in=ids)
 
 
 def scope_actions(queryset, user, for_view=False):
-    """Ações coordenadas ou com participação do setor do usuário."""
+    """Itens executáveis coordenados ou com participação do setor do usuário."""
+    queryset = queryset.filter(is_execution_item=True)
+    if hasattr(user, "_active_plan_id"):
+        queryset = queryset.filter(artifact__plan_id=user._active_plan_id)
     ids = user_unit_ids(user, for_view=for_view)
     if ids is None:
         return queryset
@@ -153,6 +159,8 @@ def scope_by_unit(queryset, user, field, include_unassigned=False, for_view=Fals
 
     Com `include_unassigned`, registros sem setor (institucionais) continuam visíveis.
     """
+    if queryset.model._meta.model_name == "indicator" and hasattr(user, "_active_plan_id"):
+        queryset = queryset.filter(artifacts__plan_id=user._active_plan_id).distinct()
     ids = user_unit_ids(user, for_view=for_view)
     if ids is None:
         return queryset
@@ -180,7 +188,13 @@ def selected_unit_for_request(request):
     if requested.isdigit() and int(requested) in ids:
         return requested
     profile = getattr(request.user, "profile", None)
-    return str(profile.unit_id) if profile and profile.unit_id else ""
+    if profile and profile.unit_id:
+        from .plan_scope import units_for_plan
+        from .models import OrganizationalUnit
+
+        if units_for_plan(OrganizationalUnit.objects.filter(pk=profile.unit_id), request.user).exists():
+            return str(profile.unit_id)
+    return ""
 
 
 def view_scope_actions(queryset, user):

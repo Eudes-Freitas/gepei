@@ -3,9 +3,13 @@
 {% block content %}
   <a class="back-link" href="{% url 'action_plan_list' %}">← Voltar</a>
   <section class="action-detail-heading">
-    <div><p class="eyebrow">{{ action.artifact.plan.acronym }} · {{ action.code }}</p><h1>{{ action.title }}</h1><p>{{ action.coordinating_unit.name }}{% if action.participating_units.all %} · com participação de {{ action.participating_units.all|join:", " }}{% endif %}</p></div>
+    <div><p class="eyebrow">{{ action.artifact.plan.acronym }} · {{ action.code }}</p><h1>{% if active_plan.plan_type == "PESP" %}{{ action.description|default:action.title }}{% else %}{{ action.title }}{% endif %}</h1><p>{{ action.coordinating_unit.name }}{% if action.participating_units.all %} · com participação de {{ action.participating_units.all|join:", " }}{% endif %}</p></div>
     <div class="heading-actions">{% if can_edit_plan %}<a class="button button-secondary" href="{% url 'action_plan_edit' action.id %}">{% include "core/_record_icon.html" with icon="edit" %} Editar plano de ação</a>{% endif %}</div>
   </section>
+
+  {% if action.alineas %}
+    <details class="panel"><summary>Alíneas da ação estratégica</summary>{% include "core/includes/pesp_alineas.html" %}</details>
+  {% endif %}
 
   {% if not action_plan %}
     <section class="panel start-plan-panel"><h2>Iniciar plano de ação</h2><p>O plano de ação permitirá dividir esta ação estratégica em tarefas, atribuí-las a pessoas e acompanhar entregas e prazos.</p>{% if perms.core.add_actionplan %}<form method="post">{% csrf_token %}<input type="hidden" name="operation" value="start_plan"><button class="button button-primary" type="submit">Iniciar plano de ação</button></form>{% else %}<p class="form-hint">Você não tem permissão para iniciar planos de ação.</p>{% endif %}</section>
@@ -15,7 +19,7 @@
       <article class="metric-card"><span>Atividades Cadastradas</span><strong>{{ activities|length }}</strong></article>
       <article class="metric-card {% if remaining_weight > 0 %}metric-warning{% endif %}"><span>Peso distribuído</span><strong>{{ allocated_weight|floatformat:"-1" }}%</strong></article>
       <article class="metric-card"><span>Responsável pelo plano</span><strong class="manager-name">{{ action_plan.manager.get_full_name|default:action_plan.manager.username }}</strong></article>
-      {% if perms.core.view_strategictarget or perms.core.view_indicator %}<a class="metric-card metric-link" href="{% if perms.core.view_indicator %}{{ indicators_url }}{% else %}{{ targets_url }}{% endif %}" title="Ver metas e indicadores do objetivo estratégico"><span>Metas e indicadores</span><strong class="combined-results-count">{% if perms.core.view_strategictarget %}{{ objective_target_count }} meta{{ objective_target_count|pluralize:"s" }}{% endif %}{% if perms.core.view_strategictarget and perms.core.view_indicator %}<br>{% endif %}{% if perms.core.view_indicator %}{{ objective_indicator_count }} indicador{{ objective_indicator_count|pluralize:"es" }}{% endif %}</strong></a>{% endif %}
+      {% if perms.core.view_strategictarget or perms.core.view_indicator %}<a class="metric-card metric-link" href="{% if perms.core.view_indicator %}{{ indicators_url }}{% else %}{{ targets_url }}{% endif %}" title="Ver metas e indicadores vinculados"><span>Metas e indicadores</span><strong class="combined-results-count">{% if perms.core.view_strategictarget %}{{ objective_target_count }} meta{{ objective_target_count|pluralize:"s" }}{% endif %}{% if perms.core.view_strategictarget and perms.core.view_indicator %}<br>{% endif %}{% if perms.core.view_indicator %}{{ objective_indicator_count }} indicador{{ objective_indicator_count|pluralize:"es" }}{% endif %}</strong></a>{% endif %}
     </section>
 
     <section class="detail-grid">

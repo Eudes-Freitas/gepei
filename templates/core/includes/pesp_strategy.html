@@ -1,0 +1,34 @@
+<section class="metrics strategy-metrics pesp-strategy-metrics" aria-label="Resumo do PESP">
+  <article class="metric-card metric-blue"><span>Ações estratégicas</span><strong>{{ action_count }}</strong></article>
+  <article class="metric-card"><span>Alíneas</span><strong>{{ alinea_count }}</strong></article>
+  <article class="metric-card"><span>Execução média</span><strong>{{ progress_average|floatformat:"-1" }}%</strong></article>
+</section>
+
+<section class="strategy-map" aria-labelledby="pesp-actions-heading">
+  <article class="strategy-dimension">
+    <header><h2 id="pesp-actions-heading">Ações Estratégicas</h2></header>
+    <div class="strategy-objectives strategy-orphans">
+      {% for group in pesp_actions %}
+        <details class="strategy-objective" id="objetivo-{{ group.item.pk }}" tabindex="-1"{% if expand_pesp_action %} open{% endif %}>
+          <summary>
+            <span class="objective-code">{{ group.item.code }}</span>
+            <strong>{{ group.item.title }}</strong>
+            <span class="objective-counts">{{ group.alineas|length }} alínea{{ group.alineas|length|pluralize }}</span>
+          </summary>
+          <div class="objective-content">
+            <section class="strategy-project" aria-label="Alíneas de {{ group.item.code }}">
+              <div class="strategy-project-heading"><div><h4>Alíneas</h4></div></div>
+              <div class="strategy-actions">
+                {% for alinea in group.alineas %}
+                  {% include "core/includes/strategic_action_row.html" with action=alinea is_alinea=True %}
+                {% endfor %}
+              </div>
+            </section>
+          </div>
+        </details>
+      {% empty %}
+        <p class="strategy-empty">Nenhuma ação estratégica encontrada.</p>
+      {% endfor %}
+    </div>
+  </article>
+</section>

@@ -20,10 +20,10 @@
       <select name="year"><option value="">Todos os anos</option>{% for year in available_years %}<option value="{{ year }}" {% if selected_year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>{% endfor %}</select>
     </label>
     <label>Plano
-      <select name="plan"><option value="">Todos os planos</option>{% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}</select>
+      <select name="plan">{% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}</select>
     </label>
-    <label class="filter-wide">Objetivo estratégico
-      <select name="objective"><option value="">Todos os objetivos</option>{% for objective in objectives %}<option value="{{ objective.id }}" {% if selected_objective == objective.id|stringformat:"s" %}selected{% endif %}>{{ objective.code }} · {{ objective.title }}</option>{% endfor %}</select>
+    <label class="filter-wide">{% if active_plan.plan_type == "PESP" %}Ação estratégica{% else %}Objetivo estratégico{% endif %}
+      <select name="objective"><option value="">{% if active_plan.plan_type == "PESP" %}Todas as ações{% else %}Todos os objetivos{% endif %}</option>{% for objective in objectives %}<option value="{{ objective.id }}" {% if selected_objective == objective.id|stringformat:"s" %}selected{% endif %}>{{ objective.code }} · {{ objective.title }}</option>{% endfor %}</select>
     </label>
 <label>Situação<select name="status"><option value="">Todas as situações</option><option value="green" {% if selected_status == "green" %}selected{% endif %}>Meta alcançada</option><option value="yellow" {% if selected_status == "yellow" %}selected{% endif %}>Próximo da meta</option><option value="orange" {% if selected_status == "orange" %}selected{% endif %}>Atingimento parcial</option><option value="red" {% if selected_status == "red" %}selected{% endif %}>Baixo atingimento</option><option value="attention" {% if selected_status == "attention" %}selected{% endif %}>Exigem atenção</option><option value="gray" {% if selected_status == "gray" %}selected{% endif %}>Não aferido</option><option value="unmeasured" {% if selected_status == "unmeasured" %}selected{% endif %}>Não aferido</option></select></label>
     {% if selected_unit %}<input type="hidden" name="unit" value="{{ selected_unit }}">{% endif %}{% if selected_target %}<input type="hidden" name="target" value="{{ selected_target }}">{% endif %}
@@ -90,7 +90,7 @@
   {% if target_form %}
   <dialog closedby="none" class="panel activity-form-panel" id="target-form" aria-labelledby="target-form-title" {% if target_form.errors or editing_target %}data-open-on-load{% endif %}>
     <div class="dialog-heading"><div><p class="eyebrow">{% if editing_target %}Editar meta{% else %}Nova meta{% endif %}</p><h2 id="target-form-title">{% if editing_target %}Alterar {{ editing_target.code|default:"meta" }}{% else %}Cadastrar meta{% endif %}</h2></div><button class="icon-button dialog-close" type="button" data-close-target-form aria-label="Fechar">×</button></div>
-    <p class="form-hint">A meta fica vinculada a um objetivo do plano e pode ser medida por um ou mais indicadores.</p>
+    <p class="form-hint">A meta fica vinculada {% if active_plan.plan_type == "PESP" %}a uma ação estratégica{% else %}a um objetivo do plano{% endif %} e pode ser medida por um ou mais indicadores.</p>
     <form method="post" class="activity-form">{% csrf_token %}
       {% if editing_target %}<input type="hidden" name="target_id" value="{{ editing_target.id }}">{% endif %}
       {% for field in target_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}

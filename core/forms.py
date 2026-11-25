@@ -15,6 +15,7 @@ from .models import (
     IndicatorMeasurement,
     Organization,
     OrganizationalUnit,
+    Plan,
     PlanArtifact,
     ReportCycle,
     Risk,
@@ -66,8 +67,10 @@ class StrategicTargetForm(forms.ModelForm):
         self.plan = plan
         self.fields["artifact"].queryset = PlanArtifact.objects.filter(
             plan=plan,
-            artifact_type__in=[PlanArtifact.ArtifactType.OBJECTIVE, PlanArtifact.ArtifactType.PROJECT],
+            artifact_type__in=([plan.strategy_artifact_type] if plan.plan_type == Plan.PlanType.PESP else [plan.strategy_artifact_type, PlanArtifact.ArtifactType.PROJECT]),
         ).order_by("code", "title")
+        if plan.plan_type == Plan.PlanType.PESP:
+            self.fields["artifact"].label = "Ação estratégica"
         self.fields["artifact"].label_from_instance = lambda artifact: f"{artifact.code} · {artifact.title}"
         self.fields["action"].queryset = actions.filter(artifact__plan=plan).order_by("code")
         self.fields["action"].label_from_instance = lambda action: f"{action.code} · {action.title}"
@@ -116,7 +119,9 @@ class IndicatorCreateForm(forms.ModelForm):
 
     def __init__(self, *args, plan, units, targets=None, **kwargs):
         super().__init__(*args, **kwargs)
-        artifacts = PlanArtifact.objects.filter(plan=plan, artifact_type__in=[PlanArtifact.ArtifactType.OBJECTIVE, PlanArtifact.ArtifactType.PROJECT]).order_by("code", "title")
+        artifacts = PlanArtifact.objects.filter(plan=plan, artifact_type__in=([plan.strategy_artifact_type] if plan.plan_type == Plan.PlanType.PESP else [plan.strategy_artifact_type, PlanArtifact.ArtifactType.PROJECT])).order_by("code", "title")
+        if plan.plan_type == Plan.PlanType.PESP:
+            self.fields["artifacts"].label = "Ações estratégicas vinculadas"
         self.fields["artifacts"].queryset = artifacts
         self.fields["artifacts"].label_from_instance = lambda item: f"{item.code} · {item.title}"
         self.fields["responsible_unit"].queryset = units
@@ -202,6 +207,13 @@ class ReportCycleForm(forms.ModelForm):
             "due_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "participating_units": forms.SelectMultiple(attrs={"size": 7}),
         }
+
+    def __init__(self, *args, plans=None, units=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if plans is not None:
+            self.fields["plan"].queryset = plans
+        if units is not None:
+            self.fields["participating_units"].queryset = units
 
     def clean(self):
         cleaned_data = super().clean()
@@ -1152,11 +1164,15 @@ class ProfileForm(forms.Form):
 
 class GroupForm(forms.Form):
     name = forms.CharField(label="Nome do perfil", max_length=150)
+    plans = forms.ModelMultipleChoiceField(
+        queryset=Plan.objects.order_by("acronym"), required=False, label="Planos",
+        widget=forms.CheckboxSelectMultiple,
+    )
 
     def __init__(self, *args, group=None, **kwargs):
         self.group = group
         if group is not None:
-            kwargs.setdefault("initial", {"name": group.name})
+            kwargs.setdefault("initial", {"name": group.name, "plans": group.accessible_plans.all()})
         super().__init__(*args, **kwargs)
 
     def clean_name(self):
@@ -1228,10 +1244,9 @@ class QuarterlyReportForm(forms.Form):
     year = forms.IntegerField(label="Ano", min_value=2000, max_value=9999)
     quarter = forms.TypedChoiceField(label="Trimestre", coerce=int, choices=((1, "1º trimestre · janeiro a março"), (2, "2º trimestre · abril a junho"), (3, "3º trimestre · julho a setembro"), (4, "4º trimestre · outubro a dezembro")))
 
-    def __init__(self, *args, units, **kwargs):
-        from .models import Plan
+    def __init__(self, *args, units, plans=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["plan"].queryset = Plan.objects.filter(active=True).order_by("acronym")
+        self.fields["plan"].queryset = plans if plans is not None else Plan.objects.filter(active=True).order_by("acronym")
         self.fields["unit"].queryset = units
 
     def clean(self):

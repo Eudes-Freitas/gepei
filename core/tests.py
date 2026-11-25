@@ -939,7 +939,9 @@ class DashboardAndRiskTests(TestCase):
         strategy = self.client.get("/pei/")
         self.assertContains(strategy, self.action.title)
         self.assertNotContains(strategy, other_objective.title)
-        self.user.groups.add(Group.objects.create(name="Administrador"))
+        admin_group = Group.objects.create(name="Administrador")
+        self.artifact.plan.access_groups.add(admin_group)
+        self.user.groups.add(admin_group)
         dashboard = self.client.get("/")
         self.assertEqual(dashboard.context["selected_unit"], "")
         self.assertEqual(dashboard.context["action_count"], 2)
@@ -1184,7 +1186,9 @@ class DashboardAndRiskTests(TestCase):
         self.assertContains(listing, 'name="view" value="list"')
 
     def test_target_sector_filter_does_not_include_other_sectors_via_shared_indicators(self):
-        self.user.groups.add(Group.objects.create(name="Administrador"))
+        admin_group = Group.objects.create(name="Administrador")
+        self.artifact.plan.access_groups.add(admin_group)
+        self.user.groups.add(admin_group)
         self.client.force_login(self.user)
         foreign_unit = OrganizationalUnit.objects.create(organization=self.unit.organization, name="Setor fora do filtro", unit_type=OrganizationalUnit.UnitType.SECTOR)
         foreign_action = StrategicAction.objects.create(artifact=self.artifact, coordinating_unit=foreign_unit, code="AE FILTRO", title="Ação de fora")
@@ -1204,7 +1208,9 @@ class DashboardAndRiskTests(TestCase):
         self.assertIn("unit=" + str(self.unit.pk), response.context["indicators_url"])
 
     def test_unit_filter_limits_objectives_targets_and_indicators(self):
-        self.user.groups.add(Group.objects.create(name="Administrador"))
+        admin_group = Group.objects.create(name="Administrador")
+        self.artifact.plan.access_groups.add(admin_group)
+        self.user.groups.add(admin_group)
         self.client.force_login(self.user)
         other_unit = OrganizationalUnit.objects.create(
             organization=self.unit.organization, name="Outro setor", unit_type=OrganizationalUnit.UnitType.SECTOR
@@ -1232,7 +1238,9 @@ class DashboardAndRiskTests(TestCase):
             self.assertEqual(set(row["indicator"].pk for row in all_units.context["indicator_rows"]), {local_indicator.pk, other_indicator.pk})
 
     def test_target_and_indicator_selectors_filter_results_and_target_card(self):
-        self.user.groups.add(Group.objects.create(name="Administrador"))
+        admin_group = Group.objects.create(name="Administrador")
+        self.artifact.plan.access_groups.add(admin_group)
+        self.user.groups.add(admin_group)
         self.client.force_login(self.user)
         first = Indicator.objects.create(code="IE 11", name="Primeiro indicador", responsible_unit=self.unit)
         second = Indicator.objects.create(code="IE 12", name="Segundo indicador", responsible_unit=self.unit)
@@ -1809,6 +1817,7 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(self.client.get(f"/planos-de-acao/{other_action.id}/").status_code, 404)
 
         admin_group = Group.objects.create(name="Administrador")
+        self.artifact.plan.access_groups.add(admin_group)
         self.user.groups.add(admin_group)
         response = self.client.get("/planos-de-acao/")
         self.assertContains(response, "AE 09.09")
@@ -3177,6 +3186,25 @@ class PeiDocumentResponsibilityTests(TestCase):
         foreign = Indicator.objects.get(code="IE 01.1")
         self.assertFalse(scope_by_unit(Indicator.objects.all(), user, "responsible_unit_id").filter(pk=foreign.pk).exists())
 
+    def test_documented_target_remains_visible_without_participation_in_action(self):
+        unit = self.units["CIOSP"]
+        target = StrategicTarget.objects.get(artifact__plan=self.plan, code="Mt 05.1")
+        target.action = StrategicAction.objects.get(artifact__plan=self.plan, code="AE 05.1")
+        target.action.participating_units.remove(unit)
+        target.save(update_fields=["action"])
+        user = User.objects.create_user(username="ciosp-meta")
+        UserProfile.objects.create(user=user, unit=unit)
+        user.user_permissions.add(*Permission.objects.filter(codename__in=["view_strategictarget", "view_indicator"]))
+        self.client.force_login(user)
+
+        for url in ("/metas/", "/indicadores/"):
+            with self.subTest(url=url):
+                response = self.client.get(url, {"unit": unit.pk})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    [row["target"].pk for row in response.context["target_rows"]].count(target.pk), 1,
+                )
+
     def test_audit_corrects_mislinked_records_and_rebuilds_consolidated_report(self):
         from .quarterly_reports import _snapshot
         unit = self.units["CIOSP"]
@@ -3657,3 +3685,113 @@ class ResultsDependentFiltersTests(TestCase):
         self.assertContains(response, 'há providências em andamento')
         self.assertContains(response, f'&amp;indicator={self.indicators[0].pk}#indicador-{self.indicators[0].pk}')
         self.assertNotContains(response, unrelated.description)
+
+
+class PlanAccessTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command("load_pei_pilot", stdout=StringIO())
+        call_command("load_pesp", stdout=StringIO())
+        cls.pei = Plan.objects.get(acronym="PEI")
+        cls.pesp = Plan.objects.get(acronym="PESP")
+        cls.group = Group.objects.create(name="Leitura de planos")
+        cls.group.permissions.set(Permission.objects.filter(codename__in=[
+            "view_plan", "view_actionplan", "view_risk", "view_indicator",
+            "view_strategictarget", "view_quarterlysectorreport", "view_other_units",
+        ]))
+        cls.reader = User.objects.create_user(username="leitura-planos")
+        cls.reader.groups.add(cls.group)
+        cls.pei.access_groups.add(cls.group)
+        cls.admin = User.objects.create_superuser(username="admin-planos")
+
+    def test_group_plan_permissions_and_switch_keep_modules_isolated(self):
+        self.client.force_login(self.reader)
+        overview = self.client.get("/pei/")
+        self.assertEqual(overview.context["plan"], self.pei)
+        self.assertContains(overview, "Dimensão BSC: Gestão de Pessoas e Infraestrutura")
+        self.assertContains(overview, "Eixo Estratégico 01:")
+        self.assertContains(overview, "Desenvolvimento de Recursos Humanos")
+        self.assertContains(overview, "Eixo Estratégico 09:")
+        self.assertEqual(self.client.post("/planos/selecionar/", {"plan": self.pesp.pk}).status_code, 403)
+        foreign = StrategicAction.objects.filter(artifact__plan=self.pesp, is_execution_item=True).first()
+        self.assertEqual(self.client.get(f"/planos-de-acao/{foreign.pk}/").status_code, 404)
+
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(f"/usuarios/grupos/{self.group.pk}/editar/"), "Planos")
+        self.assertEqual(self.client.post(f"/usuarios/grupos/{self.group.pk}/editar/", {
+            "name": self.group.name,
+            "plans": [self.pei.pk, self.pesp.pk],
+            "permissions": list(self.group.permissions.values_list("pk", flat=True)),
+        }).status_code, 302)
+
+        self.client.force_login(self.reader)
+        self.assertRedirects(self.client.post("/planos/selecionar/", {"plan": self.pesp.pk}), "/pei/")
+        for url in ("/", "/pei/", "/planos-de-acao/", "/riscos/", "/metas/", "/indicadores/", "/relatorios/"):
+            with self.subTest(url=url):
+                response = self.client.get(url, {"plan": self.pei.pk})
+                self.assertContains(response, 'class="theme-pesp"')
+                self.assertEqual(response.context["active_plan"], self.pesp)
+        strategy = self.client.get("/pei/")
+        self.assertContains(strategy, "AE 16")
+        self.assertEqual(strategy.context["action_count"], 16)
+        self.assertEqual({unit.exclusive_plan_id for unit in strategy.context["units"]}, {self.pesp.pk})
+        old_action = StrategicAction.objects.filter(artifact__plan=self.pei).first()
+        old_indicator = Indicator.objects.filter(artifacts__plan=self.pei).first()
+        self.assertEqual(self.client.get(f"/planos-de-acao/{old_action.pk}/").status_code, 404)
+        self.assertEqual(self.client.get(f"/indicadores/{old_indicator.pk}/").status_code, 404)
+        self.pesp.access_groups.remove(self.group)
+        self.assertEqual(self.client.get("/pei/").context["plan"], self.pei)
+
+    def test_report_edit_cannot_move_to_another_plan(self):
+        self.client.force_login(self.admin)
+        self.client.post("/planos/selecionar/", {"plan": self.pesp.pk})
+        unit = self.pesp.exclusive_units.get(acronym="SESED")
+        report = QuarterlySectorReport.objects.create(
+            plan=self.pesp, unit=unit, year=2025, quarter=1,
+            consolidated_by=self.admin, snapshot={},
+        )
+        response = self.client.post(f"/relatorios/trimestrais/{report.pk}/editar/", {
+            "plan": self.pei.pk, "unit": unit.pk, "year": 2025, "quarter": 1,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("plan", response.context["form"].errors)
+        report.refresh_from_db()
+        self.assertEqual(report.plan, self.pesp)
+
+    def test_import_preserves_org_exclusivity_and_is_idempotent(self):
+        call_command("load_pesp", stdout=StringIO())
+        self.assertEqual(self.pesp.exclusive_units.count(), 9)
+        self.assertEqual(self.pesp.artifacts.filter(artifact_type=PlanArtifact.ArtifactType.ACTION).count(), 16)
+        self.assertFalse(self.pesp.artifacts.filter(artifact_type__in=[
+            PlanArtifact.ArtifactType.OBJECTIVE, PlanArtifact.ArtifactType.PROJECT, PlanArtifact.ArtifactType.AXIS,
+        ]).exists())
+        actions = StrategicAction.objects.filter(artifact__plan=self.pesp, is_execution_item=True)
+        self.assertEqual(actions.count(), 121)
+        self.assertFalse(actions.exclude(coordinating_unit__exclusive_plan=self.pesp).exists())
+        self.assertFalse(OrganizationalUnit.objects.filter(participating_actions__in=actions).exclude(exclusive_plan=self.pesp).exists())
+        first = actions.get(code="AE 01.a")
+        self.assertEqual(first.related_objectives.count(), 7)
+        self.assertEqual(first.artifact.code, "AE 01")
+        self.assertEqual(actions.get(code="AE 03.d").coordinating_unit.acronym, "SEMJIDH")
+
+        self.client.force_login(self.admin)
+        self.client.post("/planos/selecionar/", {"plan": self.pesp.pk})
+        page = self.client.get("/pei/")
+        self.assertContains(page, "AE 01")
+        self.assertContains(page, "14 alíneas")
+        self.assertContains(page, "Reduzir homicídios e outros crimes violentos letais")
+        self.assertNotContains(page, "Objetivos ainda sem dimensão e eixo")
+        self.assertNotContains(page, "Projetos estratégicos")
+        focused = self.client.get("/pei/", {"objective": first.artifact_id})
+        self.assertEqual(len(focused.context["pesp_actions"][0]["alineas"]), 14)
+        self.assertEqual({unit.exclusive_plan_id for unit in page.context["units"]}, {self.pesp.pk})
+        self.assertEqual(page.context["action_count"], 16)
+        participating = self.pesp.exclusive_units.get(acronym="PMRN")
+        action_list = self.client.get("/planos-de-acao/", {"unit": participating.pk})
+        self.assertIn(actions.get(code="AE 01.b"), action_list.context["actions"])
+        self.assertNotIn(actions.get(code="AE 01.d"), action_list.context["actions"])
+        sibling = actions.get(code="AE 01.b")
+        self.assertContains(page, f'/planos-de-acao/{first.pk}/')
+        self.assertRedirects(self.client.post(f"/planos-de-acao/{first.pk}/", {"operation": "start_plan"}), f"/planos-de-acao/{first.pk}/")
+        self.assertTrue(ActionPlan.objects.filter(action=first).exists())
+        self.assertFalse(ActionPlan.objects.filter(action=sibling).exists())

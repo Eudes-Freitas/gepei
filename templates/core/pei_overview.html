@@ -6,24 +6,32 @@
     <div>
       <p class="eyebrow">Estratégia institucional</p>
       <h1>Exploração dos planos</h1>
-      <p>Consulte a cadeia estratégica e avance do objetivo até a execução de cada Ação Estratégica.</p>
+      <p>{% if plan.plan_type == "PESP" %}Consulte as Ações Estratégicas e suas alíneas.{% else %}Consulte a cadeia estratégica e avance do objetivo até a execução de cada Ação Estratégica.{% endif %}</p>
     </div>
     {% if plan %}<span class="chip chip-neutral">{{ plan.start_date|date:"Y" }}–{{ plan.end_date|date:"Y" }}</span>{% endif %}
   </section>
 
-  <form class="dashboard-filters" method="get" aria-label="Seleção do plano estratégico">
+  {% if plans %}<form class="dashboard-filters" data-manual-submit method="post" action="{% url 'select_plan' %}" aria-label="Seleção do plano estratégico">
+    {% csrf_token %}
     <label>Plano
       <select name="plan">
         {% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}
       </select>
     </label>
-    <label>Setor
-      <select name="unit"><option value="">Todos os setores disponíveis</option>{% for unit in units %}<option value="{{ unit.id }}" {% if selected_unit == unit.id|stringformat:"s" %}selected{% endif %}>{{ unit.acronym|default:unit.name }}</option>{% endfor %}</select>
+    <button type="submit" class="button button-primary">Selecionar plano</button>
+  </form>{% endif %}
+
+  {% if plan %}<form class="dashboard-filters" method="get" aria-label="Filtro de unidades">
+    <input type="hidden" name="plan" value="{{ plan.pk }}">
+    <label>{% if active_plan.plan_type == "PESP" %}Órgão{% else %}Setor{% endif %}
+      <select name="unit"><option value="">{% if active_plan.plan_type == "PESP" %}Todos os órgãos disponíveis{% else %}Todos os setores disponíveis{% endif %}</option>{% for unit in units %}<option value="{{ unit.id }}" {% if selected_unit == unit.id|stringformat:"s" %}selected{% endif %}>{{ unit.acronym|default:unit.name }}</option>{% endfor %}</select>
     </label>
     <a class="button button-primary clear-filter" href="{% url 'pei_overview' %}{% if selected_plan %}?plan={{ selected_plan }}{% endif %}">Limpar</a>
-  </form>
+  </form>{% endif %}
 
-  {% if plan %}
+  {% if plan.plan_type == "PESP" %}
+    {% include "core/includes/pesp_strategy.html" %}
+  {% elif plan %}
     <section class="metrics strategy-metrics" aria-label="Resumo do plano estratégico">
       <article class="metric-card metric-blue"><span>Objetivos estratégicos</span><strong>{{ objective_count }}</strong></article>
       <article class="metric-card"><span>Projetos estratégicos</span><strong>{{ project_count }}</strong></article>
@@ -35,11 +43,13 @@
       {% for dimension_group in dimension_groups %}
         <article class="strategy-dimension">
           <header>
-            <h2 class="visually-hidden">{{ dimension_group.artifact.title }}</h2>
+            <h2>Dimensão BSC: {{ dimension_group.artifact.title }}</h2>
           </header>
           {% for axis_group in dimension_group.axes %}
             <section class="strategy-axis">
               <div class="strategy-axis-heading">
+                <span>Eixo Estratégico{% if axis_group.artifact.code %} {{ axis_group.artifact.code|cut:"Eixo " }}{% endif %}:</span>
+                <h3>{{ axis_group.artifact.title }}</h3>
                 <small>{{ axis_group.objectives|length }} objetivo{{ axis_group.objectives|length|pluralize:"s" }}</small>
               </div>
               <div class="strategy-objectives">

@@ -1,0 +1,7 @@
+{% if action.alineas %}
+  <ol class="pesp-alineas" type="a">
+    {% for letter, text in action.alineas.items %}
+      <li id="alinea-{{ action.pk }}-{{ letter }}">{{ text }}</li>
+    {% endfor %}
+  </ol>
+{% endif %}

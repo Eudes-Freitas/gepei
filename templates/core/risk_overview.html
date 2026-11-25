@@ -16,7 +16,7 @@
   <form class="dashboard-filters" method="get" aria-label="Filtros dos riscos">
 {% if request.GET.level %}<input type="hidden" name="level" value="{{ request.GET.level }}">{% endif %}{% if request.GET.action_status %}<input type="hidden" name="action_status" value="{{ request.GET.action_status }}">{% endif %}
     <label>Plano
-      <select name="plan"><option value="">Todos os planos</option>{% for plan in plans %}<option value="{{ plan.id }}" {% if selected_plan == plan.id|stringformat:"s" %}selected{% endif %}>{{ plan.acronym }} · {{ plan.name }}</option>{% endfor %}</select>
+      <select name="plan">{% for plan in plans %}<option value="{{ plan.id }}" {% if selected_plan == plan.id|stringformat:"s" %}selected{% endif %}>{{ plan.acronym }} · {{ plan.name }}</option>{% endfor %}</select>
     </label>
     <label>Unidade coordenadora
       <select name="unit"><option value="">Todas as unidades</option>{% for unit in units %}<option value="{{ unit.id }}" {% if selected_unit == unit.id|stringformat:"s" %}selected{% endif %}>{{ unit.acronym|default:unit.name }}</option>{% endfor %}</select>

@@ -12,12 +12,15 @@ from django.contrib.auth.models import Group
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import Avg, Count, F, Max, ProtectedError, Q, Sum
+from django.db.models import Avg, Count, F, Max, Prefetch, ProtectedError, Q, Sum
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import urlencode
+from django.views.decorators.http import require_POST
+
+from .plan_scope import current_plans
 
 from .forms import (
     ActivityPlanningRiskFormSet,
@@ -78,6 +81,7 @@ from .models import (
     RiskMaterialization,
     RiskTreatment,
     SectorReport,
+    STRATEGY_ARTIFACT_TYPES,
     StrategicAction,
     StrategicTarget,
 )
@@ -302,20 +306,24 @@ def _can_write_target(user, target):
 
 
 def _scoped_targets(user, plans, unit_id=""):
-    targets = StrategicTarget.objects.filter(artifact__plan__in=plans).filter(
-        Q(action__isnull=True) | Q(action__in=view_scope_actions(StrategicAction.objects.all(), user))
-    )
+    targets = StrategicTarget.objects.filter(artifact__plan__in=plans)
     visible_ids = user_unit_ids(user, for_view=True)
     if visible_ids is not None:
-        targets = targets.filter(Q(action__in=view_scope_actions(StrategicAction.objects.all(), user)) | Q(action__isnull=True, indicators__responsible_unit_id__in=visible_ids) | Q(action__isnull=True, indicators__responsible_units__id__in=visible_ids))
+        targets = targets.filter(
+            Q(action__in=view_scope_actions(StrategicAction.objects.all(), user))
+            | Q(action__isnull=True, indicators__responsible_unit_id__in=visible_ids)
+            | Q(indicators__responsible_units__id__in=visible_ids)
+        )
     if unit_id.isdigit():
         targets = targets.filter(
-            (Q(action__coordinating_unit_id=unit_id) | Q(action__participating_units__id=unit_id) | Q(action__isnull=True))
-            & (
-                Q(indicators__responsible_unit_id=unit_id)
-                | Q(indicators__responsible_units__id=unit_id)
-                | Q(indicators__isnull=True, action__coordinating_unit_id=unit_id)
-                | Q(indicators__isnull=True, action__participating_units__id=unit_id)
+            Q(indicators__responsible_units__id=unit_id)
+            | (
+                (Q(action__coordinating_unit_id=unit_id) | Q(action__participating_units__id=unit_id) | Q(action__isnull=True))
+                & (
+                    Q(indicators__responsible_unit_id=unit_id)
+                    | Q(indicators__isnull=True, action__coordinating_unit_id=unit_id)
+                    | Q(indicators__isnull=True, action__participating_units__id=unit_id)
+                )
             )
         )
     return targets.select_related("artifact", "artifact__plan", "action").prefetch_related(
@@ -437,7 +445,7 @@ def _performance_summary(user, dash_plans, base_filters, unit_id):
         signal_counts[signal["code"]] += 1
         if signal["achievement"] is not None:
             for artifact in indicator.artifacts.all():
-                if artifact.artifact_type == PlanArtifact.ArtifactType.OBJECTIVE:
+                if artifact.artifact_type in STRATEGY_ARTIFACT_TYPES:
                     by_objective.setdefault(artifact.id, (artifact, []))[1].append(min(signal["achievement"], 100))
     indicator_total = sum(signal_counts.values())
     measured = indicator_total - signal_counts["gray"]
@@ -520,9 +528,17 @@ def _performance_summary(user, dash_plans, base_filters, unit_id):
     }
 
 
+def _actions_for_selected_unit(actions, unit_id, plan):
+    condition = Q(coordinating_unit_id=unit_id)
+    if plan and plan.plan_type == Plan.PlanType.PESP:
+        participants = StrategicAction.objects.filter(participating_units__pk=unit_id).values("pk")
+        condition |= Q(pk__in=participants)
+    return actions.filter(condition)
+
+
 @login_required
 def dashboard(request):
-    plans = Plan.objects.filter(active=True).order_by("acronym")
+    plans = current_plans(request).order_by("acronym")
     units = view_scope_units(OrganizationalUnit.objects.select_related("organization").order_by("name"), request.user)
     actions = view_scope_actions(
         StrategicAction.objects.select_related("artifact", "artifact__plan", "coordinating_unit"), request.user
@@ -537,7 +553,7 @@ def dashboard(request):
         actions = actions.filter(artifact__plan_id=selected_plan)
     unit_filter = selected_unit.isdigit() and units.filter(pk=selected_unit).exists()
     if unit_filter:
-        actions = actions.filter(coordinating_unit_id=selected_unit)
+        actions = _actions_for_selected_unit(actions, selected_unit, request.active_plan)
     if selected_status in StrategicAction.Status.values:
         actions = actions.filter(status=selected_status)
 
@@ -560,7 +576,7 @@ def dashboard(request):
         for code, label in StrategicAction.Status.choices
     ]
     progress_average = actions.aggregate(average=Avg("progress"))["average"] or 0
-    objective_query = PlanArtifact.objects.filter(artifact_type=PlanArtifact.ArtifactType.OBJECTIVE)
+    objective_query = PlanArtifact.objects.filter(plan__in=plans, artifact_type=PlanArtifact.ArtifactType.OBJECTIVE)
     if selected_plan.isdigit():
         objective_query = objective_query.filter(plan_id=selected_plan)
     if unit_filter or user_unit_ids(request.user, for_view=True) is not None:
@@ -591,7 +607,7 @@ def dashboard(request):
     # Donut e legenda clicável: cada situação leva à lista de execução já filtrada.
     status_colors = {
         "NAO_INICIADA": "#aebbc8",
-        "EM_ANDAMENTO": "#1769aa",
+        "EM_ANDAMENTO": "#246449" if request.active_plan and request.active_plan.plan_type == Plan.PlanType.PESP else "#1769aa",
         "CONCLUIDA": "#20a46b",
         "ATRASADA": "#e5a11b",
         "BLOQUEADA": "#d84a4a",
@@ -614,7 +630,7 @@ def dashboard(request):
     progress_by_objective = {}
     for artifact_id, progress in actions.values_list("artifact_id", "progress"):
         node = artifacts.get(artifact_id)
-        while node is not None and node.artifact_type != PlanArtifact.ArtifactType.OBJECTIVE:
+        while node is not None and node.artifact_type not in STRATEGY_ARTIFACT_TYPES:
             node = artifacts.get(node.parent_id)
         if node is not None:
             progress_by_objective.setdefault(node.id, []).append(float(progress or 0))
@@ -644,7 +660,7 @@ def dashboard(request):
         ).distinct()
     sector_execution = []
     for unit in units.filter(pk=selected_unit) if unit_filter else units:
-        unit_actions = actions.filter(coordinating_unit_id=unit.id)
+        unit_actions = _actions_for_selected_unit(actions, unit.id, request.active_plan)
         action_values = list(unit_actions.values_list("progress", flat=True))
         values = []
         for indicator in sector_indicators.filter(
@@ -708,9 +724,19 @@ def dashboard(request):
 
 
 @login_required
+@require_POST
+def select_plan(request):
+    plan = next((plan for plan in request.available_plans if str(plan.pk) == request.POST.get("plan")), None)
+    if plan is None:
+        raise PermissionDenied
+    request.session["active_plan_id"] = plan.pk
+    return redirect("pei_overview" if request.user.has_perm("core.view_plan") else "dashboard")
+
+
+@login_required
 @permission_required("core.view_plan", raise_exception=True)
 def pei_overview(request):
-    plans = Plan.objects.filter(active=True).order_by("start_date", "acronym")
+    plans = current_plans(request).order_by("start_date", "acronym")
     units = view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
     selected_unit = selected_unit_for_request(request)
     selected_plan = request.GET.get("plan", "")
@@ -720,8 +746,42 @@ def pei_overview(request):
         return render(
             request,
             "core/pei_overview.html",
-            {"plans": plans, "units": units, "selected_unit": selected_unit, "plan": None, "selected_plan": "", "dimension_groups": []},
+            {"plans": request.available_plans, "units": units, "selected_unit": selected_unit, "plan": None, "selected_plan": "", "dimension_groups": []},
         )
+
+    if plan.plan_type == Plan.PlanType.PESP:
+        actions = view_scope_actions(
+            StrategicAction.objects.filter(artifact__plan=plan), request.user,
+        ).select_related("artifact", "coordinating_unit").prefetch_related("participating_units").order_by("code")
+        if selected_unit.isdigit():
+            actions = _actions_for_selected_unit(actions, selected_unit, plan)
+        status = request.GET.get("status", "")
+        if status in StrategicAction.Status.values:
+            actions = actions.filter(status=status)
+        focused_action = request.GET.get("action", "")
+        focused_item = request.GET.get("objective", "")
+        if focused_action.isdigit():
+            actions = actions.filter(pk=focused_action)
+        elif focused_item.isdigit():
+            actions = actions.filter(artifact_id=focused_item)
+        actions = list(actions)
+        groups = {}
+        for action in actions:
+            if action.artifact_id not in groups:
+                groups[action.artifact_id] = {"item": action.artifact, "alineas": []}
+            groups[action.artifact_id]["alineas"].append(action)
+        return render(request, "core/pei_overview.html", {
+            "plans": request.available_plans,
+            "plan": plan,
+            "selected_plan": str(plan.pk),
+            "units": units,
+            "selected_unit": selected_unit,
+            "pesp_actions": list(groups.values()),
+            "action_count": len(groups),
+            "alinea_count": len(actions),
+            "progress_average": sum(float(action.progress) for action in actions) / len(actions) if actions else 0,
+            "expand_pesp_action": focused_action.isdigit() or focused_item.isdigit(),
+        })
 
     artifacts = list(
         PlanArtifact.objects.filter(plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans)
@@ -732,7 +792,7 @@ def pei_overview(request):
     actions = list(
         view_scope_actions(StrategicAction.objects.filter(artifact__plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans), request.user)
         .select_related("artifact", "coordinating_unit")
-        .prefetch_related("participating_units", "critical_success_factors")
+        .prefetch_related("participating_units", "critical_success_factors", "related_objectives")
         .order_by("artifact__id", "code")
     )
     focused_objective = request.GET.get("objective", "")
@@ -742,7 +802,7 @@ def pei_overview(request):
         focused_objective = str(action.artifact_id)
         by_id = {item.id: item for item in artifacts}
         node = by_id.get(action.artifact_id)
-        while node and node.artifact_type != PlanArtifact.ArtifactType.OBJECTIVE:
+        while node and node.artifact_type not in STRATEGY_ARTIFACT_TYPES:
             node = by_id.get(node.parent_id)
         focused_objective = str(node.id) if node else ""
     if focused_objective.isdigit():
@@ -753,13 +813,17 @@ def pei_overview(request):
             keep.add(node.parent_id)
             node = node.parent
         artifacts = [item for item in artifacts if item.id in keep]
-        actions = [item for item in actions if item.artifact_id in keep]
+        actions = [item for item in actions if item.artifact_id in keep or any(obj.pk in keep for obj in item.related_objectives.all())]
         if focused_action.isdigit():
             actions = [item for item in actions if item.id == int(focused_action)]
     unit = selected_unit_for_request(request)
     status = request.GET.get("status", "")
     if unit.isdigit():
-        actions = [item for item in actions if item.coordinating_unit_id == int(unit)]
+        unit_id = int(unit)
+        actions = [
+            item for item in actions
+            if item.coordinating_unit_id == unit_id
+        ]
     if status in StrategicAction.Status.values:
         actions = [item for item in actions if item.status == status]
     if request.GET.get("dashboard") == "1":
@@ -773,21 +837,20 @@ def pei_overview(request):
                 node = by_id.get(node.parent_id)
             keep.update(_objective_artifact_ids(artifact_id))
         artifacts = [item for item in artifacts if item.id in keep]
-        actions = [item for item in actions if item.artifact_id in keep]
+        actions = [item for item in actions if item.artifact_id in keep or any(obj.pk in keep for obj in item.related_objectives.all())]
         unit = selected_unit_for_request(request)
         status = request.GET.get("status", "")
-        if unit.isdigit():
-            actions = [item for item in actions if item.coordinating_unit_id == int(unit)]
         if status in StrategicAction.Status.values:
             actions = [item for item in actions if item.status == status]
     if user_unit_ids(request.user, for_view=True) is not None or unit.isdigit():
         by_id = {item.id: item for item in artifacts}
         keep = set()
         for action in actions:
-            node = by_id.get(action.artifact_id)
-            while node and node.id not in keep:
-                keep.add(node.id)
-                node = by_id.get(node.parent_id)
+            for artifact_id in (action.artifact_id, *(obj.pk for obj in action.related_objectives.all())):
+                node = by_id.get(artifact_id)
+                while node and node.id not in keep:
+                    keep.add(node.id)
+                    node = by_id.get(node.parent_id)
         artifacts = [item for item in artifacts if item.id in keep]
     children = {}
     for artifact in artifacts:
@@ -795,6 +858,8 @@ def pei_overview(request):
     actions_by_artifact = {}
     for action in actions:
         actions_by_artifact.setdefault(action.artifact_id, []).append(action)
+        for objective in action.related_objectives.all():
+            actions_by_artifact.setdefault(objective.pk, []).append(action)
 
     def objective_node(objective):
         projects = [
@@ -848,7 +913,7 @@ def pei_overview(request):
 
     progress_average = sum(float(action.progress) for action in actions) / len(actions) if actions else 0
     context = {
-        "plans": plans,
+        "plans": request.available_plans,
         "units": units,
         "selected_unit": selected_unit,
         "plan": plan,
@@ -878,7 +943,7 @@ def target_overview(request):
 def _results_filter_options(request):
     """Resolve dependent choices before building either results context."""
     params = request.GET.copy()
-    plans = Plan.objects.filter(active=True)
+    plans = current_plans(request)
     if params.get("plan", "").isdigit():
         plans = plans.filter(pk=params["plan"])
     unit = selected_unit_for_request(request)
@@ -891,7 +956,7 @@ def _results_filter_options(request):
     available_indicators = indicators
     targets = _scoped_targets(request.user, plans, unit) if request.user.has_perm("core.view_strategictarget") else StrategicTarget.objects.none()
     objectives = PlanArtifact.objects.filter(
-        plan__in=plans, artifact_type=PlanArtifact.ArtifactType.OBJECTIVE,
+        plan__in=plans, artifact_type__in=STRATEGY_ARTIFACT_TYPES,
     ).filter(Q(indicators__in=indicators) | Q(targets__in=targets)).distinct().order_by("code", "title")
     target_id = params.get("target", "")
     target = targets.filter(pk=target_id).first() if target_id.isdigit() else None
@@ -930,7 +995,7 @@ def _results_overview(request):
     context.update(filter_options)
     selected_year = _selected_results_year(request)
     selected_quarter = _selected_results_quarter(request)
-    year_plans = Plan.objects.filter(active=True)
+    year_plans = current_plans(request)
     if request.GET.get("plan", "").isdigit():
         year_plans = year_plans.filter(pk=request.GET["plan"])
     years = set()
@@ -983,7 +1048,7 @@ def _results_overview(request):
     context["navigation_unlinked_indicators"] = [row["indicator"] for row in context.get("indicator_rows", []) if not row["targets"]]
     map_objective_ids = {item["target"].artifact_id for item in context["navigation_targets"]}
     for row in context.get("indicator_rows", []):
-        map_objective_ids.update(artifact.pk for artifact in row["indicator"].artifacts.all() if artifact.artifact_type == PlanArtifact.ArtifactType.OBJECTIVE)
+        map_objective_ids.update(artifact.pk for artifact in row["indicator"].artifacts.all() if artifact.artifact_type in STRATEGY_ARTIFACT_TYPES)
     if context.get("selected_objective", "").isdigit():
         map_objective_ids.intersection_update({int(context["selected_objective"])})
     context["map_objectives"] = [objective for objective in context.get("objectives", []) if objective.pk in map_objective_ids]
@@ -992,7 +1057,7 @@ def _results_overview(request):
 
 
 def _indicator_overview_context(request):
-    plans = Plan.objects.filter(active=True).order_by("start_date", "acronym")
+    plans = current_plans(request).order_by("start_date", "acronym")
     units = view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
     selected_plan = request.GET.get("plan", "")
     selected_unit = selected_unit_for_request(request)
@@ -1008,7 +1073,7 @@ def _indicator_overview_context(request):
     if plan:
         objectives = PlanArtifact.objects.filter(
             plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans,
-            artifact_type=PlanArtifact.ArtifactType.OBJECTIVE,
+            artifact_type=plan.strategy_artifact_type,
         ).order_by("code", "title")
         indicators = (
             view_scope_by_unit(Indicator.objects.filter(artifacts__plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans), request.user, "responsible_unit_id", include_unassigned=True)
@@ -1064,7 +1129,7 @@ def _indicator_overview_context(request):
 
 
 def _target_overview_context(request):
-    plans = Plan.objects.filter(active=True).order_by("start_date", "acronym")
+    plans = current_plans(request).order_by("start_date", "acronym")
     selected_plan = request.GET.get("plan", "")
     selected_year = _selected_results_year(request)
     selected_quarter = _selected_results_quarter(request)
@@ -1077,7 +1142,7 @@ def _target_overview_context(request):
     if plan:
         objectives = PlanArtifact.objects.filter(
             plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans,
-            artifact_type=PlanArtifact.ArtifactType.OBJECTIVE,
+            artifact_type=plan.strategy_artifact_type,
         ).order_by("code", "title")
         targets = _scoped_targets(request.user, plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans, selected_unit_for_request(request)).order_by("code", "description")
         selected_unit = selected_unit_for_request(request)
@@ -1301,13 +1366,11 @@ def measurement_delete(request, indicator_id, measurement_id):
 @login_required
 @permission_required("core.view_indicator", raise_exception=True)
 def indicator_detail(request, indicator_id):
+    plans = current_plans(request)
     indicator = get_object_or_404(
         (view_scope_by_unit if request.method == "GET" else scope_by_unit)(Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True).select_related("responsible_unit").prefetch_related(
-            "artifacts",
-            "artifacts__plan",
-            "targets",
-            "targets__artifact__plan",
-            "targets__action",
+            Prefetch("artifacts", queryset=PlanArtifact.objects.filter(plan__in=plans).select_related("plan")),
+            Prefetch("targets", queryset=StrategicTarget.objects.filter(artifact__plan__in=plans).select_related("artifact__plan", "action")),
             "measurements",
             "measurements__recorded_by",
         ),
@@ -1403,7 +1466,7 @@ def indicator_detail(request, indicator_id):
 
 def _sector_report_content(report):
     actions = list(
-        StrategicAction.objects.filter(artifact__plan=report.cycle.plan).filter(Q(coordinating_unit=report.unit) | Q(participating_units=report.unit)).distinct()
+        StrategicAction.objects.filter(artifact__plan=report.cycle.plan, is_execution_item=True).filter(Q(coordinating_unit=report.unit) | Q(participating_units=report.unit)).distinct()
         .select_related("artifact")
         .order_by("code")
     )
@@ -1424,9 +1487,13 @@ def _sector_report_content(report):
     indicator_rows = [{"indicator": item, "signal": _indicator_signal(item)} for item in indicators]
     targets = list(
         StrategicTarget.objects.filter(artifact__plan=report.cycle.plan)
-        .filter(Q(action__coordinating_unit=report.unit) | Q(action__isnull=True, indicators__responsible_unit=report.unit))
+        .filter(
+            Q(action__coordinating_unit=report.unit)
+            | Q(action__isnull=True, indicators__responsible_unit=report.unit)
+            | Q(indicators__responsible_units=report.unit)
+        )
         .select_related("artifact", "artifact__plan")
-        .prefetch_related("indicators", "indicators__measurements", "indicators__targets")
+        .prefetch_related("indicators", "indicators__responsible_units", "indicators__measurements", "indicators__targets")
         .distinct()
         .order_by("code")
     )
@@ -1439,7 +1506,7 @@ def _sector_report_content(report):
     for artifact_id in linked_artifact_ids:
         artifact = artifacts.get(artifact_id)
         while artifact:
-            if artifact.artifact_type == PlanArtifact.ArtifactType.OBJECTIVE:
+            if artifact.artifact_type in STRATEGY_ARTIFACT_TYPES:
                 objective_ids.add(artifact.pk)
                 break
             artifact = artifacts.get(artifact.parent_id)
@@ -1485,7 +1552,7 @@ def _sector_report_snapshot(content):
 def report_cycle_overview(request):
     if request.method == "POST":
         _require_permission(request.user, "add_reportcycle")
-        form = ReportCycleForm(request.POST)
+        form = ReportCycleForm(request.POST, plans=current_plans(request), units=scope_units(OrganizationalUnit.objects.all(), request.user))
         if form.is_valid():
             own_ids = user_unit_ids(request.user)
             if own_ids is not None and request.user.has_perm("core.view_other_units") and any(unit.pk not in own_ids for unit in form.cleaned_data["participating_units"]):
@@ -1500,8 +1567,8 @@ def report_cycle_overview(request):
             messages.success(request, "Ciclo aberto e relatórios setoriais preparados.")
             return redirect("report_cycle_detail", cycle_id=cycle.id)
     else:
-        form = ReportCycleForm()
-    cycles = ReportCycle.objects.select_related("plan", "created_by").prefetch_related("sector_reports", "participating_units")
+        form = ReportCycleForm(plans=current_plans(request), units=scope_units(OrganizationalUnit.objects.all(), request.user), initial={"plan": request.active_plan})
+    cycles = ReportCycle.objects.filter(plan__in=current_plans(request)).select_related("plan", "created_by").prefetch_related("sector_reports", "participating_units")
     selected_unit = selected_unit_for_request(request)
     selected_year = request.GET.get("year", "")
     visible_units = {int(selected_unit)} if selected_unit.isdigit() else user_unit_ids(request.user, for_view=True)
@@ -1537,7 +1604,7 @@ def report_cycle_overview(request):
 @permission_required("core.view_reportcycle", raise_exception=True)
 def report_cycle_detail(request, cycle_id):
     cycle = get_object_or_404(
-        ReportCycle.objects.select_related("plan", "created_by").prefetch_related("sector_reports__unit", "sector_reports__validator"),
+        ReportCycle.objects.filter(plan__in=current_plans(request)).select_related("plan", "created_by").prefetch_related("sector_reports__unit", "sector_reports__validator"),
         pk=cycle_id,
     )
     all_reports = list(cycle.sector_reports.all())
@@ -1587,7 +1654,7 @@ def report_cycle_detail(request, cycle_id):
 @permission_required("core.view_sectorreport", raise_exception=True)
 def sector_report_detail(request, cycle_id, report_id):
     report = get_object_or_404(
-        (view_scope_by_unit if request.method == "GET" else scope_by_unit)(SectorReport.objects.all(), request.user, "unit_id").select_related(
+        (view_scope_by_unit if request.method == "GET" else scope_by_unit)(SectorReport.objects.filter(cycle__plan__in=current_plans(request)), request.user, "unit_id").select_related(
             "cycle", "cycle__plan", "unit", "prepared_by", "validator"
         ),
         pk=report_id,
@@ -1656,7 +1723,7 @@ def sector_report_detail(request, cycle_id, report_id):
 @login_required
 @permission_required("core.view_actionplan", raise_exception=True)
 def action_plan_list(request):
-    plans = Plan.objects.filter(active=True).order_by("acronym")
+    plans = current_plans(request).order_by("acronym")
     units = view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
     actions = view_scope_actions(
         StrategicAction.objects.select_related("artifact", "artifact__plan", "coordinating_unit"), request.user
@@ -1671,12 +1738,14 @@ def action_plan_list(request):
     if selected_plan.isdigit():
         actions = actions.filter(artifact__plan_id=selected_plan)
     if selected_unit.isdigit():
-        actions = actions.filter(coordinating_unit_id=selected_unit)
+        actions = _actions_for_selected_unit(actions, selected_unit, request.active_plan)
     if selected_status in StrategicAction.Status.values:
         actions = actions.filter(status=selected_status)
 
     if request.GET.get("objective", "").isdigit():
-        actions = actions.filter(artifact_id__in=_objective_artifact_ids(request.GET["objective"]))
+        artifact_ids = _objective_artifact_ids(request.GET["objective"])
+        related_actions = StrategicAction.objects.filter(related_objectives__id__in=artifact_ids).values("pk")
+        actions = actions.filter(Q(artifact_id__in=artifact_ids) | Q(pk__in=related_actions))
     if request.GET.get("overdue") == "1":
         actions = actions.filter(due_date__lt=timezone.localdate()).exclude(
             status__in=[StrategicAction.Status.COMPLETED, StrategicAction.Status.SUSPENDED]
@@ -1792,7 +1861,7 @@ def _next_risk_registration(request, registered_risks, risk):
 @login_required
 def risk_overview(request):
     _require_permission(request.user, "view_risk")
-    plans = Plan.objects.filter(active=True).order_by("acronym")
+    plans = current_plans(request).order_by("acronym")
     units = view_scope_units(OrganizationalUnit.objects.order_by("name"), request.user)
     can_add_risk = request.user.has_perm("core.add_risk")
     creatable_actions = scope_actions(
@@ -1829,7 +1898,7 @@ def risk_overview(request):
     if selected_plan.isdigit():
         risks = risks.filter(action__artifact__plan_id=selected_plan)
     if selected_unit.isdigit():
-        risks = risks.filter(action__coordinating_unit_id=selected_unit)
+        risks = risks.filter(action__in=_actions_for_selected_unit(StrategicAction.objects.all(), selected_unit, request.active_plan))
     if selected_status in Risk.Status.values:
         risks = risks.filter(status=selected_status)
 
@@ -2013,7 +2082,7 @@ def action_plan_detail(request, action_id):
 
     activities = list(action_plan.activities.select_related("executor", "financial_responsible_unit").all()) if action_plan else []
     objective = action.artifact
-    while objective and objective.artifact_type != PlanArtifact.ArtifactType.OBJECTIVE:
+    while objective and objective.artifact_type not in STRATEGY_ARTIFACT_TYPES:
         objective = objective.parent
     targets = list(StrategicTarget.objects.filter(Q(action=action) | Q(action__isnull=True, artifact=objective)).prefetch_related("indicators").distinct()) if objective else []
     associated_results = [{"target": target, "indicators": list(target.indicators.all())} for target in targets]
@@ -2068,7 +2137,7 @@ def action_plan_edit(request, action_id):
 
 def _action_indicators_summary(action):
     objective = action.artifact
-    while objective and objective.artifact_type != PlanArtifact.ArtifactType.OBJECTIVE:
+    while objective and objective.artifact_type not in STRATEGY_ARTIFACT_TYPES:
         objective = objective.parent
     query = f"?plan={action.artifact.plan_id}&unit={action.coordinating_unit_id}"
     if objective:
@@ -2189,6 +2258,7 @@ def group_list(request):
     return render(request, "core/group_list.html", {"groups": groups})
 
 
+@transaction.atomic
 def _group_form(request, group=None):
     modules = permission_modules()
     allowed = {permission["id"] for module in modules for entity in module["entities"] for permission in entity["permissions"]}
@@ -2205,6 +2275,7 @@ def _group_form(request, group=None):
                 group.save()
                 action = "atualizado"
             group.permissions.set(selected)
+            group.accessible_plans.set(form.cleaned_data["plans"])
             messages.success(request, f"Perfil {group.name} {action} com {len(selected)} permiss{'ão' if len(selected) == 1 else 'ões'}.")
             return redirect("group_list")
     return render(request, "core/group_form.html", {"form": form, "modules": modules, "selected": selected, "group": group})

@@ -59,7 +59,7 @@
   {% if target_form %}
   <dialog closedby="none" class="panel activity-form-panel" id="target-form" aria-labelledby="target-form-title" {% if target_form.errors or editing_target %}data-open-on-load{% endif %}>
     <div class="dialog-heading"><div><p class="eyebrow">{% if editing_target %}Editar meta{% else %}Nova meta{% endif %}</p><h2 id="target-form-title">{% if editing_target %}Alterar {{ editing_target.code|default:"meta" }}{% else %}Cadastrar meta{% endif %}</h2></div><button class="icon-button dialog-close" type="button" data-close-target-form aria-label="Fechar">×</button></div>
-    <p class="form-hint">A meta fica vinculada a um objetivo do plano e pode ser medida por um ou mais indicadores.</p>
+    <p class="form-hint">A meta fica vinculada {% if active_plan.plan_type == "PESP" %}a uma ação estratégica{% else %}a um objetivo do plano{% endif %} e pode ser medida por um ou mais indicadores.</p>
     <form method="post" class="activity-form">{% csrf_token %}
       {% if editing_target %}<input type="hidden" name="target_id" value="{{ editing_target.id }}">{% endif %}
       {% for field in target_form %}{% include "core/_form_field.html" with field=field %}{% endfor %}

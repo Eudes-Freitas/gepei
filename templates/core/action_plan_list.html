@@ -16,9 +16,9 @@
     <input type="hidden" name="view" value="{{ display_mode }}">
 {% if request.GET.objective %}<input type="hidden" name="objective" value="{{ request.GET.objective }}">{% endif %}{% if request.GET.overdue %}<input type="hidden" name="overdue" value="{{ request.GET.overdue }}">{% endif %}
     <label>Plano
-      <select name="plan"><option value="">Todos os planos</option>{% for plan in plans %}<option value="{{ plan.id }}" {% if selected_plan == plan.id|stringformat:"s" %}selected{% endif %}>{{ plan.acronym }} · {{ plan.name }}</option>{% endfor %}</select>
+      <select name="plan">{% for plan in plans %}<option value="{{ plan.id }}" {% if selected_plan == plan.id|stringformat:"s" %}selected{% endif %}>{{ plan.acronym }} · {{ plan.name }}</option>{% endfor %}</select>
     </label>
-    <label>Unidade coordenadora
+    <label>{% if active_plan.plan_type == "PESP" %}Órgão responsável{% else %}Unidade coordenadora{% endif %}
       <select name="unit"><option value="">Todas as unidades</option>{% for unit in units %}<option value="{{ unit.id }}" {% if selected_unit == unit.id|stringformat:"s" %}selected{% endif %}>{{ unit.acronym|default:unit.name }}</option>{% endfor %}</select>
     </label>
     <label>Status
@@ -57,7 +57,7 @@
         <div class="card-footer"><span>{{ action.progress|floatformat:"-1" }}% executado</span><a class="{% if action.can_write %}button button-secondary{% else %}row-icon{% endif %}" href="{% url 'action_plan_detail' action.id %}"{% if not action.can_write %} title="Visualizar plano" aria-label="Visualizar plano"{% endif %}>{% if not action.can_write %}{% include "core/_record_icon.html" with icon="view" %}{% elif action.activity_count %}Gerenciar plano{% else %}Iniciar plano{% endif %}</a></div>
       </article>
     {% empty %}
-      <div class="empty-state large-empty"><strong>Nenhuma ação encontrada.</strong><span>Altere os filtros ou carregue ações estratégicas no PEI.</span></div>
+      <div class="empty-state large-empty"><strong>Nenhuma ação encontrada.</strong><span>Altere os filtros ou carregue ações estratégicas no plano.</span></div>
     {% endfor %}
   </section>
   {% endif %}

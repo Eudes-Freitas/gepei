@@ -25,13 +25,13 @@
       </select>
     </label>
     <label>Plano
-      <select name="plan" onchange="this.form.elements.objective.value=''; if(this.form.elements.target) this.form.elements.target.value='';if(this.form.elements.indicator) this.form.elements.indicator.value='';"><option value="">Todos os planos</option>{% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}</select>
+      <select name="plan" onchange="this.form.elements.objective.value=''; if(this.form.elements.target) this.form.elements.target.value='';if(this.form.elements.indicator) this.form.elements.indicator.value='';">{% for available_plan in plans %}<option value="{{ available_plan.id }}" {% if selected_plan == available_plan.id|stringformat:"s" %}selected{% endif %}>{{ available_plan.acronym }} · {{ available_plan.name }}</option>{% endfor %}</select>
     </label>
     <label>Unidade responsável
       <select name="unit" onchange="this.form.elements.objective.value=''; if(this.form.elements.target) this.form.elements.target.value='';if(this.form.elements.indicator) this.form.elements.indicator.value='';"><option value="">Todas as unidades</option>{% for unit in units %}<option value="{{ unit.id }}" {% if selected_unit == unit.id|stringformat:"s" %}selected{% endif %}>{{ unit.acronym|default:unit.name }}</option>{% endfor %}</select>
     </label>
-    <label class="filter-wide">Objetivo estratégico
-      <select name="objective" onchange="if(this.form.elements.target) this.form.elements.target.value='';if(this.form.elements.indicator) this.form.elements.indicator.value='';"><option value="">Todos os objetivos</option>{% for objective in objectives %}<option value="{{ objective.id }}" {% if selected_objective == objective.id|stringformat:"s" %}selected{% endif %}>{{ objective.code }} · {{ objective.title }}</option>{% endfor %}</select>
+    <label class="filter-wide">{% if active_plan.plan_type == "PESP" %}Ação estratégica{% else %}Objetivo estratégico{% endif %}
+      <select name="objective" onchange="if(this.form.elements.target) this.form.elements.target.value='';if(this.form.elements.indicator) this.form.elements.indicator.value='';"><option value="">{% if active_plan.plan_type == "PESP" %}Todas as ações{% else %}Todos os objetivos{% endif %}</option>{% for objective in objectives %}<option value="{{ objective.id }}" {% if selected_objective == objective.id|stringformat:"s" %}selected{% endif %}>{{ objective.code }} · {{ objective.title }}</option>{% endfor %}</select>
     </label>
     {% if perms.core.view_strategictarget %}<label class="filter-wide">Meta
       <select name="target" onchange="if(this.form.elements.indicator) this.form.elements.indicator.value='';">

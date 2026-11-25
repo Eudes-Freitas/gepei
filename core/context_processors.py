@@ -1,10 +1,7 @@
-from .models import Plan
-
-
 def navigation_plans(request):
     if not request.user.is_authenticated:
         return {"navigation_plans": []}
-    return {"navigation_plans": Plan.objects.order_by("acronym", "name")}
+    return {"navigation_plans": request.available_plans, "active_plan": request.active_plan}
 
 
 def unit_read_permissions(request):

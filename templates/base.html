@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}GEPEI{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'css/gepei.css' %}?v=20261119-ficha-contraste">
+  <link rel="stylesheet" href="{% static 'css/gepei.css' %}?v=20261125-alineas-pesp">
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       document.querySelectorAll('input[required], select[required], textarea[required]').forEach(function (field) {
@@ -64,9 +64,12 @@
     });
   </script>
 </head>
-<body>
+<body{% if active_plan.plan_type == "PESP" %} class="theme-pesp"{% endif %}>
   <header class="topbar">
-    <a class="brand" href="{% url 'dashboard' %}">GEPEI</a>
+    <a class="brand" href="{% url 'dashboard' %}">
+      GEPEI
+      {% if active_plan %}<span class="brand-plan">{{ active_plan.acronym }}</span>{% endif %}
+    </a>
     {% if user.is_authenticated %}
       <nav>
         <a href="{% url 'dashboard' %}" {% if request.path == '/' %}class="nav-active" aria-current="page"{% endif %}>Painel</a>
@@ -106,7 +109,7 @@
   </main>
   <script>
     document.addEventListener('change', function (event) {
-      var form = event.target.closest('form.dashboard-filters');
+      var form = event.target.closest('form.dashboard-filters:not([data-manual-submit])');
       if (form && event.target.matches('select, input')) form.requestSubmit();
     });
     document.addEventListener('click', function (event) {

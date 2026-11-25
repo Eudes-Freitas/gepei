@@ -22,6 +22,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "core.plan_scope.ActivePlanMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -71,3 +72,7 @@ AUTHENTICATION_BACKENDS = ["core.backends.NameOrEmailBackend"]
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "dashboard"
 LOGOUT_REDIRECT_URL = "login"
+
+# Cookies do mesmo host são compartilhados entre portas.
+SESSION_COOKIE_NAME = "gepei_sessionid"
+CSRF_COOKIE_NAME = "gepei_csrftoken"
