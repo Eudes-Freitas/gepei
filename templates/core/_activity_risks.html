@@ -1,7 +1,7 @@
 {% if activity_risk_formset %}
 <section data-activity-risk-section>
   <h3>Riscos da atividade</h3>
-  <p class="form-hint">Informe pelo menos um risco para cadastrar a atividade. A ação e a atividade serão vinculadas automaticamente ao salvar.</p>
+  <p class="form-hint">Se houver riscos relacionados, cadastre-os aqui. A ação e a atividade serão vinculadas automaticamente ao salvar.</p>
   {{ activity_risk_formset.management_form }}
   {{ activity_risk_formset.non_form_errors }}
   <div class="registered-risks" data-activity-risk-list>

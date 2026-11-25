@@ -50,7 +50,7 @@
       {% if perms.core.change_activity and activity.status != 'CONCLUIDA' %}<form method="post" class="activity-form" id="activity-progress-form">{% csrf_token %}
         <input type="hidden" name="operation" value="update_progress">
         <div class="form-field">{{ progress_form.progress.label_tag }}{{ progress_form.progress }}{% if progress_form.progress.errors %}<small class="field-error">{{ progress_form.progress.errors|striptags }}</small>{% endif %}</div>
-        <p class="form-hint{% if request.GET.missing_attachment %} field-error{% endif %}">Para chegar a 100% e concluir a atividade, registre uma evidência com anexo.</p>
+        <p class="form-hint{% if request.GET.missing_attachment %} field-error{% endif %}">O plano de ação precisa ter ao menos uma evidência com anexo em uma atividade para chegar a 100%.</p>
       </form>{% elif activity.status == 'CONCLUIDA' %}<p class="form-hint">Atividade concluída · {{ activity.progress|floatformat:"-1" }}% de execução.</p>{% endif %}
     </article>
 
@@ -80,9 +80,9 @@
       {% else %}<div class="empty-state"><span>Nenhuma evidência registrada.</span></div>{% endif %}
       {% if perms.core.add_activityevidence %}<details class="entry-form" open>
         <summary>Adicionar evidência</summary>
-        <p class="form-hint">O anexo é obrigatório, e a atividade só pode ser concluída depois que houver uma evidência com anexo.</p>
+        <p class="form-hint">Para links e referências ao SEI, informe a URL. Para os demais tipos, anexe o arquivo da evidência.</p>
         <form method="post" enctype="multipart/form-data" class="activity-form">{% csrf_token %}<input type="hidden" name="operation" value="add_evidence">{% for field in evidence_form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</div>{% endfor %}{% if evidence_form.non_field_errors %}<small class="field-error">{{ evidence_form.non_field_errors|striptags }}</small>{% endif %}<button class="button button-primary" type="submit">Registrar evidência</button></form>
-      </details>{% endif %}{% endif %}
+      </details><script>(function(){document.querySelectorAll('#evidencias form.activity-form').forEach(function(form){var type=form.querySelector('select[name$="-evidence_type"]');var url=form.querySelector('[name$="-url"]');var attachment=form.querySelector('[name$="-attachment"]');var reference=form.querySelector('[name$="-reference"]');var operation=form.querySelector('[name="operation"]');if(!type||!url||!attachment){return;}var urlField=url.closest('.form-field');var attachmentField=attachment.closest('.form-field');var referenceField=reference&&reference.closest('.form-field');function update(){var usesUrl=type.value==='LINK'||type.value==='SEI';urlField.hidden=!usesUrl;attachmentField.hidden=usesUrl;if(referenceField){referenceField.hidden=type.value!=='SEI';}url.required=usesUrl;attachment.required=!usesUrl&&operation&&operation.value==='add_evidence';}type.addEventListener('change',update);update();});}());</script>{% endif %}{% endif %}
     </article>
 
     <article class="panel follow-up-panel" id="impedimentos" data-activity-section="impedimentos">

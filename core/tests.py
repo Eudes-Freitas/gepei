@@ -2245,7 +2245,7 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(self.client.get(f"/planos-de-acao/{other_action.pk}/editar/").status_code, 404)
         self.assertEqual(self.client.post(f"/planos-de-acao/{other_action.pk}/editar/", payload).status_code, 404)
 
-    def test_activity_creation_requires_at_least_one_risk(self):
+    def test_activity_creation_allows_no_risk(self):
         self.client.force_login(self.user)
         plan = ActionPlan.objects.create(action=self.action, manager=self.user)
         url = f"/planos-de-acao/{self.action.pk}/"
@@ -2253,17 +2253,10 @@ class DashboardAndRiskTests(TestCase):
                    "weight": "100", "start_date": "2026-10-01", "end_date": "2026-12-31",
                    "progress": "0", "status": StrategicAction.Status.NOT_STARTED,
                    "requires_financial_resource": "NAO"}
-        variants = [{}, {"activity-risks-TOTAL_FORMS": "0", "activity-risks-INITIAL_FORMS": "0"},
-                    {"activity-risks-TOTAL_FORMS": "1", "activity-risks-INITIAL_FORMS": "0", "activity-risks-0-DELETE": "on"},
-                    {"activity-risks-TOTAL_FORMS": "1", "activity-risks-INITIAL_FORMS": "0"}]
-        for data in variants:
-            with self.subTest(data=data):
-                response = self.client.post(url, {**payload, **data})
-                self.assertEqual(response.status_code, 200)
-                self.assertTrue(response.context["activity_risk_formset"].errors or response.context["activity_risk_formset"].non_form_errors())
-                self.assertContains(response, "data-open-on-load")
-                self.assertFalse(plan.activities.exists())
-                self.assertFalse(Risk.objects.exists())
+        response = self.client.post(url, payload)
+        self.assertRedirects(response, url)
+        self.assertTrue(plan.activities.exists())
+        self.assertFalse(Risk.objects.exists())
         self.user.user_permissions.remove(Permission.objects.get(codename="add_risk"))
         self.assertEqual(self.client.post(url, payload).status_code, 403)
         self.assertFalse(plan.activities.exists())
@@ -2654,6 +2647,30 @@ class DashboardAndRiskTests(TestCase):
         self.assertEqual(response.status_code, 302)
         activity.refresh_from_db()
         self.assertEqual(activity.status, StrategicAction.Status.COMPLETED)
+
+    def test_non_last_activity_can_be_completed_without_evidence(self):
+        self.client.login(username="copin", password="senha-segura")
+        action_plan = ActionPlan.objects.create(action=self.action, manager=self.user)
+        first = Activity.objects.create(
+            action_plan=action_plan, executor=self.user, title="Primeira",
+            weight=50, end_date=date(2026, 6, 30),
+        )
+        second = Activity.objects.create(
+            action_plan=action_plan, executor=self.user, title="Última",
+            weight=50, end_date=date(2026, 6, 30),
+        )
+        first_url = f"/planos-de-acao/{self.action.id}/atividades/{first.id}/acompanhar/"
+        response = self.client.post(first_url, {"operation": "update_progress", "progress-progress": "100"})
+        self.assertEqual(response.status_code, 302)
+        first.refresh_from_db()
+        self.assertEqual(first.status, StrategicAction.Status.COMPLETED)
+
+        second_url = f"/planos-de-acao/{self.action.id}/atividades/{second.id}/acompanhar/"
+        response = self.client.post(second_url, {"operation": "update_progress", "progress-progress": "100"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "registre ao menos uma evidência com anexo em uma atividade")
+        second.refresh_from_db()
+        self.assertNotEqual(second.status, StrategicAction.Status.COMPLETED)
 
     def test_follow_up_cards_edit_evidence_and_blocker_with_scope_and_permissions(self):
         self.client.force_login(self.user)
