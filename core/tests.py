@@ -3545,9 +3545,10 @@ class ResultsDependentFiltersTests(TestCase):
         self.assertEqual(len(response.context["filter_indicators"]), 2)
         html = response.content.decode()
         self.assertLess(html.index('name="indicator"'), html.index('aria-label="Resumo dos indicadores"'))
-        self.assertLess(html.index('aria-label="Resumo dos indicadores"'), html.index('Navegar por metas e indicadores'))
-        self.assertContains(response, '<details class="results-page-map">')
-        self.assertNotContains(response, '<details class="results-page-map" open>')
+        self.assertLess(html.index('aria-label="Resumo dos indicadores"'), html.index('id="results-contents-title"'))
+        self.assertContains(response, '<section class="results-contents" aria-labelledby="results-contents-title">')
+        self.assertContains(response, '<details class="results-contents-objective">')
+        self.assertNotContains(response, '<details class="results-contents-objective" open>')
         self.assertNotContains(response, 'Encontre uma meta ou indicador')
 
     def test_new_measurement_uses_baseline_from_indicator(self):
@@ -3595,6 +3596,9 @@ class ResultsDependentFiltersTests(TestCase):
 
     def test_measurement_form_has_one_date_and_preserves_existing_baseline(self):
         from .forms import IndicatorMeasurementForm
+        from .views import _period_target
+        self.targets[0].target_value = "100"
+        self.targets[0].save(update_fields=["target_value"])
         measurement = IndicatorMeasurement.objects.create(indicator=self.indicators[0],
             recorded_by=self.user, measured_value='10', reference_period='Antigo',
             baseline_value='5', baseline_date=date(2024, 12, 31),
@@ -3611,6 +3615,23 @@ class ResultsDependentFiltersTests(TestCase):
         self.assertEqual(measurement.period_end, date(2026, 7, 15))
         self.assertEqual(measurement.reference_period, '15/07/2026')
         self.assertEqual(measurement.baseline_date, date(2024, 12, 31))
+        self.assertEqual(measurement.quarter, 3)
+        quarter_target = _period_target(self.indicators[0], "5", date(2024, 12, 31), date(2026, 9, 30))
+        self.assertIsNotNone(quarter_target)
+        self.assertEqual(measurement.expected_value, quarter_target)
+        preview = self.client.get(f"/indicadores/{self.indicators[0].pk}/", {
+            "preview_measurement": "2026-07-15", "measurement_id": measurement.pk,
+        })
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(Decimal(preview.json()["expected"].replace(",", ".")), quarter_target)
+        self.assertNotEqual(measurement.expected_value, _period_target(
+            self.indicators[0], "5", date(2024, 12, 31), date(2026, 7, 15),
+        ))
+        for url in (f"/indicadores/{self.indicators[0].pk}/", "/indicadores/"):
+            page = self.client.get(url)
+            self.assertContains(page, "<th>Período</th>", html=True)
+            self.assertContains(page, "3º trimestre de 2026")
+            self.assertContains(page, "<th>Meta do período</th>", html=True)
 
     def test_period_card_and_quarter_filter_apply_to_history_charts_and_targets(self):
         indicator = self.indicators[0]
@@ -3655,7 +3676,7 @@ class ResultsDependentFiltersTests(TestCase):
         invalid = self.client.get('/indicadores/', {'year': '2026', 'quarter': '8'})
         self.assertEqual(invalid.context['period_kind'], 'Anual')
 
-    def test_navigation_groups_indicators_under_unique_expandable_targets(self):
+    def test_contents_group_indicators_under_unique_targets(self):
         extra = Indicator.objects.create(code='IE extra', name='Outro indicador', responsible_unit=self.units[0])
         extra.artifacts.add(self.objectives[0])
         extra.targets.add(self.targets[0])
@@ -3664,7 +3685,7 @@ class ResultsDependentFiltersTests(TestCase):
         group = next(item for item in groups if item['target'] == self.targets[0])
         self.assertEqual({item.pk for item in group['indicators']}, {self.indicators[0].pk, extra.pk})
         self.assertEqual(sum(item['target'] == self.targets[0] for item in groups), 1)
-        self.assertContains(response, '<summary><strong>MT0</strong> · Meta 0</summary>', html=True)
+        self.assertContains(response, f'<a class="results-contents-target" href="#meta-{self.targets[0].pk}-indicador-{group["indicators"][0].pk}"><strong>MT0</strong> · Meta 0</a>', html=True)
         self.assertContains(response, f'<a href="#indicador-{extra.pk}">IE extra · Outro indicador</a>', html=True)
 
     def test_indicator_detail_edits_inside_facts_without_dialog(self):
@@ -3686,15 +3707,17 @@ class ResultsDependentFiltersTests(TestCase):
         general = StrategicTarget.objects.create(artifact=self.objectives[0], code='MT geral', description='Meta geral')
         other_action = StrategicAction.objects.create(artifact=self.objectives[0], coordinating_unit=self.units[0], code='AE 2', title='Outra ação')
         unrelated = StrategicTarget.objects.create(artifact=self.objectives[0], action=other_action, code='MT outra', description='Outra meta')
-        response = self.client.get(f'/planos-de-acao/{action.pk}/atividades/{activity.pk}/acompanhar/')
+        url = f'/planos-de-acao/{action.pk}/atividades/{activity.pk}/acompanhar/'
+        response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertEqual({row['target'].pk for row in response.context['related_results']}, {self.targets[0].pk, general.pk})
         group = next(row for row in response.context['related_results'] if row['target'] == self.targets[0])
         self.assertEqual(group['indicators'], [self.indicators[0]])
-        self.assertContains(response, 'Metas e indicadores relacionados')
-        self.assertContains(response, 'Ficha do indicador')
-        self.assertContains(response, 'Evolução da meta')
-        self.assertContains(response, 'Aferições registradas')
+        self.assertContains(response, 'Aferição da meta')
+        self.assertContains(response, 'Registrar aferição')
+        self.assertNotContains(response, 'Ficha do indicador')
+        self.assertNotContains(response, 'Evolução da meta')
+        self.assertNotContains(response, 'Aferições registradas')
         self.assertNotContains(response, 'Ficha da meta')
         self.assertNotContains(response, 'Monitoramento da meta')
         self.assertContains(response, 'Explicação das situações do impedimento', count=1)
@@ -3702,6 +3725,24 @@ class ResultsDependentFiltersTests(TestCase):
         self.assertContains(response, 'há providências em andamento')
         self.assertContains(response, f'&amp;indicator={self.indicators[0].pk}#indicador-{self.indicators[0].pk}')
         self.assertNotContains(response, unrelated.description)
+        indicator = self.indicators[0]
+        prefix = f"measurement-{self.targets[0].pk}-{indicator.pk}"
+        payload = {
+            "operation": "register_measurement",
+            "indicator_id": indicator.pk,
+            "target_id": self.targets[0].pk,
+            f"{prefix}-measured_by": self.user.pk,
+            f"{prefix}-measurement_date": "2026-07-15",
+            f"{prefix}-measured_value": "20",
+        }
+        self.assertEqual(self.client.post(url, {**payload, "indicator_id": self.indicators[1].pk}).status_code, 403)
+        self.assertContains(response, f"<span>{self.targets[0].code} · {self.targets[0].description}</span>", html=True)
+        self.assertContains(response, "<strong>Meta do período</strong>", html=True)
+        self.assertEqual(self.client.post(url, {**payload, "target_id": unrelated.pk}).status_code, 403)
+        invalid = self.client.post(url, {**payload, f"{prefix}-measurement_date": ""})
+        self.assertContains(invalid, "data-measurement-errors")
+        self.assertRedirects(self.client.post(url, payload), url + "#metas-indicadores")
+        self.assertEqual(indicator.measurements.get().quarter, 3)
 
 
 class PlanAccessTests(TestCase):

@@ -1,0 +1,57 @@
+{% if measurement_target or measurement_targets %}
+  <div class="planning-note">
+    <strong>{% if measurement_targets|length > 1 %}Metas vinculadas{% else %}Meta vinculada{% endif %}</strong>
+    {% if measurement_target %}
+      <span>{% include "core/_measurement_target_label.html" with target=measurement_target %}</span>
+    {% else %}
+      {% for target in measurement_targets %}<span>{% include "core/_measurement_target_label.html" %}</span>{% endfor %}
+    {% endif %}
+  </div>
+{% endif %}
+{% for field in measurement_form %}
+  <div class="form-field">
+    {{ field.label_tag }}{{ field }}
+    {% if field.name == "measurement_date" %}<small data-measurement-quarter aria-live="polite"></small>{% endif %}
+    {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+    {% for error in field.errors %}<span class="field-error">{{ error }}</span>{% endfor %}
+  </div>
+  {% if field.name == "measurement_date" %}
+    <div class="planning-note">
+      <strong>Meta do período</strong>
+      <output data-period-target-url="{% url 'indicator_detail' measurement_indicator.pk %}" for="{{ field.auto_id }}">—</output>
+    </div>
+  {% endif %}
+{% endfor %}
+{{ measurement_form.non_field_errors }}
+<script>
+  (function () {
+    var form = document.currentScript.closest('form');
+    var dateField = form.querySelector('[name$="measurement_date"]');
+    var period = form.querySelector('[data-measurement-quarter]');
+    var expected = form.querySelector('[data-period-target-url]');
+    var requestNumber = 0;
+    async function updateQuarter() {
+      var currentRequest = ++requestNumber;
+      var parts = dateField.value.split('-');
+      period.textContent = parts.length === 3
+        ? Math.ceil(Number(parts[1]) / 3) + 'º trimestre de ' + parts[0]
+        : '';
+      expected.textContent = '—';
+      if (parts.length !== 3) return;
+      var url = new URL(expected.dataset.periodTargetUrl, window.location.href);
+      url.searchParams.set('preview_measurement', dateField.value);
+      var measurementId = form.elements.namedItem('measurement_id');
+      if (measurementId) url.searchParams.set('measurement_id', measurementId.value);
+      try {
+        var response = await fetch(url);
+        if (!response.ok) return;
+        var data = await response.json();
+        if (currentRequest === requestNumber) expected.textContent = data.expected ?? '—';
+      } catch (error) {
+        if (currentRequest === requestNumber) expected.textContent = 'Indisponível';
+      }
+    }
+    dateField.addEventListener('input', updateQuarter);
+    updateQuarter();
+  }());
+</script>

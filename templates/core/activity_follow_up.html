@@ -22,27 +22,42 @@
     <a href="#execucao">Execução e evidências</a>
     <a href="#impedimentos">Impedimentos</a>
     <a href="#riscos">Riscos</a>
-    {% if perms.core.view_strategictarget %}<a href="#metas-indicadores" data-open-related-results>Metas e indicadores</a>{% endif %}
+    {% if perms.core.view_strategictarget %}<a href="#metas-indicadores">Aferição da meta</a>{% endif %}
   </nav>
 
   {% if perms.core.view_strategictarget %}
   <details class="panel activity-related-results" id="metas-indicadores" data-activity-section="metas-indicadores">
-    <summary>Metas e indicadores relacionados</summary>
-    <p class="form-hint">Metas vinculadas à ação estratégica desta atividade e metas gerais do seu objetivo ou projeto.</p>
+    <summary>Aferição da meta</summary>
     {% for item in related_results %}
     <div class="activity-related-result">
       <a href="{% url 'target_overview' %}?target={{ item.target.pk }}"><strong>{{ item.target.code|default:"Meta" }}</strong> · {{ item.target.description }}</a>
-      <small class="muted-text">{% if item.target.action_id %}Vinculada à ação {{ action.code }}{% else %}Meta geral do objetivo ou projeto{% endif %}</small>
       {% if perms.core.view_indicator %}<ul>{% for indicator in item.indicators %}<li><a href="{% url 'indicator_overview' %}?target={{ item.target.pk }}&amp;indicator={{ indicator.pk }}#indicador-{{ indicator.pk }}">{{ indicator.code|default:"Indicador" }} · {{ indicator.name }}</a></li>{% empty %}<li class="muted-text">Nenhum indicador disponível para esta meta.</li>{% endfor %}</ul>{% endif %}
+      {% for indicator in item.writable_indicators %}
+        <button class="button button-secondary" type="button" data-open-measurement="measurement-dialog-{{ item.target.pk }}-{{ indicator.pk }}">
+          Registrar aferição <span class="visually-hidden">de {{ indicator.code|default:indicator.name }}</span>
+        </button>
+      {% endfor %}
     </div>
-    {% empty %}<p class="muted-text">Nenhuma meta relacionada à ação ou ao objetivo desta atividade.</p>{% endfor %}
-    {% if perms.core.view_indicator %}
-    <section aria-label="Indicadores relacionados à atividade">
-      {% for row in related_indicator_rows %}{% include "core/_result_indicator_card.html" with activity_results_only=True %}{% endfor %}
-    </section>
-    {% endif %}
+    {% empty %}<p class="muted-text">Nenhuma meta relacionada a esta atividade.</p>{% endfor %}
   </details>
   {% endif %}
+
+  {% for row in measurement_dialogs %}
+    <dialog class="panel activity-form-panel" id="measurement-dialog-{{ row.target.pk }}-{{ row.indicator.pk }}" aria-labelledby="measurement-title-{{ row.target.pk }}-{{ row.indicator.pk }}"{% if row.form.errors %} data-measurement-errors{% endif %}>
+      <div class="dialog-heading">
+        <div><h2 id="measurement-title-{{ row.target.pk }}-{{ row.indicator.pk }}">Registrar aferição</h2><p>{{ row.indicator.code }} · {{ row.indicator.name }}</p></div>
+        <button class="icon-button dialog-close" type="button" aria-label="Fechar" onclick="this.closest('dialog').close()">×</button>
+      </div>
+      <form method="post" enctype="multipart/form-data" class="activity-form">
+        {% csrf_token %}
+        <input type="hidden" name="operation" value="register_measurement">
+        <input type="hidden" name="indicator_id" value="{{ row.indicator.pk }}">
+        <input type="hidden" name="target_id" value="{{ row.target.pk }}">
+        {% include "core/_measurement_fields.html" with measurement_form=row.form measurement_target=row.target measurement_indicator=row.indicator %}
+        <button class="button button-primary" type="submit">Salvar aferição</button>
+      </form>
+    </dialog>
+  {% endfor %}
 
   <section class="follow-up-grid">
     <article class="panel follow-up-panel" id="execucao" data-activity-section="execucao">
@@ -263,11 +278,17 @@
       });
     });
     var initial = location.hash ? location.hash.slice(1) : 'execucao';
-    show(document.querySelector('[data-activity-section="' + initial + '"]') ? initial : 'execucao');
+    var invalidMeasurement = document.querySelector('[data-measurement-errors]');
+    show(invalidMeasurement ? 'metas-indicadores' : (document.getElementById(initial)?.dataset.activitySection || 'execucao'));
+    if (invalidMeasurement) invalidMeasurement.showModal();
+    document.querySelectorAll('[data-open-measurement]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        document.getElementById(button.dataset.openMeasurement).showModal();
+      });
+    });
   }());
 </script>
 <script>(function(){document.querySelectorAll('[name$="has_expected_resolution"]').forEach(function(toggle){var form=toggle.closest('form'),date=form&&form.querySelector('[name$="expected_resolution_date"]'),field=date&&date.closest('.form-field');function update(){var yes=toggle.value==='sim';if(field){field.hidden=!yes;}if(date){date.required=yes;if(!yes){date.value='';}}}toggle.addEventListener('change',update);update();});}());</script>
 <script>(function(){var form=document.querySelector('[data-blocker-form]');if(!form)return;var choice=form.querySelector('[data-blocker-choice]'),details=form.querySelector('[data-blocker-details]'),submit=form.querySelector('[data-blocker-submit]');function update(){var yes=choice.value==='sim';details.hidden=!yes;submit.hidden=!yes;details.querySelectorAll('input,select,textarea').forEach(function(field){field.disabled=!yes;});}choice.addEventListener('change',update);update();form.addEventListener('submit',function(event){if(!choice.value){event.preventDefault();}});}());</script>
 </div>
 {% endblock %}
-{% block extra_script %}{% if related_indicator_rows %}{% include "core/_results_charts.html" %}{% endif %}{% endblock %}

@@ -8,7 +8,8 @@
   <div class="dialog-heading"><h2 id="measurement-details-title-{{ measurement.pk }}">Detalhes da aferição</h2><button type="button" class="icon-button dialog-close" aria-label="Fechar" onclick="this.closest('dialog').close()">×</button></div>
   <dl class="definition-grid">
     <div><dt>Descrição</dt><dd>{{ measurement.description|default:"—" }}</dd></div>
-    <div><dt>Data da aferição</dt><dd>{{ measurement.period_end|default:measurement.recorded_at|date:"d/m/Y" }}</dd></div>
+    <div><dt>Data da aferição</dt><dd>{{ measurement.measurement_date|default:measurement.recorded_at|date:"d/m/Y" }}</dd></div>
+    <div><dt>Período</dt><dd>{{ measurement.quarter_label|default:"—" }}</dd></div>
     <div><dt>Linha de base</dt><dd>{{ measurement.baseline_value|default:"—" }}</dd></div>
     <div><dt>Resultado</dt><dd>{{ measurement.measured_value }}</dd></div>
     <div><dt>Meta do período</dt><dd>{{ measurement.expected_value|default_if_none:"—" }}</dd></div>

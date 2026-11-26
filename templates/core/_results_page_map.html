@@ -1,11 +1,43 @@
 {% if navigation_targets or navigation_unlinked_indicators %}
-<details class="report-section-map results-page-map">
-  <summary>Mapa do relatório</summary>
-  <nav aria-label="Mapa de metas e indicadores" class="results-target-index">
-    {% for objective in map_objectives %}<details class="results-map-objective"><summary><strong>{{ objective.code }}</strong> {{ objective.title }}</summary><ul>
-        {% for item in navigation_targets %}{% if item.target.artifact_id == objective.id %}<li><details class="results-map-target"><summary><strong>{{ item.target.code|default:"Meta" }}</strong> {{ item.target.description }}</summary><ul>{% for indicator in item.indicators %}<li><a href="#indicador-{{ indicator.id }}">{{ indicator.code|default:"Indicador" }} {{ indicator.name }}</a></li>{% empty %}<li><a href="#meta-{{ item.target.id }}">Ver detalhes da meta</a><span class="muted-text"> · Sem indicador exibido neste recorte.</span></li>{% endfor %}</ul></details></li>{% endif %}{% endfor %}
-      </ul></details>{% endfor %}
-      {% if navigation_unlinked_indicators %}<details class="results-map-objective"><summary>Indicadores sem meta</summary><ul>{% for indicator in navigation_unlinked_indicators %}<li><a href="#indicador-{{ indicator.id }}">{{ indicator.code|default:"Indicador" }} · {{ indicator.name }}</a></li>{% endfor %}</ul></details>{% endif %}
-  </nav>
-</details>
+<section class="results-contents" aria-labelledby="results-contents-title">
+  <h2 id="results-contents-title">Sumário</h2>
+  {% for objective in map_objectives %}
+    <details class="results-contents-objective">
+      <summary><strong>{{ objective.code }}</strong><span>{{ objective.title }}</span></summary>
+      <ul class="results-contents-targets">
+        {% for item in navigation_targets %}
+          {% if item.target.artifact_id == objective.pk %}
+            <li>
+              <a class="results-contents-target" href="#meta-{{ item.target.pk }}{% if item.indicators %}-indicador-{{ item.indicators.0.pk }}{% endif %}">
+                <strong>{{ item.target.code|default:"Meta" }}</strong> · {{ item.target.description }}
+              </a>
+              {% if item.indicators %}
+                <ul class="results-contents-indicators">
+                  {% for indicator in item.indicators %}
+                    <li><a href="#indicador-{{ indicator.pk }}">{{ indicator.code|default:"Indicador" }} · {{ indicator.name }}</a></li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+            </li>
+          {% endif %}
+        {% endfor %}
+        {% for indicator in navigation_unlinked_indicators %}
+          {% if objective.pk in indicator.contents_objective_ids %}
+            <li><a href="#indicador-{{ indicator.pk }}">{{ indicator.code|default:"Indicador" }} · {{ indicator.name }}</a></li>
+          {% endif %}
+        {% endfor %}
+      </ul>
+    </details>
+  {% endfor %}
+  {% if contents_unassigned_indicators %}
+    <details class="results-contents-objective">
+      <summary class="results-contents-standalone"><strong>Indicadores sem meta</strong></summary>
+      <ul class="results-contents-indicators">
+        {% for indicator in contents_unassigned_indicators %}
+          <li><a href="#indicador-{{ indicator.pk }}">{{ indicator.code|default:"Indicador" }} · {{ indicator.name }}</a></li>
+        {% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+</section>
 {% endif %}

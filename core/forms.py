@@ -168,7 +168,7 @@ class IndicatorMeasurementForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         for name in ["measured_by"]:
             self.fields[name].required = True
-        self.initial.setdefault("measurement_date", self.instance.period_end)
+        self.initial.setdefault("measurement_date", self.instance.measurement_date)
         self.order_fields(["description", "measured_by", "measurement_date", "measured_value", "source_reference", "evidence_attachment", "note"])
         measured_by = self.fields["measured_by"]
         measured_by.queryset = get_user_model().objects.filter(is_active=True).order_by("first_name", "last_name", "username")

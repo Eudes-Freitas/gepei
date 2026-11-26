@@ -1,3 +1,6 @@
+from calendar import monthrange
+from datetime import date
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -411,6 +414,28 @@ class IndicatorMeasurement(models.Model):
 
     class Meta:
         ordering = ["-recorded_at"]
+
+    @property
+    def measurement_date(self):
+        return self.period_end or self.period_start
+
+    @property
+    def quarter(self):
+        when = self.measurement_date
+        return (when.month - 1) // 3 + 1 if when else None
+
+    @property
+    def quarter_end(self):
+        when = self.measurement_date
+        if when:
+            month = self.quarter * 3
+            return date(when.year, month, monthrange(when.year, month)[1])
+        return None
+
+    @property
+    def quarter_label(self):
+        when = self.measurement_date
+        return f"{self.quarter}º trimestre de {when.year}" if when else ""
 
     @property
     def period_label(self):

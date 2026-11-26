@@ -82,10 +82,11 @@
         {% if not can_view_measurements %}<div class="empty-state" role="alert"><strong>Sem permissão.</strong><span>Você não tem permissão para visualizar as aferições deste indicador.</span></div>
         {% elif indicator.measurements.all %}
           <div class="responsive-table"><table class="measurement-history-table">
-            <thead><tr><th>Descrição</th><th>Data da aferição</th><th>Linha de base</th><th>Resultado</th><th>Meta do período</th><th>Fonte/evidência</th><th>Registrado por</th><th>Detalhes</th></tr></thead>
+            <thead><tr><th>Descrição</th><th>Data da aferição</th><th>Período</th><th>Linha de base</th><th>Resultado</th><th>Meta do período</th><th>Fonte/evidência</th><th>Registrado por</th><th>Detalhes</th></tr></thead>
             <tbody>{% for measurement in indicator.measurements.all %}<tr>
               <td class="measurement-description"><strong>{{ measurement.description|default:"—"|truncatechars:80 }}</strong></td>
-              <td class="measurement-period">{{ measurement.period_end|default:measurement.recorded_at|date:"d/m/Y" }}</td>
+              <td class="measurement-period">{{ measurement.measurement_date|default:measurement.recorded_at|date:"d/m/Y" }}</td>
+              <td>{{ measurement.quarter_label|default:"—" }}</td>
               <td class="measurement-baseline">{{ measurement.baseline_value|default:"—" }}</td>
               <td>{{ measurement.measured_value }}</td>
               <td>{{ measurement.expected_value|floatformat:"-1"|default:"Não informada" }}</td>
@@ -101,11 +102,10 @@
 
   {% if can_add_measurement or can_edit_measurement %}<dialog closedby="none" class="panel activity-form-panel indicator-measurement-panel" aria-labelledby="measurement-form-title" {% if measurement_form.errors or editing_measurement %}data-open-on-load{% endif %}>
     <div class="dialog-heading"><div><p class="eyebrow">{% if editing_measurement %}Editar aferição{% else %}Nova aferição{% endif %}</p><h2 id="measurement-form-title">{% if editing_measurement %}Alterar aferição de {{ editing_measurement.reference_period }}{% else %}Registrar resultado do período{% endif %}</h2></div><button class="icon-button dialog-close" type="button" data-close-measurement-form aria-label="Fechar">×</button></div>
-    <p class="form-hint">A meta do período registrada segue a evolução linear da linha de base até a meta final, no último dia do período aferido. Por padrão, a situação considera o avanço desde a linha de base até a meta final, no período completo do plano. Na lista de metas e indicadores, selecionar um ano ajusta o cálculo ao encerramento desse ano, limitado ao prazo final.</p>
     <form method="post" enctype="multipart/form-data" class="activity-form">
       {% csrf_token %}
       {% if editing_measurement %}<input type="hidden" name="measurement_id" value="{{ editing_measurement.id }}">{% endif %}
-      {% for field in measurement_form %}<div class="form-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}{% for error in field.errors %}<span class="field-error">{{ error }}</span>{% endfor %}</div>{% endfor %}
+      {% include "core/_measurement_fields.html" with measurement_targets=indicator.targets.all measurement_indicator=indicator %}
       <button class="button button-primary" type="submit">{% if editing_measurement %}Salvar alterações{% else %}Salvar aferição{% endif %}</button>
     </form>
   </dialog>{% endif %}

@@ -16,7 +16,7 @@ from django.db.models import Avg, Count, F, Max, Prefetch, ProtectedError, Q, Su
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils import timezone
+from django.utils import formats, timezone
 from django.utils.http import urlencode
 from django.views.decorators.http import require_POST
 
@@ -71,6 +71,7 @@ from .models import (
     ActivityBlocker,
     ActivityEvidence,
     Indicator,
+    IndicatorMeasurement,
     OrganizationalUnit,
     Plan,
     PlanArtifact,
@@ -166,9 +167,9 @@ def _results_measurements(indicator, year="", quarter=""):
         return measurements
     selected = int(year)
     def matches(measurement):
-        period_date = measurement.period_end or measurement.period_start
+        period_date = measurement.measurement_date
         if period_date:
-            return period_date.year == selected and (not quarter or (period_date.month - 1) // 3 + 1 == int(quarter))
+            return period_date.year == selected and (not quarter or measurement.quarter == int(quarter))
         if quarter:
             return False
         return str(selected) in re.findall(r"(?<!\d)\d{4}(?!\d)", measurement.reference_period)
@@ -1052,6 +1053,14 @@ def _results_overview(request):
     if context.get("selected_objective", "").isdigit():
         map_objective_ids.intersection_update({int(context["selected_objective"])})
     context["map_objectives"] = [objective for objective in context.get("objectives", []) if objective.pk in map_objective_ids]
+    listed_objective_ids = {objective.pk for objective in context["map_objectives"]}
+    for indicator in context["navigation_unlinked_indicators"]:
+        indicator.contents_objective_ids = {
+            artifact.pk for artifact in indicator.artifacts.all() if artifact.pk in listed_objective_ids
+        }
+    context["contents_unassigned_indicators"] = [
+        indicator for indicator in context["navigation_unlinked_indicators"] if not indicator.contents_objective_ids
+    ]
     context["inline_charts"] = bool(context.get("indicator_rows")) and can_measure
     return render(request, "core/indicator_overview.html", context)
 
@@ -1363,6 +1372,30 @@ def measurement_delete(request, indicator_id, measurement_id):
     return redirect(reverse("indicator_overview") + f"#indicador-{indicator.id}")
 
 
+def _measurement_baseline(indicator):
+    previous = next((item for item in indicator.measurements.all() if item.baseline_date), None)
+    plan = next((artifact.plan for artifact in indicator.artifacts.all()), None)
+    configured_date = indicator.reference_parameters.get("baseline_date")
+    baseline_date = date.fromisoformat(configured_date) if configured_date else (
+        previous.baseline_date if previous else plan.start_date if plan else None
+    )
+    return indicator.baseline, baseline_date
+
+
+def _save_indicator_measurement(form, indicator, user):
+    measurement = form.save(commit=False)
+    measurement.indicator = indicator
+    if measurement.pk is None:
+        measurement.baseline_value, measurement.baseline_date = _measurement_baseline(indicator)
+        measurement.recorded_by = user
+    profile = getattr(measurement.measured_by, "profile", None)
+    measurement.measured_unit = profile.unit if profile else None
+    measurement.expected_value = _period_target(
+        indicator, measurement.baseline_value, measurement.baseline_date, measurement.quarter_end
+    )
+    measurement.save()
+
+
 @login_required
 @permission_required("core.view_indicator", raise_exception=True)
 def indicator_detail(request, indicator_id):
@@ -1381,6 +1414,26 @@ def indicator_detail(request, indicator_id):
     indicator.can_write = writable
     can_edit_definition = writable and request.user.has_perm("core.change_indicator")
     can_edit_measurement = writable and request.user.has_perm("core.change_indicatormeasurement")
+    if request.method == "GET" and "preview_measurement" in request.GET:
+        measurement_id = request.GET.get("measurement_id")
+        if not writable or not request.user.has_perm(
+            "core.change_indicatormeasurement" if measurement_id else "core.add_indicatormeasurement"
+        ):
+            raise PermissionDenied
+        try:
+            measured_on = date.fromisoformat(request.GET["preview_measurement"])
+        except ValueError:
+            return JsonResponse({"expected": None}, status=400)
+        if measurement_id:
+            if not measurement_id.isascii() or not measurement_id.isdigit():
+                raise Http404
+            previous = get_object_or_404(indicator.measurements, pk=measurement_id)
+            baseline, baseline_date = previous.baseline_value, previous.baseline_date
+        else:
+            baseline, baseline_date = _measurement_baseline(indicator)
+        quarter_end = IndicatorMeasurement(period_end=measured_on).quarter_end
+        expected = _period_target(indicator, baseline, baseline_date, quarter_end)
+        return JsonResponse({"expected": formats.localize(expected) if expected is not None else None})
     editing_measurement = None
     definition_form = IndicatorDefinitionForm(instance=indicator, prefix=f"indicator-{indicator.pk}") if can_edit_definition else None
     form = None
@@ -1407,21 +1460,7 @@ def indicator_detail(request, indicator_id):
             _require_permission(request.user, "add_indicatormeasurement")
         form = IndicatorMeasurementForm(request.POST, request.FILES, instance=editing)
         if form.is_valid():
-            measurement = form.save(commit=False)
-            measurement.indicator = indicator
-            if editing is None:
-                measurement.baseline_value = indicator.baseline
-                previous = next((item for item in indicator.measurements.all() if item.baseline_date), None)
-                plan = next((artifact.plan for artifact in indicator.artifacts.all()), None)
-                reference_date = indicator.reference_parameters.get("baseline_date")
-                measurement.baseline_date = date.fromisoformat(reference_date) if reference_date else (previous.baseline_date if previous else plan.start_date if plan else None)
-                measurement.recorded_by = request.user
-            profile = getattr(measurement.measured_by, "profile", None)
-            measurement.measured_unit = profile.unit if profile else None
-            measurement.expected_value = _period_target(
-                indicator, measurement.baseline_value, measurement.baseline_date, measurement.period_end
-            )
-            measurement.save()
+            _save_indicator_measurement(form, indicator, request.user)
             if editing is None:
                 messages.success(request, "Aferição registrada e semáforo atualizado.")
             else:
@@ -2382,6 +2421,7 @@ def activity_follow_up(request, action_id, activity_id):
         "delete_evidence": "delete_activityevidence",
         "add_blocker": "add_activityblocker",
         "add_risk": "add_risk",
+        "register_measurement": "add_indicatormeasurement",
     }
     if operation in follow_up_permissions:
         _require_permission(request.user, follow_up_permissions[operation])
@@ -2674,43 +2714,55 @@ def activity_follow_up(request, action_id, activity_id):
         evidence.attachment_available = bool(evidence.attachment and evidence.attachment.storage.exists(evidence.attachment.name))
 
     related_results = []
-    related_indicator_rows = []
-    can_view_measurements = request.user.has_perm("core.view_indicatormeasurement")
+    measurement_dialogs = []
     if request.user.has_perm("core.view_strategictarget"):
         artifact_ids = []
         artifact = action.artifact
         while artifact:
             artifact_ids.append(artifact.pk)
             artifact = artifact.parent
-        targets = _scoped_targets(request.user, Plan.objects.filter(pk=action.artifact.plan_id)).filter(
+        targets = _scoped_targets(request.user, current_plans(request)).filter(
             Q(action=action) | Q(action__isnull=True, artifact_id__in=artifact_ids)
         ).order_by("code", "description")
-        visible_indicators = view_scope_by_unit(
-            Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True,
-        ) if request.user.has_perm("core.view_indicator") else Indicator.objects.none()
-        visible_ids = set(visible_indicators.values_list("pk", flat=True))
-        indicator_rows_by_id = {}
-        writable_indicator_ids = set(scope_by_unit(Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True).values_list("pk", flat=True)) if visible_ids else set()
+        visible_ids = set()
+        writable_ids = set()
+        if request.user.has_perm("core.view_indicator"):
+            indicators = Indicator.objects.filter(targets__in=targets)
+            visible_ids = set(view_scope_by_unit(
+                indicators, request.user, "responsible_unit_id", include_unassigned=True,
+            ).values_list("pk", flat=True))
+            if not request.read_only_other_unit and request.user.has_perm("core.add_indicatormeasurement"):
+                writable_ids = set(scope_by_unit(
+                    indicators, request.user, "responsible_unit_id", include_unassigned=True,
+                ).values_list("pk", flat=True))
+        submitted = (request.POST.get("target_id"), request.POST.get("indicator_id")) if operation == "register_measurement" else None
         for target in targets:
-            indicators = [item for item in target.indicators.all() if item.pk in visible_ids]
-            related_results.append({"target": target, "indicators": indicators})
-            if not indicators:
-                continue
-            for indicator in indicators:
-                row = indicator_rows_by_id.get(indicator.pk)
-                if row is None:
-                    indicator.can_write = indicator.pk in writable_indicator_ids
-                    row = {
-                        "indicator": indicator,
-                        "signal": _indicator_signal(indicator, target=target),
-                        "targets": [],
-                        "measurements": _results_measurements(indicator) if can_view_measurements else [],
-                        "chart": _measurement_chart(indicator) if can_view_measurements else None,
-                        "chart_data_id": f"target-chart-data-{indicator.pk}",
-                    }
-                    indicator_rows_by_id[indicator.pk] = row
-                row["targets"].append(target)
-        related_indicator_rows = list(indicator_rows_by_id.values())
+            visible = [indicator for indicator in target.indicators.all() if indicator.pk in visible_ids]
+            related_results.append({
+                "target": target,
+                "indicators": visible,
+                "writable_indicators": [indicator for indicator in visible if indicator.pk in writable_ids],
+            })
+            for indicator in visible:
+                if indicator.pk not in writable_ids:
+                    continue
+                bound = (str(target.pk), str(indicator.pk)) == submitted
+                form = IndicatorMeasurementForm(
+                    request.POST if bound else None, request.FILES if bound else None,
+                    prefix=f"measurement-{target.pk}-{indicator.pk}", initial={"measured_by": request.user.pk},
+                )
+                if bound and form.is_valid():
+                    indicator = Indicator.objects.prefetch_related(
+                        Prefetch("artifacts", queryset=PlanArtifact.objects.filter(plan_id=action.artifact.plan_id).select_related("plan")),
+                        Prefetch("targets", queryset=StrategicTarget.objects.filter(artifact__plan_id=action.artifact.plan_id).select_related("artifact__plan")),
+                        "measurements",
+                    ).get(pk=indicator.pk)
+                    _save_indicator_measurement(form, indicator, request.user)
+                    messages.success(request, "Aferição registrada e semáforo atualizado.")
+                    return redirect(reverse("activity_follow_up", args=[action.pk, activity.pk]) + "#metas-indicadores")
+                measurement_dialogs.append({"target": target, "indicator": indicator, "form": form})
+    if operation == "register_measurement" and not any(row["form"].is_bound for row in measurement_dialogs):
+        raise PermissionDenied
 
     return render(
         request,
@@ -2719,8 +2771,7 @@ def activity_follow_up(request, action_id, activity_id):
             "action": action,
             "activity": activity,
             "related_results": related_results,
-            "related_indicator_rows": related_indicator_rows,
-            "can_view_measurements": can_view_measurements,
+            "measurement_dialogs": measurement_dialogs,
             "progress_form": progress_form,
             "create_risk_form": create_risk_form,
             "can_view": can_view,
