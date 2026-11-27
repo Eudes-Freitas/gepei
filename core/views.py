@@ -116,7 +116,7 @@ def _plan_end_date(indicator):
 
 
 def _period_target(indicator, baseline_value, baseline_date, period_end, target=None):
-    """Meta do período: evolução linear da linha de base (na data da linha de base) até a meta final no fim do plano."""
+    """Meta do período: marco anual do documento ou trajetória do plano."""
     if indicator.reference_parameters and period_end and baseline_date == date(2024, 12, 31):
         from .indicator_reference import expected_at
         expected = expected_at(indicator.reference_parameters, period_end)
@@ -489,8 +489,13 @@ def _performance_summary(user, dash_plans, base_filters, unit_id):
             {"name": SIGNAL_STYLE["gray"][0], "y": signal_counts["gray"], "color": SIGNAL_STYLE["gray"][1], "url": indicator_link(status="gray")},
         ],
         "signal": [
-            {"name": SIGNAL_STYLE[code][0], "y": signal_counts[code], "color": SIGNAL_STYLE[code][1], "url": indicator_link(status=code)}
-            for code in ("green", "yellow", "orange", "red")
+            {"name": label, "y": signal_counts[code], "color": SIGNAL_STYLE[code][1], "url": indicator_link(status=code)}
+            for code, label in (
+                ("green", "Dentro do esperado"),
+                ("yellow", "Próximo do esperado"),
+                ("orange", "Abaixo do esperado"),
+                ("red", "Muito abaixo do esperado"),
+            )
         ],
         "objectives": objective_bars,
         "targets": [
@@ -1021,6 +1026,11 @@ def _results_overview(request):
         execution["target"].achievement_summary = _target_achievement_chart(execution) if can_measure else None
     linked_ids = set()
     writable_indicators = set(scope_by_unit(Indicator.objects.all(), request.user, "responsible_unit_id", include_unassigned=True).values_list("pk", flat=True))
+    visible_activity_actions = set()
+    if can_measure and request.user.has_perm("core.view_activity"):
+        visible_activity_actions = set(view_scope_actions(
+            StrategicAction.objects.all(), request.user,
+        ).values_list("pk", flat=True))
     for row in context.get("indicator_rows", []):
         row["indicator"].can_write = row["indicator"].id in writable_indicators
         if row["indicator"].can_write and request.user.has_perm("core.change_indicator"):
@@ -1028,6 +1038,16 @@ def _results_overview(request):
         row["targets"] = [visible_targets[item.id] for item in row["indicator"].targets.all() if item.id in visible_targets]
         linked_ids.update(item.id for item in row["targets"])
         row["measurements"] = _results_measurements(row["indicator"], selected_year, selected_quarter) if can_measure else []
+        row["contributing_activities"] = []
+        if can_measure and request.user.has_perm("core.view_activity"):
+            activity_map = {}
+            for measurement_item in row["measurements"]:
+                for activity in measurement_item.activities.all():
+                    if activity.action_plan.action_id not in visible_activity_actions:
+                        continue
+                    item = activity_map.setdefault(activity.pk, {"activity": activity, "measurements": []})
+                    item["measurements"].append(measurement_item)
+            row["contributing_activities"] = list(activity_map.values())
         row["chart"] = _measurement_chart(row["indicator"], year=selected_year, quarter=selected_quarter) if can_measure else None
         row["chart_data_id"] = f"target-chart-data-{row['indicator'].id}"
         measurement = row["signal"]["measurement"]
@@ -1087,7 +1107,7 @@ def _indicator_overview_context(request):
         indicators = (
             view_scope_by_unit(Indicator.objects.filter(artifacts__plan__in=plans.filter(pk=selected_plan) if selected_plan.isdigit() else plans), request.user, "responsible_unit_id", include_unassigned=True)
             .select_related("responsible_unit")
-            .prefetch_related("responsible_units", "artifacts", "artifacts__plan", "targets", "targets__artifact__plan", "targets__action", "measurements", "measurements__recorded_by", "measurements__measured_by", "measurements__measured_unit")
+            .prefetch_related("responsible_units", "artifacts", "artifacts__plan", "targets", "targets__artifact__plan", "targets__action", "measurements", "measurements__activities", "measurements__activities__action_plan__action", "measurements__recorded_by", "measurements__measured_by", "measurements__measured_unit")
             .distinct()
             .order_by("code", "name")
         )
@@ -1382,6 +1402,35 @@ def _measurement_baseline(indicator):
     return indicator.baseline, baseline_date
 
 
+def _activities_for_targets(targets, user):
+    """Atividades acessíveis sob as ações ligadas às metas selecionadas."""
+    targets = list(targets)
+    plan_ids = {target.artifact.plan_id for target in targets}
+    if not plan_ids:
+        return Activity.objects.none()
+    actions = StrategicAction.objects.filter(artifact__plan_id__in=plan_ids, is_execution_item=True)
+    actions = view_scope_actions(actions, user)
+    action_rows = list(actions.values_list("pk", "artifact_id"))
+    accessible_action_ids = {action_id for action_id, _ in action_rows}
+    artifact_parents = dict(PlanArtifact.objects.filter(plan_id__in=plan_ids).values_list("pk", "parent_id"))
+    eligible_action_ids = set()
+    for target in targets:
+        if target.action_id:
+            if target.action_id in accessible_action_ids:
+                eligible_action_ids.add(target.action_id)
+            continue
+        for action_id, artifact_id in action_rows:
+            current = artifact_id
+            while current is not None:
+                if current == target.artifact_id:
+                    eligible_action_ids.add(action_id)
+                    break
+                current = artifact_parents.get(current)
+    return Activity.objects.filter(action_plan__action_id__in=eligible_action_ids).select_related(
+        "action_plan__action", "executor"
+    )
+
+
 def _save_indicator_measurement(form, indicator, user):
     measurement = form.save(commit=False)
     measurement.indicator = indicator
@@ -1394,6 +1443,7 @@ def _save_indicator_measurement(form, indicator, user):
         indicator, measurement.baseline_value, measurement.baseline_date, measurement.quarter_end
     )
     measurement.save()
+    form.save_m2m()
 
 
 @login_required
@@ -1405,6 +1455,7 @@ def indicator_detail(request, indicator_id):
             Prefetch("artifacts", queryset=PlanArtifact.objects.filter(plan__in=plans).select_related("plan")),
             Prefetch("targets", queryset=StrategicTarget.objects.filter(artifact__plan__in=plans).select_related("artifact__plan", "action")),
             "measurements",
+            "measurements__activities",
             "measurements__recorded_by",
         ),
         pk=indicator_id,
@@ -1414,6 +1465,7 @@ def indicator_detail(request, indicator_id):
     indicator.can_write = writable
     can_edit_definition = writable and request.user.has_perm("core.change_indicator")
     can_edit_measurement = writable and request.user.has_perm("core.change_indicatormeasurement")
+    measurement_activities = _activities_for_targets(indicator.targets.all(), request.user)
     if request.method == "GET" and "preview_measurement" in request.GET:
         measurement_id = request.GET.get("measurement_id")
         if not writable or not request.user.has_perm(
@@ -1458,7 +1510,7 @@ def indicator_detail(request, indicator_id):
             editing = get_object_or_404(indicator.measurements.all(), pk=request.POST["measurement_id"])
         else:
             _require_permission(request.user, "add_indicatormeasurement")
-        form = IndicatorMeasurementForm(request.POST, request.FILES, instance=editing)
+        form = IndicatorMeasurementForm(request.POST, request.FILES, instance=editing, activities=measurement_activities)
         if form.is_valid():
             _save_indicator_measurement(form, indicator, request.user)
             if editing is None:
@@ -1470,10 +1522,11 @@ def indicator_detail(request, indicator_id):
             editing_measurement = editing
     elif request.GET.get("editar", "").isdigit() and can_edit_measurement:
         editing_measurement = get_object_or_404(indicator.measurements.all(), pk=request.GET["editar"])
-        form = IndicatorMeasurementForm(instance=editing_measurement)
+        form = IndicatorMeasurementForm(instance=editing_measurement, activities=measurement_activities)
     if form is None:
         form = IndicatorMeasurementForm(
-            initial={"baseline_date": indicator.reference_parameters.get("baseline_date"), "measured_by": request.user.pk}
+            initial={"baseline_date": indicator.reference_parameters.get("baseline_date"), "measured_by": request.user.pk},
+            activities=measurement_activities,
         )
     signal = _indicator_signal(indicator)
     can_view_measurements = request.user.has_perm("core.view_indicatormeasurement")
@@ -2738,6 +2791,18 @@ def activity_follow_up(request, action_id, activity_id):
         submitted = (request.POST.get("target_id"), request.POST.get("indicator_id")) if operation == "register_measurement" else None
         for target in targets:
             visible = [indicator for indicator in target.indicators.all() if indicator.pk in visible_ids]
+            linked_measurements = IndicatorMeasurement.objects.filter(
+                indicator__in=visible, activities=activity
+            ).select_related("indicator").order_by("-period_end", "-recorded_at")
+            measurements_by_indicator = {indicator.pk: [] for indicator in visible}
+            for measurement in linked_measurements:
+                measurements_by_indicator[measurement.indicator_id].append(measurement)
+            for indicator in visible:
+                indicator.activity_measurements = measurements_by_indicator[indicator.pk]
+            eligible_activities = _activities_for_targets([target], request.user)
+            eligible_activities = Activity.objects.filter(
+                Q(pk=activity.pk) | Q(pk__in=eligible_activities.values("pk"))
+            ).select_related("action_plan__action", "executor")
             related_results.append({
                 "target": target,
                 "indicators": visible,
@@ -2749,7 +2814,9 @@ def activity_follow_up(request, action_id, activity_id):
                 bound = (str(target.pk), str(indicator.pk)) == submitted
                 form = IndicatorMeasurementForm(
                     request.POST if bound else None, request.FILES if bound else None,
-                    prefix=f"measurement-{target.pk}-{indicator.pk}", initial={"measured_by": request.user.pk},
+                    prefix=f"measurement-{target.pk}-{indicator.pk}",
+                    initial={"measured_by": request.user.pk, "activities": [activity.pk]},
+                    activities=eligible_activities,
                 )
                 if bound and form.is_valid():
                     indicator = Indicator.objects.prefetch_related(

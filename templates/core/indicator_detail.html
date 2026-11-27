@@ -27,7 +27,6 @@
           <div class="empty-state"><strong>Sem dados para o gráfico.</strong><span>Registre aferições com resultado numérico para acompanhar a evolução.</span></div>
         {% endif %}
       </article>{% endif %}
-      {% include "core/_indicator_reference.html" with reference=indicator.reference_parameters %}
       <article class="panel indicator-definition indicator-facts" id="ficha-indicador-{{ indicator.pk }}" data-collapsible-facts>
         <div class="panel-heading"><div><p class="eyebrow">Definição</p><h2>Ficha do indicador</h2></div><div class="panel-heading-actions">{% if definition_form %}<button class="button button-secondary" type="button" data-edit-indicator>Editar</button>{% endif %}<button class="button button-secondary" type="button" data-toggle-definition aria-expanded="true" aria-controls="indicator-definition-content">Recolher</button></div></div>
         <dl class="definition-grid" id="indicator-definition-content" data-facts-content>

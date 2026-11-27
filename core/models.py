@@ -378,6 +378,7 @@ class Indicator(models.Model):
 
 class IndicatorMeasurement(models.Model):
     indicator = models.ForeignKey(Indicator, on_delete=models.CASCADE, related_name="measurements")
+    activities = models.ManyToManyField("Activity", blank=True, related_name="indicator_measurements")
     description = models.CharField(max_length=255, blank=True)
     reference_period = models.CharField(max_length=120)
     baseline_value = models.CharField(max_length=120, blank=True)

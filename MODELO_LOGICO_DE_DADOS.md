@@ -64,7 +64,8 @@ erDiagram
 | `meta` | Resultado quantitativo ou qualitativo esperado. | artefato, descrição, valor_alvo, unidade, período, status. |
 | `indicador` | Medida associada a meta ou objetivo. | nome, fórmula, unidade, fonte, periodicidade, linha_base, responsável. |
 | `indicador_artefato` | Relação entre indicador e objetivo/meta. | indicador, artefato, papel. |
-| `afericao_indicador` | Valor de indicador em um período. | indicador, período, valor, fonte, responsável, evidência, observação. |
+| `afericao_indicador` | Valor de indicador em um período, com vínculo opcional a uma ou mais atividades que contribuíram para o resultado. | indicador, período, valor, fonte, responsável, evidência, observação. |
+| `afericao_atividade` | Atividades que contribuíram para uma aferição de indicador. | aferição, atividade. |
 
 No PEI, `artefato_plano` permite representar Dimensão BSC, Eixo Estratégico, Objetivo Estratégico e Projeto Estratégico sem criar tabelas específicas para cada nível.
 

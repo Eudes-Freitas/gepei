@@ -123,17 +123,17 @@
     <div class="panel-heading"><div><p class="eyebrow">Desempenho e resultados</p><h2>Indicadores</h2></div><a class="chip chip-neutral" href="{% url 'indicator_overview' %}{% if indicator_query %}?{{ indicator_query }}{% endif %}">{{ indicator_total }} indicador{{ indicator_total|pluralize:"es" }}</a></div>
     {% if indicator_total %}
       <div class="dx-stats">
-        <a class="dx-stat" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=measured"><span>Aferidos</span><b>{{ indicator_measured_pct }}%</b><small>{{ indicator_measured }} de {{ indicator_total }} indicadores</small></a>
-        <a class="dx-stat dx-stat-green" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=green"><span>Meta alcançada</span><b>{{ indicator_green_pct }}%</b><small>{{ signal_counts.green }} de {{ indicator_measured }} aferidos</small></a>
-        <a class="dx-stat dx-stat-red" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=attention"><span>Abaixo da meta</span><b>{{ indicator_attention }}</b><small>próximo da meta, atingimento parcial ou baixo</small></a>
-        <a class="dx-stat dx-stat-gray" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=gray"><span>Não aferido</span><b>{{ signal_counts.gray }}</b><small>sem resultado ou dado insuficiente</small></a>
+        <a class="dx-stat" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=measured"><span>Indicadores com aferição</span><b>{{ indicator_measured_pct }}%</b><small>{{ indicator_measured }} de {{ indicator_total }} no período</small></a>
+        <a class="dx-stat dx-stat-green" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=green"><span>Aferições dentro do esperado no período</span><b>{{ indicator_green_pct }}%</b><small>{{ signal_counts.green }} de {{ indicator_measured }} indicadores aferidos</small></a>
+        <a class="dx-stat dx-stat-red" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=attention"><span>Aferições que exigem atenção</span><b>{{ indicator_attention }}</b><small>próximas, abaixo ou muito abaixo do esperado</small></a>
+        <a class="dx-stat dx-stat-gray" href="{% url 'indicator_overview' %}?{% if indicator_query %}{{ indicator_query }}&amp;{% endif %}status=gray"><span>Sem resultado aferido</span><b>{{ signal_counts.gray }}</b><small>sem resultado ou dados insuficientes</small></a>
       </div>
       <div class="dx-charts">
         <figure><figcaption>Aferição dos indicadores</figcaption><div id="chart-measured" class="dx-chart" role="img" aria-label="Gráfico de rosca: indicadores aferidos e sem aferição"></div></figure>
-        <figure><figcaption>Situação em relação à meta</figcaption><div id="chart-signal" class="dx-chart" role="img" aria-label="Gráfico de barras: indicadores por situação frente à meta"></div></figure>
-        <figure><figcaption>Atingimento médio da meta por {% if active_plan.plan_type == "PESP" %}ação estratégica{% else %}objetivo{% endif %}</figcaption><div id="chart-objectives" class="dx-chart" role="img" aria-label="Gráfico de barras: percentual médio de atingimento da meta por {% if active_plan.plan_type == "PESP" %}ação estratégica{% else %}objetivo{% endif %}"></div></figure>
+        <figure><figcaption>Situação das aferições</figcaption><div id="chart-signal" class="dx-chart" role="img" aria-label="Gráfico de barras: indicadores por resultado das aferições"></div></figure>
+        <figure><figcaption>Índice médio dos indicadores por {% if active_plan.plan_type == "PESP" %}ação estratégica{% else %}objetivo{% endif %}</figcaption><div id="chart-objectives" class="dx-chart" role="img" aria-label="Gráfico de barras: índice médio dos indicadores por {% if active_plan.plan_type == "PESP" %}ação estratégica{% else %}objetivo{% endif %}"></div></figure>
       </div>
-      <p class="dx-note">Atingimento = avanço realizado ÷ avanço esperado pelo tempo decorrido. Sem trajetória calculável, usa-se a meta do período. Os gráficos são limitados a 100%. Meta alcançada ≥ 100% · Próximo da meta ≥ 80% · Atingimento parcial ≥ 50% · Baixo atingimento &lt; 50%. Clique em um gráfico para abrir a lista filtrada.</p>
+      <p class="dx-note">O índice compara o avanço realizado com o esperado até o período selecionado; sem trajetória calculável, considera a meta do período. Os gráficos vão até 100%. Faixas: dentro do esperado ≥ 100% · próximo do esperado ≥ 80% · abaixo do esperado ≥ 50% · muito abaixo do esperado &lt; 50%. Clique em um gráfico para abrir a lista filtrada.</p>
     {% else %}
       <div class="empty-state"><strong>Nenhum indicador no recorte.</strong><span>Altere os filtros do painel.</span></div>
     {% endif %}
@@ -149,7 +149,7 @@
         {% if can_indicators %}
         <a class="dx-stat dx-stat-green" href="{% url 'target_overview' %}?{{ target_query }}&amp;status=green"><span>Meta alcançada</span><b>{{ target_green_pct }}%</b><small>{{ target_counts.green }} de {{ target_measured }} metas aferidas</small></a>
         <a class="dx-stat dx-stat-red" href="{% url 'target_overview' %}?{{ target_query }}&amp;status=attention"><span>Abaixo da meta</span><b>{{ target_attention_count }}</b><small>próximo da meta, atingimento parcial ou baixo</small></a>
-        <a class="dx-stat dx-stat-gray" href="{% url 'target_overview' %}?{{ target_query }}&amp;status=unmeasured"><span>Não aferido</span><b>{{ target_counts.gray|add:target_counts.none }}</b><small>sem indicador aferido</small></a>
+        <a class="dx-stat dx-stat-gray" href="{% url 'target_overview' %}?{{ target_query }}&amp;status=unmeasured"><span>Sem indicador aferido</span><b>{{ target_counts.gray|add:target_counts.none }}</b><small>sem indicador vinculado ou sem aferição</small></a>
         {% endif %}
       </div>
       {% if can_indicators %}

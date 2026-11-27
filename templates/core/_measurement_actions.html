@@ -13,6 +13,7 @@
     <div><dt>Linha de base</dt><dd>{{ measurement.baseline_value|default:"—" }}</dd></div>
     <div><dt>Resultado</dt><dd>{{ measurement.measured_value }}</dd></div>
     <div><dt>Meta do período</dt><dd>{{ measurement.expected_value|default_if_none:"—" }}</dd></div>
+    <div class="definition-wide"><dt>Atividades que contribuíram</dt><dd>{% for activity in measurement.activities.all %}{{ activity.action_plan.action.code }} · {{ activity.title }}{% if not forloop.last %}<br>{% endif %}{% empty %}Não informadas{% endfor %}</dd></div>
     <div><dt>Responsável</dt><dd>{{ measurement.responsible_name }}</dd></div>
     <div><dt>Setor</dt><dd>{{ measurement.responsible_unit_label|default:"Setor não informado" }}</dd></div>
     <div class="definition-wide"><dt>Fonte/evidência</dt><dd>{{ measurement.source_reference|default:"Não informada" }}{% if measurement.evidence_attachment %} <a href="{{ measurement.evidence_attachment.url }}" target="_blank" rel="noopener">Abrir evidência</a>{% endif %}</dd></div>

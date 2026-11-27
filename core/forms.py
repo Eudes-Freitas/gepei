@@ -141,11 +141,17 @@ class IndicatorCreateForm(forms.ModelForm):
 
 class IndicatorMeasurementForm(forms.ModelForm):
     measurement_date = forms.DateField(label="Data da aferição", widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}))
+    activities = forms.ModelMultipleChoiceField(
+        queryset=Activity.objects.none(), required=False, label="Atividades que contribuíram",
+        widget=forms.SelectMultiple(attrs={"size": 5, "data-activity-selector": "true"}),
+        help_text="Opcional. Clique nas atividades para adicioná-las à seleção; as escolhidas ficam listadas abaixo.",
+    )
 
     class Meta:
         model = IndicatorMeasurement
         fields = [
             "description",
+            "activities",
             "measured_by",
             "measured_value",
             "source_reference",
@@ -164,12 +170,17 @@ class IndicatorMeasurementForm(forms.ModelForm):
             "note": forms.Textarea(attrs={"rows": 3}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, activities=None, **kwargs):
         super().__init__(*args, **kwargs)
+        if activities is not None:
+            self.fields["activities"].queryset = activities.order_by("action_plan__action__code", "position", "title")
+        self.fields["activities"].label_from_instance = lambda activity: (
+            f"{activity.action_plan.action.code} · {activity.title}"
+        )
         for name in ["measured_by"]:
             self.fields[name].required = True
         self.initial.setdefault("measurement_date", self.instance.measurement_date)
-        self.order_fields(["description", "measured_by", "measurement_date", "measured_value", "source_reference", "evidence_attachment", "note"])
+        self.order_fields(["description", "activities", "measured_by", "measurement_date", "measured_value", "source_reference", "evidence_attachment", "note"])
         measured_by = self.fields["measured_by"]
         measured_by.queryset = get_user_model().objects.filter(is_active=True).order_by("first_name", "last_name", "username")
         measured_by.label_from_instance = lambda user: user.get_full_name() or user.username

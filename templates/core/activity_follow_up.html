@@ -31,7 +31,9 @@
     {% for item in related_results %}
     <div class="activity-related-result">
       <a href="{% url 'target_overview' %}?target={{ item.target.pk }}"><strong>{{ item.target.code|default:"Meta" }}</strong> · {{ item.target.description }}</a>
-      {% if perms.core.view_indicator %}<ul>{% for indicator in item.indicators %}<li><a href="{% url 'indicator_overview' %}?target={{ item.target.pk }}&amp;indicator={{ indicator.pk }}#indicador-{{ indicator.pk }}">{{ indicator.code|default:"Indicador" }} · {{ indicator.name }}</a></li>{% empty %}<li class="muted-text">Nenhum indicador disponível para esta meta.</li>{% endfor %}</ul>{% endif %}
+      {% if perms.core.view_indicator %}<ul>{% for indicator in item.indicators %}<li><a href="{% url 'indicator_overview' %}?target={{ item.target.pk }}&amp;indicator={{ indicator.pk }}#indicador-{{ indicator.pk }}">{{ indicator.code|default:"Indicador" }} · {{ indicator.name }}</a>
+        {% if perms.core.view_indicatormeasurement and indicator.activity_measurements %}<div class="responsive-table activity-measurement-history"><table><thead><tr><th>Período</th><th>Resultado</th><th>Meta do período</th><th>Indicador</th></tr></thead><tbody>{% for measurement in indicator.activity_measurements %}<tr><td>{{ measurement.reference_period }}</td><td>{{ measurement.measured_value }}</td><td>{{ measurement.expected_value|default_if_none:"—" }}</td><td><a href="{% url 'indicator_detail' indicator.pk %}">Ver aferição</a></td></tr>{% endfor %}</tbody></table></div>{% endif %}
+      </li>{% empty %}<li class="muted-text">Nenhum indicador disponível para esta meta.</li>{% endfor %}</ul>{% endif %}
       {% for indicator in item.writable_indicators %}
         <button class="button button-secondary" type="button" data-open-measurement="measurement-dialog-{{ item.target.pk }}-{{ indicator.pk }}">
           Registrar aferição <span class="visually-hidden">de {{ indicator.code|default:indicator.name }}</span>

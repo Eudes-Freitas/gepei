@@ -26,6 +26,101 @@
 <script>
   (function () {
     var form = document.currentScript.closest('form');
+    var select = form && form.querySelector('[data-activity-selector]');
+    if (!select) return;
+
+    var field = select.closest('.form-field');
+    var picker = document.createElement('div');
+    picker.className = 'activity-picker';
+    var chosen = document.createElement('div');
+    chosen.className = 'activity-picker-chosen';
+    chosen.setAttribute('aria-live', 'polite');
+    var search = document.createElement('input');
+    search.type = 'search';
+    search.className = 'activity-picker-search';
+    search.placeholder = 'Buscar atividade';
+    search.setAttribute('aria-label', 'Buscar atividade');
+    var choices = document.createElement('div');
+    choices.className = 'activity-picker-choices';
+    choices.setAttribute('role', 'listbox');
+    choices.setAttribute('aria-multiselectable', 'true');
+    choices.hidden = true;
+    picker.append(chosen, search, choices);
+    select.hidden = true;
+    select.after(picker);
+
+    function renderChosen() {
+      chosen.replaceChildren();
+      Array.from(select.selectedOptions).forEach(function (option) {
+        var chip = document.createElement('span');
+        chip.className = 'activity-picker-chip';
+        var label = document.createElement('span');
+        label.textContent = option.textContent;
+        var remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = '×';
+        remove.setAttribute('aria-label', 'Remover ' + option.textContent);
+        remove.addEventListener('click', function () {
+          option.selected = false;
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+          render();
+        });
+        chip.append(label, remove);
+        chosen.append(chip);
+      });
+      if (!select.selectedOptions.length) {
+        var empty = document.createElement('span');
+        empty.className = 'activity-picker-empty';
+        empty.textContent = 'Nenhuma atividade selecionada';
+        chosen.append(empty);
+      }
+    }
+
+    function renderChoices() {
+      choices.replaceChildren();
+      var query = search.value.trim().toLocaleLowerCase();
+      var matches = Array.from(select.options).filter(function (option) {
+        return option.value && option.textContent.toLocaleLowerCase().includes(query);
+      });
+      if (!matches.length) {
+        var empty = document.createElement('p');
+        empty.className = 'activity-picker-empty';
+        empty.textContent = select.options.length ? 'Nenhuma atividade encontrada.' : 'Nenhuma atividade disponível para esta meta.';
+        choices.append(empty);
+      }
+      matches.forEach(function (option) {
+        var choice = document.createElement('button');
+        choice.type = 'button';
+        choice.className = 'activity-picker-option';
+        choice.setAttribute('role', 'option');
+        choice.setAttribute('aria-selected', option.selected ? 'true' : 'false');
+        choice.textContent = option.textContent;
+        choice.addEventListener('click', function () {
+          option.selected = !option.selected;
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+          render();
+          search.focus();
+        });
+        choices.append(choice);
+      });
+    }
+
+    function render() {
+      renderChosen();
+      renderChoices();
+    }
+    search.addEventListener('focus', function () { choices.hidden = false; });
+    search.addEventListener('input', function () { choices.hidden = false; renderChoices(); });
+    document.addEventListener('click', function (event) {
+      if (!picker.contains(event.target)) choices.hidden = true;
+    });
+    select.addEventListener('change', render);
+    render();
+  }());
+</script>
+<script>
+  (function () {
+    var form = document.currentScript.closest('form');
     var dateField = form.querySelector('[name$="measurement_date"]');
     var period = form.querySelector('[data-measurement-quarter]');
     var expected = form.querySelector('[data-period-target-url]');
